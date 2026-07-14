@@ -181,7 +181,11 @@ class plugin_ui extends e_admin_ui
 	//	protected $eventName		= 'plugman-plugin'; // remove comment to enable event triggers in admin.
 		protected $table			= 'plugin';
 		protected $pid				= 'plugin_id';
-		protected $perPage			= 10;
+		// LITE MODIFICATION: upstream sets perPage = 10 here, overriding the
+		// e_admin_ui default of 20. Lite uses 30 — the plugin list is short and
+		// paginating it at 10 is pointless noise.
+		// Revert condition: upstream makes perPage user-configurable.
+		protected $perPage = 30;
 
 		protected $batchDelete		= false;
 		protected $batchExport     = false;
