@@ -1343,13 +1343,13 @@ i.e-cat_users-32{ background-position: -555px 0; width: 32px; height: 32px; }
 			// integer; the CATEGORY-level 'sort' that enabled this block is a
 			// boolean. is_numeric() makes that boolean (and any core entry with
 			// no 'sort') fall back to 999. Do not revert on sync.
-			uasort($e107_vars, static function($a, $b) {
+			$e107_vars = array_values($e107_vars);
+			eShims::usort($e107_vars, static function($a, $b) {
 				$oa = (isset($a['sort']) && is_numeric($a['sort'])) ? (int) $a['sort'] : 999;
 				$ob = (isset($b['sort']) && is_numeric($b['sort'])) ? (int) $b['sort'] : 999;
 
-				return ($oa !== $ob) ? ($oa <=> $ob) : strcoll((string) $a['text'], (string) $b['text']);
+				return ($oa !== $ob) ? ($oa <=> $ob) : strcoll((string) varset($a['text']), (string) varset($b['text']));
 			});
-			$e107_vars = array_values($e107_vars);
 		}
 	
 		if(empty($e107_vars))
