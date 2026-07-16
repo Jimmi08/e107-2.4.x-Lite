@@ -4517,9 +4517,12 @@ class e_admin_controller_ui extends e_admin_controller
 			$this->_log('Filter ListQry: ' .$qry);
 			//file_put_contents(e_LOG.'uiAjaxResponseSQL.log', $qry."\n\n", FILE_APPEND);
 
-			// Make query
+			// Make query. $qry is a fully-assembled list query from _modifyListQry()
+			// (the request search term is escaped via toDB() upstream); this is an
+			// opaque passthrough of an already-built query string, so it stays on the
+			// sanctioned bound execute() - not a deprecated raw-SQL call.
 			$sql = e107::getDb();
-			if($qry && $sql->gen($qry, $debug))
+			if($qry && $sql->execute($qry))
 			{
 				while ($res = $sql->fetch())
 				{
@@ -4919,7 +4922,7 @@ class e_admin_controller_ui extends e_admin_controller
 		];
 
 		// Insert the record into the admin_history table
-		if (!e107::getDb()->insert('admin_history', $historyData))
+		if (!e107::getDb()->createQueryBuilder()->insert('admin_history')->valuesTyped($historyData, e107::getDb()->getFieldDefs('admin_history')['_FIELD_TYPES'])->execute())
 		{
 			e107::getMessage()->addError("Failed to save history for table '{$table}', record ID {$id}");
 			e107::getMessage()->addError(e107::getDb()->getLastErrorText());
@@ -5004,7 +5007,7 @@ class e_admin_controller_ui extends e_admin_controller
 		if( !empty($this->sortField) && empty($this->sortParent) && empty($_posted[$this->sortField]) && ($this->getAction() === 'create'))
 		{
 
-			$incVal = e107::getDb()->max($this->table, $this->sortField) + 1;
+			$incVal = e107::getDb()->createQueryBuilder()->from($this->table)->max($this->sortField) + 1;
 			$_posted[$this->sortField] = $incVal;
 		//	$model->addMessageInfo(print_a($_posted,true));
 		}
@@ -6284,8 +6287,8 @@ class e_admin_ui extends e_admin_controller_ui
                 'link_sefurl'		=> e107::getParser()->toDB($urlData['route'].'?'.$id),
             );
             
-            $res = $sql->insert('links', $linkArray);
-            
+            $res = $sql->createQueryBuilder()->insert('links')->valuesTyped($linkArray, $sql->getFieldDefs('links')['_FIELD_TYPES'])->execute();
+
             if($res !== FALSE)
             {
 				e107::getMessage()->addSuccess(LAN_CREATED. ': ' .LAN_NAVIGATION. ': ' .($name ? $name : 'n/a'));
@@ -6366,7 +6369,7 @@ class e_admin_ui extends e_admin_controller_ui
 			}
 			$name = $model->get($data['name']);
 			
-			$category = e107::getDb()->retrieve('featurebox_category', 'fb_category_id', "fb_category_template='unassigned'");
+			$category = e107::getDb()->createQueryBuilder()->select('fb_category_id')->from('featurebox_category')->where('fb_category_template', 'unassigned')->fetchOne();
 			
             $fbArray = array (
                 	'fb_title' 		=> $name, 
@@ -6379,7 +6382,7 @@ class e_admin_ui extends e_admin_controller_ui
 					'fb_order' 		=> $scount, 
             );
 
-            $res = $sql->insert('featurebox', $fbArray);
+            $res = $sql->createQueryBuilder()->insert('featurebox')->valuesTyped($fbArray, $sql->getFieldDefs('featurebox')['_FIELD_TYPES'])->execute();
 
             if($res !== FALSE)
             {
@@ -7014,9 +7017,10 @@ class e_admin_ui extends e_admin_controller_ui
 		}
 		else // Reset all the order fields first.
 		{
-			$resetQry = $this->sortField ."= 999 WHERE 1"; // .$this->sortField;
-			$sql->update($this->table, $resetQry );
-			$this->_log('Sort Qry ('.$this->table.'): '.$resetQry);
+			$sql->createQueryBuilder()->update($this->table)
+				->set($this->sortField, 999)
+				->execute();
+			$this->_log('Sort Qry ('.$this->table.'): '.$this->sortField.' = 999 WHERE 1');
 		}
 
 
@@ -7031,18 +7035,16 @@ class e_admin_ui extends e_admin_controller_ui
 
 			list($tmp,$id) = explode('-', $row, 2);
 			$id = preg_replace('/[^\w\-:.]/', '', $id);
-			if(!is_numeric($id))
-			{
-				$id = "'{$id}'";
-			}
-			$updateQry = $this->sortField." = {$c} WHERE ".$this->pid. ' = ' .$id;
 
-			if($sql->update($this->table, $updateQry) !==false)
+			if($sql->createQueryBuilder()->update($this->table)
+				->set($this->sortField, $c)
+				->where($this->pid, $id)
+				->execute() !== false)
 			{
 				$updated[] = '#' .$id. '  --  ' .$this->sortField. ' = ' .$c;
 			}
 
-			$this->_log('Sort Qry ('.$this->table.'): '.$updateQry);
+			$this->_log('Sort Qry ('.$this->table.'): '.$this->sortField.' = '.$c.' WHERE '.$this->pid.' = '.$id);
 
 			$c += $step;
 
@@ -7058,10 +7060,26 @@ class e_admin_ui extends e_admin_controller_ui
 		// Increment every record after the current page of records.
 
 		$changed = $c - $step;
-		$qry = 'UPDATE `#' .$this->table. '` e, (SELECT @n := ' .($changed). ') m  SET e.' .$this->sortField. ' = @n := @n + ' .$step. ' WHERE ' .$this->sortField. ' > ' .($changed);
 
-		$result = $sql->gen($qry);
-		$this->_log('Sort Qry: '.$qry);
+		// User-variable derived-table UPDATE (vendor-specific @n counter) that the
+		// query builder cannot express; values are bound, the dynamic sort column
+		// identifier is validated fail-closed via quoteIdentifier().
+		$sortFieldId = $sql->quoteIdentifier($this->sortField);
+		if($sortFieldId === false)
+		{
+			$this->_log('Sort Qry: invalid sort field identifier: '.$this->sortField);
+			$result = false;
+		}
+		else
+		{
+			$qry = 'UPDATE `#' .$this->table. '` e, (SELECT @n := :n_init) m  SET e.' .$sortFieldId. ' = @n := @n + :step WHERE ' .$sortFieldId. ' > :threshold';
+			$result = $sql->execute($qry, array(
+				'n_init'    => (int) $changed,
+				'step'      => (int) $step,
+				'threshold' => (int) $changed,
+			));
+			$this->_log('Sort Qry: '.$qry);
+		}
 
 
 		// ------------ Fix Child Order when parent is used. ----------------
@@ -9115,9 +9133,23 @@ class e_admin_form_ui extends e_form
 					
 						$sql = e107::getDb();
 						$field = $val['field'];
-						
-						$query = 'SELECT d.' .$field. ', u.user_name FROM #' .$val['table']. ' AS d LEFT JOIN #user AS u ON d.' .$field. ' = u.user_id  GROUP BY d.' .$field. ' ORDER BY u.user_name';
-						$row = $sql->retrieve($query,true);
+
+						// Dynamic table/column identifiers from the filter config; validate
+						// each fail-closed before interpolating, then bind via execute().
+						$fieldId = $sql->quoteIdentifier($field);
+						$tableId = $sql->quoteIdentifier($val['table']);
+						$row = array();
+						if($fieldId !== false && $tableId !== false)
+						{
+							$query = 'SELECT d.' .$fieldId. ', u.user_name FROM #' .$val['table']. ' AS d LEFT JOIN #user AS u ON d.' .$fieldId. ' = u.user_id  GROUP BY d.' .$fieldId. ' ORDER BY u.user_name';
+							if($sql->execute($query) !== false)
+							{
+								while($r = $sql->fetch())
+								{
+									$row[] = $r;
+								}
+							}
+						}
 						foreach($row as $data)
 						{
 							$k = $data[$field];
