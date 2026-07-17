@@ -1329,15 +1329,14 @@ i.e-cat_users-32{ background-position: -555px 0; width: 32px; height: 32px; }
 		 */
 		if ($sortlist == TRUE)
 		{
-			// LITE FEATURE (#92): admin-menu order. Sort the menu items by their
-			// numeric 'sort' value (plugin getOrder(), default 999), then strcoll
-			// on 'text'. Explicitly-ordered plugins float to their numbered
-			// positions; everything else keeps the legacy alphabetical order.
-			//
-			// This replaces the previous text-only usort + array_unique
-			// text cross-join. It also subsumes the K² duplication guarded by the
-			// removed #5786 LITE MODIFICATION: uasort keeps entries 1:1, so no
-			// text cross-join exists that could duplicate same-named entries.
+			// LITE FEATURE (#92): admin-menu sort-order — lets plugins define
+			// their display order in the admin menu (numeric 'sort' from
+			// getOrder(), default 999; ties broken by strcoll on 'text').
+			// This controls ORDER only; it does NOT deduplicate. Upstream's
+			// #5786 display-name deduplication fix (a37902b5e) is a separate
+			// mechanism, applied as its own cherry-pick commit and merged into
+			// this block: eShims::usort (stable sort on PHP < 8.0) with
+			// varset() guarding missing 'text'.
 			//
 			// 'sort' name collision: the ENTRY-level 'sort' is the getOrder()
 			// integer; the CATEGORY-level 'sort' that enabled this block is a
