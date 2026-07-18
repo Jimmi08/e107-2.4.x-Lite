@@ -400,6 +400,17 @@ class usersettings_front // Begin Usersettings rewrite.
 			return null;
 		}
 
+		// LITE MODIFICATION: frontend admin-edit of any user by ID.
+		// Lite accepts the target user ID from both e_QUERY and $_GET['id'];
+		// upstream only honours e_QUERY and has that block tagged
+		// "todo subject of removal" — its renderForm() no longer does
+		// admin-edit at all. Lite keeps this capability deliberately
+		// (admin users.php only offers backend editing).
+		// All four gates (save: e_QUERY + $_GET['id']; renderForm: same two)
+		// MUST use the identical permission rule:
+		//   editing another account requires getperms('0') or getperms('4');
+		//   editing an admin account requires getperms('0').
+		// Do not adopt upstream's removal of this feature.
 		$inp_tmp = intval(e_QUERY);
 		if (is_numeric(e_QUERY) && $inp_tmp != USERID)
 		{
@@ -434,7 +445,7 @@ class usersettings_front // Begin Usersettings rewrite.
 				$_uid = $inp;
 				$info = e107::user($inp);
 				//Only site admin is able to change setting for other admins
-				if (!is_array($info) || ($info['user_admin'] == 1 && !getperms('0')))
+				if (!is_array($info) || ($info['user_admin'] == 1 && !getperms('0')) || (!getperms('0') && !getperms('4')))
 				{
 					e107::redirect();
 					exit();
@@ -1170,6 +1181,8 @@ class usersettings_front // Begin Usersettings rewrite.
 		$ns = e107::getRender();
 		$tp = e107::getParser();
 		$userMethods = e107::getUserSession();
+		// LITE MODIFICATION: admin-edit render path — see the marker in the
+		// save path (~line 403). Gate must stay identical to the save gate.
 		//$uuid = USERID;
 		if (is_numeric(e_QUERY))
 		{
@@ -1177,7 +1190,7 @@ class usersettings_front // Begin Usersettings rewrite.
 			{
 				$inp = intval(e_QUERY);
 				$info = e107::user($inp);
-				if (!is_array($info) || ($info['user_admin'] == 1 && !getperms('0') && !getperms('4')))
+				if (!is_array($info) || ($info['user_admin'] == 1 && !getperms('0')) || (!getperms('0') && !getperms('4')))
 				{
 					e107::redirect();
 					exit();
@@ -1198,7 +1211,7 @@ class usersettings_front // Begin Usersettings rewrite.
 			{
 				$inp = intval($_GET['id']);
 				$info = e107::user($inp);
-				if (!is_array($info) || ($info['user_admin'] == 1 && !getperms('0') && !getperms('4')))
+				if (!is_array($info) || ($info['user_admin'] == 1 && !getperms('0')) || (!getperms('0') && !getperms('4')))
 				{
 					e107::redirect();
 					exit();
