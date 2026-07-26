@@ -6859,6 +6859,15 @@ class e107
 	public static function coreUpdateAvailable()
 	{
 
+		// LITE MODIFICATION: no phone-home. Lite does not poll
+		// e107.org/releases.php for core updates (Lite tracks upstream via
+		// git sync, not the e107.org release feed). Returning false here
+		// neutralises all consumers at once: the cron update email
+		// (checkCoreUpdate), the dashboard notice (sc_admin_coreupdate),
+		// and the Development Preview update-channel selector.
+		// Revert condition: Lite opts into e107.org update notifications.
+		return false;
+
 	    // Get site version
 	    $e107info= array();
 
