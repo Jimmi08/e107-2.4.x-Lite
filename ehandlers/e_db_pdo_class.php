@@ -27,48 +27,30 @@ class e_db_pdo implements e_db
 	use e_db_legacy;
 	use e_db_common;
 
-	// TODO switch to protected vars where needed
+	// Shared connection state lives in e_db_common (ConnectionTrait);
+	// only driver-specific members are declared here.
 	public      $mySQLserver;
 	public      $mySQLuser;
 	protected   $mySQLpassword;
 	protected   $mySQLdefaultdb;
 	protected   $mySQLport = 3306;
-	public      $mySQLPrefix;
 
 	/** @var PDO */
 	protected   $mySQLaccess;
-	public      $mySQLresult;
 	protected   $mySQLrows;
-	protected   $mySQLerror = false;			// Error reporting mode - TRUE shows messages
 
-	protected   $mySQLlastErrNum = 0;		// Number of last error - now protected, use getLastErrorNumber()
-	protected   $mySQLlastErrText = '';		// Text of last error - now protected, use getLastErrorText()
 	protected   $mySQLlastQuery = '';
 
-	protected   $mySQLcurTable;
-	public      $mySQLlanguage;
 	public      $mySQLinfo;
-	public      $tabset;
-	public      $mySQLtableList = array(); // list of all Db tables.
-
-	public      $mySQLtableListLanguage = array(); // Db table list for the currently selected language
 	public      $mySQLtablelist = array();
 
 	protected	$dbFieldDefs = array();		// Local cache - Field type definitions for _FIELD_DEFS and _NOTNULL arrays
-	public      $mySQLcharset;
 	protected   $mySqlServerInfo = '?';			// Server info - needed for various things
-
-	public      $total_results = false;			// Total number of results
 
 	private     $pdo            = true; // using PDO or not.
 
 	/** @var e107_traffic */
 	private     $traffic;
-
-	/** @var e107_db_debug */
-	private     $dbg;
-
-	private     $debugMode      = false;
 
 	protected static $querycount = 0;
 
@@ -202,16 +184,18 @@ class e_db_pdo implements e_db
 		$this->mySQLdefaultdb 	= $database;
 		$this->mySQLPrefix 		= $prefix;
 
+		$quoted = '`'.str_replace('`', '``', $database).'`';
+
 		if($multiple === true)
 		{
-			$this->mySQLPrefix 		= "`".$database."`.".$prefix;
+			$this->mySQLPrefix 		= $quoted.".".$prefix;
 			return true;
 		}
 
 
 		try
 		{
-			$this->mySQLaccess->exec("use `".$database."`");
+			$this->mySQLaccess->exec("use ".$quoted);
        		// $this->mySQLaccess->select_db($database); $dbh->query("use newdatabase");
 	    }
 		catch (PDOException $e)
@@ -281,6 +265,8 @@ class e_db_pdo implements e_db
 	 */
 	public function db_Query($query, $rli = NULL, $qry_from = '', $debug = false, $log_type = '', $log_remark = '')
 	{
+		$this->_notifyDeprecated('db_Query', 'Use $sql->execute($query, $params); it accepts the same SQL with a friendlier parameter map.');
+
 		global $db_time, $queryinfo;
 		self::$querycount++;
 
@@ -439,6 +425,8 @@ class e_db_pdo implements e_db
 	 */
 	public function select($table, $fields = '*', $arg = '', $noWhere = false, $debug = false, $log_type = '', $log_remark = '')
 	{
+		$this->_notifyDeprecated('select', 'Use the query builder: $sql->createQueryBuilder()->select(...)->from(\'table\')->where(...)->fetchAll().');
+
 
 		$table = $this->hasLanguage($table);
 
@@ -538,17 +526,11 @@ class e_db_pdo implements e_db
 	}
 
 	/**
-	 * @param string $type assoc|num|both
-	* @return array|bool MySQL row
-	* @desc Fetch an array containing row data (see PHP's mysql_fetch_array() docs)<br />
-	* @example
-	* Example :<br />
-	* <code>while($row = $sql->fetch()){
-	*  $text .= $row['username'];
-	* }</code>
-	*
-	* @access public
-	*/
+	 * Documented at {@see e_db::fetch()}.
+	 *
+	 * @param string|null $type 'assoc' (default), 'num' or 'both'
+	 * @return array|false
+	 */
 	function fetch($type = null)
 	{
 		switch ($type)
@@ -601,6 +583,8 @@ class e_db_pdo implements e_db
 	 */
 	function count($table, $fields = '(*)', $arg = '', $debug = false, $log_type = '', $log_remark = '')
 	{
+		$this->_notifyDeprecated('count', 'Use the query builder: $sql->createQueryBuilder()->selectCount()->from(\'table\')->where(...)->fetchOne().');
+
 		$table = $this->hasLanguage($table);
 
 		if ($fields == 'generic')
@@ -673,6 +657,8 @@ class e_db_pdo implements e_db
 	 */
 	function delete($table, $arg = '', $debug = false, $log_type = '', $log_remark = '')
 	{
+		$this->_notifyDeprecated('delete', 'Use the query builder: $sql->createQueryBuilder()->delete(\'table\')->where(...)->execute().');
+
 		$table = $this->hasLanguage($table);
 		$this->mySQLcurTable = $table;
 
@@ -772,6 +758,8 @@ class e_db_pdo implements e_db
 	 */
 	public function gen($query, $debug = false, $log_type = '', $log_remark = '')
 	{
+		$this->_notifyDeprecated('gen', 'Use $sql->execute($query, $params) with :named parameters; for ordinary CRUD prefer the query builder ($sql->createQueryBuilder()).');
+
 		$this->tabset = false;
 
 		$query .= " "; // temp fix for failing regex below, when there is no space after the table name;
@@ -826,13 +814,15 @@ class e_db_pdo implements e_db
 
 
 	/**
-	 * Multi-language Query Function. Run a query on the same table across all languages.
-	 * @param $query
-	 * @param bool $debug
+	 * Documented at {@see e_db::db_Query_all()}.
+	 *
 	 * @return bool
+	 * @deprecated v2.4.0 Use {@see e_db::executeAllLanguages()}.
 	 */
 	public function db_Query_all($query, $debug=false)
 	{
+		$this->_notifyDeprecated('db_Query_all', 'Use $sql->executeAllLanguages($query, $params), which resolves #table markers per language leg, or the query builder\'s executeAllLanguages().');
+
         $error = "";
 
 		$query = str_replace("#", $this->mySQLPrefix, $query);
@@ -945,24 +935,37 @@ class e_db_pdo implements e_db
 	}
 
 	/**
-	 * escape() without the deprecation notice, for internal legacy paths.
+	 * Documented at {@see \e107\Database\ConnectionInterface::quoteStringLiteral()}.
+	 *
+	 * @param string $value
+	 * @return string quoted literal, including the surrounding quotes
+	 * @throws PDOException if the PDO driver does not support quoting
+	 */
+	public function quoteStringLiteral($value)
+	{
+		$this->_getMySQLaccess();
+
+		$quoted = $this->mySQLaccess->quote((string) $value);
+
+		if($quoted === false) // pdo_mysql always supports quoting
+		{
+			throw new PDOException('quoteStringLiteral() requires a PDO driver that supports quoting');
+		}
+
+		return $quoted;
+	}
+
+	/**
+	 * escape() without the deprecation notice, for internal legacy paths:
+	 * {@see e_db_pdo::quoteStringLiteral()} with the surrounding quotes stripped.
 	 *
 	 * @param string $data
 	 * @return string
 	 * @throws PDOException if the PDO driver does not support quoting
 	 */
-	private function _escape($data)
+	protected function _escape($data)
 	{
-		$this->_getMySQLaccess();
-
-		$quoted = $this->mySQLaccess->quote((string) $data);
-
-		if($quoted === false) // pdo_mysql always supports quoting
-		{
-			throw new PDOException('escape() requires a PDO driver that supports quoting');
-		}
-
-		return substr($quoted, 1, -1);
+		return substr($this->quoteStringLiteral($data), 1, -1);
 	}
 
 	/**
@@ -1014,7 +1017,7 @@ class e_db_pdo implements e_db
 	 * TODO - better runtime cache - use e107::getRegistry() && e107::setRegistry()
 	 * @return array
 	 */
-	private function _getTableList($language='')
+	protected function _getTableList($language='')
 	{
 
 		$database = !empty($this->mySQLdefaultdb) ? "FROM  `".$this->mySQLdefaultdb."`" : "";
@@ -1429,7 +1432,7 @@ class e_db_pdo implements e_db
 	 * When the global variable has been unset like in https://github.com/e107inc/e107-test/issues/6 ,
 	 * use the "mySQLaccess" from the default e_db_mysql instance singleton.
 	 */
-	private function _getMySQLaccess()
+	protected function _getMySQLaccess()
 	{
 		if (!$this->mySQLaccess)
 		{

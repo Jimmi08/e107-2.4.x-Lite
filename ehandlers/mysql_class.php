@@ -101,43 +101,25 @@ class e_db_mysql implements e_db
 	use e_db_legacy;
 	use e_db_common;
 
-	// TODO switch to protected vars where needed
+	// Shared connection state lives in e_db_common (ConnectionTrait);
+	// only driver-specific members are declared here.
 	public      $mySQLserver;
 	public      $mySQLuser;
 	protected   $mySQLpassword;
 	protected   $mySQLdefaultdb;
 	protected   $mySQLport = 3306;
-	public      $mySQLPrefix;
 
 	/** @var mysqli */
 	protected   $mySQLaccess;
-	public      $mySQLresult;
-	public      $mySQLrows;
-	public      $mySQLerror = '';			// Error reporting mode - TRUE shows messages
+	protected   $mySQLrows;
 
-	protected   $mySQLlastErrNum = 0;		// Number of last error - now protected, use getLastErrorNumber()
-	protected   $mySQLlastErrText = '';		// Text of last error - now protected, use getLastErrorText()
 	protected   $mySQLlastQuery = '';
 
-	public      $mySQLcurTable;
-	public      $mySQLlanguage;
 	public      $mySQLinfo;
-	public      $tabset;
-	public      $mySQLtableList = array(); // list of all Db tables.
-
-	public      $mySQLtableListLanguage = array(); // Db table list for the currently selected language
 	public      $mySQLtablelist = array();
 
 	protected	$dbFieldDefs = array();		// Local cache - Field type definitions for _FIELD_DEFS and _NOTNULL arrays
-	public      $mySQLcharset;
-	public	    $mySqlServerInfo = '?';			// Server info - needed for various things
-
-	public      $total_results = false;			// Total number of results
-
-	/** @var e107_db_debug */
-	private     $dbg;
-
-	private     $debugMode      = false;
+	protected   $mySqlServerInfo = '?';			// Server info - needed for various things
 
 	private     $stringifyFetch = false;	// Prepared-statement results carry native types; stringify on fetch for PDO parity.
 
@@ -265,7 +247,7 @@ class e_db_mysql implements e_db
 
 		if($multiple === true)
 		{
-			$this->mySQLPrefix 		= "`".$database."`.".$prefix;
+			$this->mySQLPrefix 		= "`".str_replace('`', '``', $database)."`.".$prefix;
 			return true;
 		}
 
@@ -338,6 +320,8 @@ class e_db_mysql implements e_db
 	*/
 	public function db_Query($query, $rli = NULL, $qry_from = '', $debug = FALSE, $log_type = '', $log_remark = '')
 	{
+		$this->_notifyDeprecated('db_Query', 'Use $sql->execute($query, $params); it accepts the same SQL with a friendlier parameter map.');
+
 		global $db_time,$db_mySQLQueryCount,$queryinfo;
 		$db_mySQLQueryCount++;
 
@@ -626,6 +610,8 @@ class e_db_mysql implements e_db
 	 */
 	public function select($table, $fields = '*', $arg = '', $noWhere = false, $debug = FALSE, $log_type = '', $log_remark = '')
 	{
+		$this->_notifyDeprecated('select', 'Use the query builder: $sql->createQueryBuilder()->select(...)->from(\'table\')->where(...)->fetchAll().');
+
 		global $db_mySQLQueryCount;
 
 		// Fail closed if the table name is not a plain identifier - it is always
@@ -796,18 +782,6 @@ class e_db_mysql implements e_db
 	}
 
 	/**
-	 * @param string|null $type assoc|num|both
-	 * @return array|bool
-	 * @deprecated v2.0.0 Renamed; use {@see \e107\Database\ConnectionInterface::fetch()}.
-	 */
-	function db_Fetch($type = null)
-	{
-		$this->_notifyDeprecated('db_Fetch', 'Use $sql->fetch() instead.');
-
-		return $this->fetch($type);
-	}
-
-	/**
 	 * Documented at {@see e_db::count()}.
 	 *
 	 * @return int number of affected rows or false on error
@@ -815,6 +789,8 @@ class e_db_mysql implements e_db
 	 */
 	function count($table, $fields = '(*)', $arg = '', $debug = FALSE, $log_type = '', $log_remark = '')
 	{
+		$this->_notifyDeprecated('count', 'Use the query builder: $sql->createQueryBuilder()->selectCount()->from(\'table\')->where(...)->fetchOne().');
+
 		// $fields === 'generic' is the documented raw-SQL escape hatch ($table holds
 		// the full query); every other path interpolates $table unquoted into FROM,
 		// so validate it as a plain identifier and fail closed otherwise.
@@ -891,6 +867,8 @@ class e_db_mysql implements e_db
 	 */
 	function delete($table, $arg = '', $debug = FALSE, $log_type = '', $log_remark = '')
 	{
+		$this->_notifyDeprecated('delete', 'Use the query builder: $sql->createQueryBuilder()->delete(\'table\')->where(...)->execute().');
+
 		// Fail closed if the table name is not a plain identifier - it is always
 		// interpolated unquoted into the DELETE statement below.
 		if($this->_safeIdentifier($table) === false)
@@ -1003,6 +981,8 @@ class e_db_mysql implements e_db
 	 */
 	public function gen($query, $debug = FALSE, $log_type = '', $log_remark = '')
 	{
+		$this->_notifyDeprecated('gen', 'Use $sql->execute($query, $params) with :named parameters; for ordinary CRUD prefer the query builder ($sql->createQueryBuilder()).');
+
 		global $db_mySQLQueryCount;
 
 		$this->tabset = FALSE;
@@ -1058,13 +1038,15 @@ class e_db_mysql implements e_db
 
 
 	/**
-	 * Multi-language Query Function. Run a query on the same table across all languages.
-	 * @param $query
-	 * @param bool $debug
+	 * Documented at {@see e_db::db_Query_all()}.
+	 *
 	 * @return bool
+	 * @deprecated v2.4.0 Use {@see e_db::executeAllLanguages()}.
 	 */
 	function db_Query_all($query, $debug=false)
 	{
+		$this->_notifyDeprecated('db_Query_all', 'Use $sql->executeAllLanguages($query, $params), which resolves #table markers per language leg, or the query builder\'s executeAllLanguages().');
+
         $error = "";
 
 		$query = str_replace("#", $this->mySQLPrefix, $query);
@@ -1182,11 +1164,22 @@ class e_db_mysql implements e_db
 	 * @param string $data
 	 * @return string
 	 */
-	private function _escape($data)
+	protected function _escape($data)
 	{
 		$this->_getMySQLaccess();
 
 		return mysqli_real_escape_string($this->mySQLaccess, (string) $data);
+	}
+
+	/**
+	 * Documented at {@see \e107\Database\ConnectionInterface::quoteStringLiteral()}.
+	 *
+	 * @param string $value
+	 * @return string quoted literal, including the surrounding quotes
+	 */
+	public function quoteStringLiteral($value)
+	{
+		return "'".$this->_escape($value)."'";
 	}
 
 	/**
@@ -1238,7 +1231,7 @@ class e_db_mysql implements e_db
 	 * TODO - better runtime cache - use e107::getRegistry() && e107::setRegistry()
 	 * @return array
 	 */
-	private function _getTableList($language='')
+	protected function _getTableList($language='')
 	{
 
 		$database = !empty($this->mySQLdefaultdb) ? "FROM  `".$this->mySQLdefaultdb."`" : "";
@@ -1423,7 +1416,10 @@ class e_db_mysql implements e_db
 	 * Check if MySQL version is utf8mb4 compatible and may be used as it accordingly to the user choice
 	 *
 	 * @TODO Simplify when the conversion script will be available
-	 * @access public
+	 * @deprecated v2.4.0 Use {@see \e107\Database\ConnectionInterface::setCharset()}.
+	 *             Avoid in new code and migrate existing call sites when
+	 *             refactoring; this method remains supported and tested, with no
+	 *             removal planned.
 	 * @param string    MySQL charset may be forced in special circumstances
 	 *                  UTF-8 encoding and decoding is left to the progammer
 	 * @param bool      TRUE enter debug mode. default FALSE
@@ -1431,6 +1427,8 @@ class e_db_mysql implements e_db
 	 */
 	function db_Set_Charset($charset = '', $debug = FALSE)
 	{
+		$this->_notifyDeprecated('db_Set_Charset', 'Use $sql->setCharset() instead.');
+
 		// Get the default user choice
 		global $mySQLcharset;
 		if (isset($mySQLcharset) && $mySQLcharset != 'utf8mb4')
@@ -1643,7 +1641,7 @@ class e_db_mysql implements e_db
 	 * When the global variable has been unset like in https://github.com/e107inc/e107-test/issues/6 ,
 	 * use the "mySQLaccess" from the default e_db_mysql instance singleton.
 	 */
-	private function _getMySQLaccess()
+	protected function _getMySQLaccess()
 	{
 		if (!$this->mySQLaccess) {
 			global $db_ConnectionID;

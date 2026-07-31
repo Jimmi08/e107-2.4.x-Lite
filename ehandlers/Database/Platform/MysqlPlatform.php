@@ -18,6 +18,8 @@ require_once(__DIR__.'/PlatformInterface.php');
 /**
  * MySQL/MariaDB dialect: the only platform e107 ships today. Both database
  * backends ({@see e_db_pdo} and {@see e_db_mysql}) speak it.
+ *
+ * An SPI implementation, not an application API; see {@see PlatformInterface}.
  */
 class MysqlPlatform implements PlatformInterface
 {
@@ -201,6 +203,21 @@ class MysqlPlatform implements PlatformInterface
 	public function compileFullText(array $quotedColumns, $placeholder)
 	{
 		return 'MATCH ('.implode(', ', $quotedColumns).') AGAINST ('.$placeholder.')';
+	}
+
+	/**
+	 * @return string
+	 */
+	public function compileGroupConcat($quotedExpression, array $quotedOrderBy, $separatorLiteral, $distinct = false)
+	{
+		$sql = 'GROUP_CONCAT('.($distinct ? 'DISTINCT ' : '').$quotedExpression;
+
+		if(!empty($quotedOrderBy))
+		{
+			$sql .= ' ORDER BY '.implode(', ', $quotedOrderBy);
+		}
+
+		return $sql.' SEPARATOR '.$separatorLiteral.')';
 	}
 
 	/**

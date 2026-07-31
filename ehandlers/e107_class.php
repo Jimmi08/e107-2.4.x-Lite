@@ -1660,11 +1660,12 @@ class e107
 	}
 
 	/**
-	 * Retrieve DB singleton object based on the
-	 * $instance_id
+	 * Retrieve the database connection singleton (class alias: e_db) for the
+	 * given instance id.
 	 *
-	 * @param string $instance_id
-	 * @return mixed|e_db
+	 * @param string $instance_id '' for the site database, or the id of a
+	 *                            named secondary connection.
+	 * @return \e107\Database\ConnectionInterface
 	 */
 	public static function getDb($instance_id = '')
 	{
@@ -6858,6 +6859,15 @@ class e107
 	public static function coreUpdateAvailable()
 	{
 
+		// LITE MODIFICATION: no phone-home. Lite does not poll
+		// e107.org/releases.php for core updates (Lite tracks upstream via
+		// git sync, not the e107.org release feed). Returning false here
+		// neutralises all consumers at once: the cron update email
+		// (checkCoreUpdate), the dashboard notice (sc_admin_coreupdate),
+		// and the Development Preview update-channel selector.
+		// Revert condition: Lite opts into e107.org update notifications.
+		return false;
+
 	    // Get site version
 	    $e107info= array();
 
@@ -6870,14 +6880,20 @@ class e107
 	        return false;
 	    }
 
+		$curVersion = str_replace(' (git)', '', $e107info['e107_version']);
+
         $xml  = self::getXml();
         $file = "https://e107.org/releases.php";
+
+		if(self::updateChannel($curVersion) === 'preview')
+		{
+			$file .= '?channel=preview';
+		}
+
         if(!$xdata = $xml->loadXMLfile($file,true))
         {
             return false;
         }
-
-		$curVersion = str_replace(' (git)', '', $e107info['e107_version']);
 
 		if(empty($xdata['core'][0]['@attributes']['version']))
 		{
@@ -6906,6 +6922,37 @@ class e107
 
 		return false;
 
+	}
+
+	/**
+	 * Resolve which release channel to poll for core updates.
+	 * The core pref 'update_channel' ('stable'|'preview') wins when set; otherwise
+	 * prerelease versions (e.g. 2.4.0-alpha1) auto-detect the preview channel.
+	 * @param string|null $curVersion - current e107 version; read from ver.php when omitted.
+	 * @return string 'stable' or 'preview'
+	 */
+	public static function updateChannel($curVersion = null)
+	{
+		$pref = self::getPref('update_channel');
+
+		if($pref === 'stable' || $pref === 'preview')
+		{
+			return $pref;
+		}
+
+		if($curVersion === null)
+		{
+			$e107info = array();
+
+			if(is_readable(e_ADMIN."ver.php"))
+			{
+				include(e_ADMIN."ver.php"); // $e107info['e107_version'];
+			}
+
+			$curVersion = isset($e107info['e107_version']) ? $e107info['e107_version'] : '';
+		}
+
+		return preg_match('/-(alpha|beta|RC)\d/i', $curVersion) ? 'preview' : 'stable';
 	}
 
 	/**

@@ -34,6 +34,12 @@ use PDO;
  * The e_db_parityTest reflection suite keeps the two backends' public
  * surfaces aligned; this trait is what makes most of that surface a single
  * implementation.
+ *
+ * Deprecated members here carry documentation pointer stubs only; the
+ * canonical docblocks, the decision guide and the backwards-compatibility
+ * commitment (avoid deprecated methods in new code and migrate call sites
+ * when refactoring, while the methods themselves remain supported and
+ * tested, with no removal planned) live at {@see ConnectionInterface}.
  */
 trait ConnectionTrait
 {
@@ -42,9 +48,62 @@ trait ConnectionTrait
 
 	private     $pdoBind        = false;
 
+	/*
+	 * Shared connection state, kept here in a single copy for both backends.
+	 * Driver-specific members (the $mySQLaccess handle and friends) remain in
+	 * the backend classes.
+	 */
+	public      $mySQLPrefix;
+
+	/** @var \PDOStatement|\mysqli_result|resource|int|bool result handle or row count of the last query */
+	public      $mySQLresult;
+	protected   $mySQLerror = false;			// Error reporting mode - TRUE shows messages
+
+	protected   $mySQLlastErrNum = 0;		// Number of last error - now protected, use getLastErrorNumber()
+	protected   $mySQLlastErrText = '';		// Text of last error - now protected, use getLastErrorText()
+
+	protected   $mySQLcurTable;
+	public      $mySQLlanguage;
+	public      $tabset;
+	public      $mySQLtableList = array(); // list of all Db tables.
+
+	public      $mySQLtableListLanguage = array(); // Db table list for the currently selected language
+
+	public      $mySQLcharset;
+
+	public      $total_results = false;			// Total number of results
+
+	/** @var e107_db_debug */
+	private     $dbg;
+
+	private     $debugMode      = false;
+
+	/*
+	 * Backend contract: the driver-specific methods this trait calls.
+	 * Declared abstract so the dependency is explicit to readers and tooling,
+	 * and signature-checked when the trait is composed (PHP 8+), instead of
+	 * resolving invisibly at runtime. Signatures mirror the backends;
+	 * e_db_parityTest keeps the two backends' copies identical.
+	 */
+	abstract public function gen($query, $debug = false, $log_type = '', $log_remark = '');
+	abstract public function fetch($type = null);
+	abstract public function select($table, $fields = '*', $arg = '', $noWhere = false, $debug = false, $log_type = '', $log_remark = '');
+	abstract public function lastInsertId();
+	abstract public function getFieldDefs($tableName);
+	abstract public function db_Query($query, $rli = null, $qry_from = '', $debug = false, $log_type = '', $log_remark = '');
+	abstract public function rowCount($result = null);
+	abstract public function isTable($table, $language = '');
+	abstract public function dbError($from);
+	abstract public function fields($table, $prefix = '', $retinfo = false);
+	abstract public function execute($sql, $params = array());
+
+	abstract protected function _escape($data);
+	abstract protected function _getTableList($language = '');
+	abstract protected function _getMySQLaccess();
+
 	/**
 	 * Get system config
-	 * @return e_core_pref
+	 * @return \e_core_pref
 	 */
 	public function getConfig()
 	{
@@ -102,19 +161,34 @@ trait ConnectionTrait
 	/**
 	 * Resolve a logical e107 table name to its physical name: the database
 	 * prefix is attached and, on multi-language sites, the table is routed to
-	 * the current language's lan_* table when one exists.
+	 * a language's lan_* table when one exists.
 	 *
 	 * @param string $table table name with or without a leading '#'
+	 * @param string|null $language null: route for the connection's current
+	 *                    language, honouring the multilanguage preference (the
+	 *                    default); a language name, e.g. 'Spanish': route to
+	 *                    that language's lan_* table when it exists, regardless
+	 *                    of the current language or the multilanguage preference
 	 * @return string|false physical table name (unquoted), or false when the
 	 *                      name is not a valid identifier
 	 */
-	public function resolveTableName($table)
+	public function resolveTableName($table, $language = null)
 	{
 		$table = ltrim((string) $table, '#');
 
 		if(!preg_match('/^[A-Za-z0-9_]+$/D', $table))
 		{
 			return false;
+		}
+
+		if($language !== null)
+		{
+			if($this->isTable($table, $language))
+			{
+				return $this->mySQLPrefix.'lan_'.strtolower($language.'_'.$table);
+			}
+
+			return $this->mySQLPrefix.$table;
 		}
 
 		return $this->mySQLPrefix.$this->hasLanguage($table);
@@ -145,6 +219,52 @@ trait ConnectionTrait
 		}
 
 		return $this->mySQLPrefix.$table;
+	}
+
+	/**
+	 * Documented at {@see ConnectionInterface::executeAllLanguages()}.
+	 *
+	 * @param string $sql
+	 * @param array $parameters
+	 * @return int|false statements executed (>= 1), or false when any leg failed
+	 */
+	public function executeAllLanguages($sql, $parameters = array())
+	{
+		$legs = array(false); // false: prefix-only resolution, the base tables
+
+		$tables = $this->_markerTables($sql);
+
+		if(!empty($tables) && ($variants = $this->hasLanguage($tables, true)))
+		{
+			foreach(array_keys($variants) as $language)
+			{
+				$legs[] = $language;
+			}
+		}
+
+		$failedText = null;
+		$failedNumber = null;
+
+		foreach($legs as $language)
+		{
+			if($this->execute($this->_substituteTableNames($sql, $language), $parameters) === false
+				&& $failedText === null)
+			{
+				$failedText = $this->getLastErrorText();
+				$failedNumber = $this->getLastErrorNumber();
+			}
+		}
+
+		if($failedText !== null)
+		{
+			// later successful legs reset the error state; resurface the first failure
+			$this->mySQLlastErrText = $failedText;
+			$this->mySQLlastErrNum = $failedNumber;
+
+			return false;
+		}
+
+		return count($legs);
 	}
 
 	/**
@@ -250,33 +370,92 @@ trait ConnectionTrait
 	}
 
 	/**
+	 * Quote-aware scan for '#table' markers: string literals, backticked
+	 * identifiers and comments are consumed first, so a '#' inside them is
+	 * never treated as a marker. Group 1 captures `#table`, group 2 bare #table.
+	 *
+	 * @var string
+	 */
+	private static $markerScan = '/\'(?:[^\'\\\\]|\\\\.)*\'|"(?:[^"\\\\]|\\\\.)*"|`#([A-Za-z0-9_]+)`|`[^`]*`|\/\*[\s\S]*?\*\/|--[^\r\n]*|#([A-Za-z0-9_]+)/';
+
+	/**
 	 * Replace `#table` (and bare #table) markers with physical table names via
-	 * a quote-aware scan: string literals, backticked identifiers and comments
-	 * are consumed first, so a '#' inside them is never rewritten.
+	 * the {@see ConnectionTrait::$markerScan} scan.
 	 *
 	 * @param string $sql
+	 * @param string|false|null $language null: route for the current language;
+	 *                          false: attach the prefix only, no language
+	 *                          routing; a language name: route to that
+	 *                          language's lan_* tables where they exist
 	 * @return string
 	 */
-	private function _substituteTableNames($sql)
+	private function _substituteTableNames($sql, $language = null)
 	{
 		return preg_replace_callback(
-			'/\'(?:[^\'\\\\]|\\\\.)*\'|"(?:[^"\\\\]|\\\\.)*"|`#([A-Za-z0-9_]+)`|`[^`]*`|\/\*[\s\S]*?\*\/|--[^\r\n]*|#([A-Za-z0-9_]+)/',
-			function ($matches)
+			self::$markerScan,
+			function ($matches) use ($language)
 			{
 				if(!empty($matches[1])) // `#table`
 				{
-					return '`'.$this->resolveTableName($matches[1]).'`';
+					return '`'.$this->_resolveMarker($matches[1], $language).'`';
 				}
 
 				if(isset($matches[2]) && $matches[2] !== '') // bare #table
 				{
-					return $this->resolveTableName($matches[2]);
+					return $this->_resolveMarker($matches[2], $language);
 				}
 
 				return $matches[0];
 			},
 			$sql
 		);
+	}
+
+	/**
+	 * Resolve one marker table name for {@see ConnectionTrait::_substituteTableNames()}.
+	 *
+	 * @param string $table
+	 * @param string|false|null $language see {@see ConnectionTrait::_substituteTableNames()}
+	 * @return string|false
+	 */
+	private function _resolveMarker($table, $language)
+	{
+		if($language === false)
+		{
+			return $this->resolvePhysicalTableName($table);
+		}
+
+		return $this->resolveTableName($table, $language);
+	}
+
+	/**
+	 * Collect the logical table names referenced by '#table' markers.
+	 *
+	 * @param string $sql
+	 * @return string[] unique logical names, in order of first appearance
+	 */
+	private function _markerTables($sql)
+	{
+		$tables = array();
+
+		if(!preg_match_all(self::$markerScan, $sql, $matches, PREG_SET_ORDER))
+		{
+			return $tables;
+		}
+
+		foreach($matches as $match)
+		{
+			if(!empty($match[1]))
+			{
+				$tables[$match[1]] = true;
+			}
+			elseif(isset($match[2]) && $match[2] !== '')
+			{
+				$tables[$match[2]] = true;
+			}
+		}
+
+		return array_keys($tables);
 	}
 
 	/**
@@ -359,6 +538,16 @@ trait ConnectionTrait
 		static $notified = array();
 
 		$trace = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 3);
+
+		// Internal routing (retrieve() driving select(), a v1 shim delegating
+		// to its replacement, the CRUD methods running through db_Query()) is
+		// not a call site to warn about; only application code is.
+		$callerFile = isset($trace[1]['file']) ? basename($trace[1]['file']) : '';
+		if(in_array($callerFile, array('ConnectionTrait.php', 'e_db_pdo_class.php', 'mysql_class.php', 'e_db_legacy_trait.php'), true))
+		{
+			return;
+		}
+
 		$site = (isset($trace[1]['file']) ? $trace[1]['file'] : '?').':'.(isset($trace[1]['line']) ? $trace[1]['line'] : '?');
 
 		if(isset($notified[$method.'|'.$site]))
@@ -389,10 +578,13 @@ trait ConnectionTrait
 	}
 
 	/**
-	 * @param $matches
+	 * preg_replace_callback() callback that substitutes a matched table
+	 * reference with its prefixed, language-routed physical name.
+	 *
+	 * @param array $matches
 	 * @return string
 	 */
-	function ml_check($matches)
+	protected function ml_check($matches)
 	{
 		$table = $this->hasLanguage($matches[1]);
 		if($this->tabset == false)
@@ -663,7 +855,7 @@ trait ConnectionTrait
 	{
 		if ($fields !== '*') return array($fields, $fields);
 
-		$fieldList = $this->db_FieldList($table);
+		$fieldList = $this->fields($table);
 		$unique = $this->_getUnique($table);
 
 		$flds = array();
@@ -793,6 +985,8 @@ trait ConnectionTrait
 	 */
 	public function retrieve($table=null, $fields = null, $where=null, $multi = false, $indexField = null, $debug = false)
 	{
+		$this->_notifyDeprecated('retrieve', 'Use the query builder: $sql->createQueryBuilder()->select(...)->from(\'table\')->where(...)->fetchAll(), ->fetchRow() or ->fetchOne().');
+
 		// fetch mode
 		if(empty($table))
 		{
@@ -917,12 +1111,10 @@ trait ConnectionTrait
 	}
 
 	/**
-	* @return array
-	* @param string fields to retrieve
-	* @desc returns fields as structured array
-	* @access public
-	* @return array rows of the database as an array.
-	*/
+	 * Documented at {@see ConnectionInterface::rows()}.
+	 *
+	 * @return array
+	 */
 	function rows($fields = 'ALL', $amount = false, $maximum = false, $ordermode=false)
 	{
 		$list = array();
@@ -963,6 +1155,8 @@ trait ConnectionTrait
 	 */
 	public function max($table, $field, $where='')
 	{
+		$this->_notifyDeprecated('max', 'Use the query builder: $sql->createQueryBuilder()->selectAggregate(\'MAX\', \'field\')->from(\'table\')->fetchOne().');
+
 		if(($table = $this->_safeIdentifier($table)) === false || ($field = $this->_safeIdentifier($field, true)) === false)
 		{
 			return null;
@@ -1176,6 +1370,8 @@ trait ConnectionTrait
 	 */
 	function insert($tableName, $arg, $debug = false, $log_type = '', $log_remark = '')
 	{
+		$this->_notifyDeprecated('insert', 'Use the query builder: $sql->createQueryBuilder()->insert(\'table\')->values($row)->execute().');
+
 		$table = $this->hasLanguage($tableName);
 		$this->mySQLcurTable = $table;
 		$REPLACE = false; // kill any PHP notices
@@ -1352,6 +1548,8 @@ trait ConnectionTrait
 	 */
 	function replace($table, $arg, $debug = false, $log_type = '', $log_remark = '')
 	{
+		$this->_notifyDeprecated('replace', 'Use the query builder: $sql->createQueryBuilder()->replace(\'table\')->values($row)->execute().');
+
 		$arg['_REPLACE'] = TRUE;
 		return $this->insert($table, $arg, $debug, $log_type, $log_remark);
 	}
@@ -1429,6 +1627,8 @@ trait ConnectionTrait
 	 */
 	function update($tableName, $arg, $debug = false, $log_type = '', $log_remark = '')
 	{
+		$this->_notifyDeprecated('update', 'Use the query builder: $sql->createQueryBuilder()->update(\'table\')->set(\'col\', $value)->where(...)->execute().');
+
 		$table = $this->hasLanguage($tableName);
 		$this->mySQLcurTable = $table;
 

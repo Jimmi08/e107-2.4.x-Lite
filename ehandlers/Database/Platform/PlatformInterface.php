@@ -22,6 +22,10 @@ use InvalidArgumentException;
  * needs (identifier quoting, LIMIT syntax, regular-expression operator,
  * default character set) without attempting schema abstraction or a driver
  * registry. Obtain the connection's platform via {@see ConnectionInterface::getPlatform()}.
+ *
+ * This is an SPI, not an application API: application code reaches it only
+ * through the builders, or via getPlatform() for the rare dialect-specific
+ * edge case.
  */
 interface PlatformInterface
 {
@@ -187,6 +191,24 @@ interface PlatformInterface
 	 * @return string
 	 */
 	public function compileFullText(array $quotedColumns, $placeholder);
+
+	/**
+	 * Build a string-aggregation expression (e.g. MySQL's GROUP_CONCAT,
+	 * PostgreSQL's string_agg). The aggregated expression and any ORDER BY
+	 * terms arrive quoted; the separator arrives as a complete quoted string
+	 * literal (see {@see ConnectionInterface::quoteStringLiteral()}), because some
+	 * dialects (MySQL's SEPARATOR clause) reject a bound parameter in that
+	 * position. Dialects that cannot spell a requested combination (e.g. no
+	 * in-aggregate ORDER BY) throw {@see UnsupportedException}.
+	 *
+	 * @param string $quotedExpression Quoted aggregated expression.
+	 * @param string[] $quotedOrderBy Quoted "identifier ASC|DESC" terms; may be empty.
+	 * @param string $separatorLiteral Quoted string literal for the separator.
+	 * @param bool $distinct Aggregate only distinct values.
+	 * @return string
+	 * @throws UnsupportedException when the dialect cannot spell the combination.
+	 */
+	public function compileGroupConcat($quotedExpression, array $quotedOrderBy, $separatorLiteral, $distinct = false);
 
 	/**
 	 * Build an ALTER TABLE statement from one or more already-rendered clauses
