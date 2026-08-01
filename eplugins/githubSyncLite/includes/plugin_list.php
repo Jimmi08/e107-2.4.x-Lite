@@ -63,7 +63,20 @@ class githubSyncLite_plugin_list
 			return false;
 		}
 
-		$url = "https://api.github.com/repos/{$org}/{$repo}/contents/eplugins?ref=" . rawurlencode($branch);
+		// Validate the segments the same way the sync engine does, before they
+		// go into the API URL — reject anything that isn't a plain GitHub
+		// path segment (blocks '/', '#', '?', '..' and other URL-altering input).
+		foreach (array('organization' => $org, 'repo' => $repo, 'branch' => $branch) as $label => $seg)
+		{
+			if (!preg_match('/^[A-Za-z0-9._-]+$/', $seg) || strpos($seg, '..') !== false)
+			{
+				$mes->addError('Invalid ' . $label . ' — only letters, digits, dot, underscore and hyphen are allowed.');
+				return false;
+			}
+		}
+
+		$url = 'https://api.github.com/repos/' . rawurlencode($org) . '/' . rawurlencode($repo)
+			. '/contents/eplugins?ref=' . rawurlencode($branch);
 
 		// SSL verification stays ON in production; relaxed only under e_DEBUG
 		// (local development), matching the sync engine's behaviour.

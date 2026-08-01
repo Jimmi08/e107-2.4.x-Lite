@@ -494,8 +494,13 @@ class github_sync_engine
 			// mapping, but the catch-all ($zipBase.'/' => e_BASE) would still
 			// relocate plugin files, so skip them explicitly here. Plugins are
 			// installed selectively, not as part of the core.
-			if ($type === 'core' && strpos($stored, $zipBase . '/eplugins/') === 0)
+			if ($type === 'core'
+				&& (strpos($stored, $zipBase . '/eplugins/') === 0
+					|| strpos($stored, $zipBase . '/e107_plugins/') === 0))
 			{
+				// Skip both the Lite short name (eplugins/) and the upstream long
+				// name (e107_plugins/): a core sync must never write plugin files,
+				// whichever layout the configured Source repo uses.
 				$skipped[] = $stored;
 				continue;
 			}

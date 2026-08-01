@@ -73,12 +73,29 @@ class githubSyncLite_config_ui extends e_admin_ui
 		'token' => array(
 			'title' => 'GitHub token',
 			'tab'   => 0,
-			'type'  => 'text',
+			'type'   => 'method', // custom render: masked, never echoes the stored value
+			'method' => 'tokenField', // explicit: avoid clashing with e_form::token()
 			'data'  => 'str',
-			'help'  => 'Personal Access Token — required only for a private repository. Leave empty for a public repo.',
-			'writeParms' => array('size' => 'xxlarge', 'maxlength' => 255, 'default' => ''),
+			'help'  => 'Personal Access Token — needed only for a private repository, or to raise the '
+				. 'plugin-list refresh rate limit. Lite itself is a public repo, so you can usually leave '
+				. 'this empty. If a token is already stored it shows as dots; leave the field blank to keep it.',
+			'writeParms' => array('size' => 'xxlarge'),
 		),
 	);
+
+	/**
+	 * Keep the existing token when the field is submitted empty (masked field),
+	 * so saving other settings doesn't wipe a stored token.
+	 */
+	public function beforePrefsSave($new_data, $old_data)
+	{
+		if (isset($new_data['token']) && trim((string) $new_data['token']) === '')
+		{
+			$new_data['token'] = $old_data['token'] ?? '';
+		}
+
+		return $new_data;
+	}
 
 	public function init()
 	{
@@ -115,6 +132,30 @@ class githubSyncLite_config_ui extends e_admin_ui
 
 class githubSyncLite_config_form_ui extends e_admin_form_ui
 {
+	/**
+	 * Custom render for the 'token' pref field (type => 'method',
+	 * method => 'tokenField'). Named tokenField (NOT token) to avoid clashing
+	 * with e_form::token(), which emits the CSRF token.
+	 *
+	 * NEVER emits the stored token into HTML — shows a masked placeholder when
+	 * one is set, an empty box otherwise. Submitting it blank keeps the stored
+	 * token (handled in the controller's beforePrefsSave()).
+	 */
+	public function tokenField($curVal, $mode, $parms = array())
+	{
+		$stored = e107::getPlugConfig('githubSyncLite')->get('token', '');
+		$has    = ($stored !== '');
+
+		$opts = array(
+			'size'         => 'xxlarge',
+			'maxlength'    => 255,
+			'placeholder'  => $has ? '•••••••• (stored — leave blank to keep)' : 'Optional GitHub token',
+			'autocomplete' => 'off',
+		);
+
+		// Always render an EMPTY value — the stored token is never sent to the browser.
+		return $this->text('token', '', 255, $opts);
+	}
 }
 
 

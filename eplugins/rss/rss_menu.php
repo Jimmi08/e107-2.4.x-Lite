@@ -20,7 +20,6 @@ if (!e107::isInstalled('rss'))
 
 $sql = e107::getDb();
 
-//	e107::includeLan(e_PLUGIN."rss/languages/".e_LANGUAGE."_admin_rss.php");
 e107::lan("rss", true);
 
 

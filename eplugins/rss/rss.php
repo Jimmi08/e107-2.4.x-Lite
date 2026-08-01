@@ -305,9 +305,7 @@ class rssCreate
 
 	function debug()
 	{
-	//	unset($this->e107);
-	//	print_a($this);
-	 	//print_a($this -> rssItems);
+		print_a($this->rssItems);
 	}
 
 	function buildRss($rss_title)
@@ -697,7 +695,6 @@ class rssCreate
 
 	function get_iso_8601_date($int_date)
 	{	//$int_date: current date in UNIX timestamp
-		return '';
 		$date_mod = date('Y-m-d\TH:i:s', $int_date);
 		$pre_timezone = date('O', $int_date);
 		$time_zone = substr($pre_timezone, 0, 3).":".substr($pre_timezone, 3, 2);
