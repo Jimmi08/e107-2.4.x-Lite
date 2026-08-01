@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<e107Plugin name="Github Sync Lite" lan="Github Sync Lite" version="0.1.0" date="2026-08-01" compatibility="2.4" installRequired="false" >
+	<author name="Jimako" url="https://www.e107sk.com/" />
+	<summary lan="">Lightweight core + selective-plugin sync from a GitHub repo (Lite).</summary>
+	<description lan="">Downloads the Lite core from a GitHub repo, excluding eplugins/, and (later) lets you pick which plugins to install. Uses its own copy of the sync engine; no database table, no dependency on the full githubSync plugin.</description>
+	<keywords>
+		<word>admin</word>
+		<word>tools</word>
+		<word>sync</word>
+	</keywords>
+	<category>tools</category>
+	<copyright>e107sk.com</copyright>
+	<adminLinks>
+		<link url="admin/admin_sync.php" description="" icon='images/plugin_64.png' iconSmall='images/plugin_32.png' primary="true" >Github Sync Lite</link>
+	</adminLinks>
+</e107Plugin>
