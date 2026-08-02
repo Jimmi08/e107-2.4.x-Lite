@@ -44,7 +44,7 @@ if (deftrue('e_CURRENT_PLUGIN') && ($res = $sql->createQueryBuilder()->select('r
 	$type = $res['rss_url'];
 	$plug = $res['rss_path'];
 }
-elseif ($sql->select("rss", "rss_path", " rss_path = 'news' LIMIT 1")) // Fall back to news, if available.
+elseif ($sql->createQueryBuilder()->select('rss_path')->from('rss')->where('rss_path', 'news')->limit(1)->execute()) // Fall back to news, if available.
 {
 	$caption = LAN_PLUGIN_RSS_SUBSCRIBE;
 	$type = 'news';

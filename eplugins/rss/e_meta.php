@@ -15,13 +15,19 @@
 if (!defined('e107_INIT')) { exit; }
 
 
-if(USER_AREA && e107::getDb()->select("rss", "*", "rss_class='0' AND rss_limit>0 ORDER BY rss_name"))
+if(USER_AREA)
 {
 
     $tp = e107::getParser();
     $sql = e107::getDb();
 
-	while($row = $sql->fetch())
+	$rows = $sql->createQueryBuilder()->select('*')->from('rss')
+		->where('rss_class', 0)
+		->where('rss_limit', '>', 0)
+		->orderBy('rss_name')
+		->fetchAll();
+
+	foreach($rows as $row)
 	{
 		if(strpos($row['rss_url'], "*") === false) // Wildcard topic_id's should not be listed
 		{
