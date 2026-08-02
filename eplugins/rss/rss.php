@@ -80,7 +80,15 @@ if (empty($rss_type))
 	$sc = e107::getScBatch('rss', true);
 	$sc->wrapper('rss/page');
 
-	if(!$sql->select('rss', '*', "`rss_class` = 0 AND `rss_limit` > 0 AND `rss_topicid` NOT REGEXP ('\\\*') ORDER BY `rss_name`"))
+	$qb = $sql->createQueryBuilder();
+	$rssFeeds = $qb->select('*')->from('rss')
+		->where('rss_class', 0)
+		->where($qb->expr()->gt('rss_limit', 0))
+		->where($qb->expr()->not($qb->expr()->regexp('rss_topicid', '\\*')))
+		->orderBy('rss_name', 'ASC')
+		->fetchAll();
+
+	if(empty($rssFeeds))
 	{
 		$ns->tablerender(LAN_ERROR, RSS_LAN_ERROR_4);
 	}
@@ -99,15 +107,19 @@ if (empty($rss_type))
 			{
 				require_once(THEME.'rss_template.php');
 			}
-			else
+			elseif (is_readable(e_PLUGIN.'rss/rss_template.php'))
 			{
 				require_once(e_PLUGIN.'rss/rss_template.php');
 			}
 		}
 
+		$RSS_LIST_HEADER = varset($RSS_LIST_HEADER, '');
+		$RSS_LIST_TABLE  = varset($RSS_LIST_TABLE, '');
+		$RSS_LIST_FOOTER = varset($RSS_LIST_FOOTER, '');
+
 		$text = $tp->parseTemplate($RSS_LIST_HEADER);
 
-		while($row = $sql->fetch())
+		foreach($rssFeeds as $row)
 		{
 			$sc->setVars($row);
 			$text .= $tp->parseTemplate($RSS_LIST_TABLE, false, $sc);
@@ -130,34 +142,50 @@ while (ob_get_length() !== false)  // destroy all ouput buffering
 
  
 
-$check_topic = ($topic_id ? " AND rss_topicid = '".$topic_id."' " : "");
+$rssFeedLookup = function($topicValue) use ($sql, $content_type)
+{
+	$qb = $sql->createQueryBuilder();
+	$qb->select('*')->from('rss')
+		->where('rss_class', '!=', 2)
+		->where('rss_url', $content_type)
+		->where($qb->expr()->gt('rss_limit', 0));
 
-if(!$sql->select('rss', '*', "rss_class != 2 AND rss_url='".$content_type."' ".$check_topic." AND rss_limit > 0 "))
+	if($topicValue)
+	{
+		$qb->where('rss_topicid', $topicValue);
+	}
+
+	return $qb->fetchRow();
+};
+
+$row = $rssFeedLookup($topic_id ? $topic_id : false);
+
+if(empty($row))
 {	// Check if wildcard present for topic_id
-	$check_topic = ($topic_id ? " AND rss_topicid = '".str_replace($topic_id, "*", $topic_id)."' " : "");
-	if(!$sql->select('rss', '*', "rss_class != 2 AND rss_url='".$content_type."' ".$check_topic." AND rss_limit > 0 "))
+	$row = $rssFeedLookup($topic_id ? str_replace($topic_id, "*", $topic_id) : false);
+
+	if(empty($row))
 	{
 		require_once(HEADERF);
-		
+
 		$repl  		= array("<br /><br /><a href='".e_REQUEST_SELF."'>", "</a>");
 		$message 	= str_replace(array("[","]"), $repl, RSS_LAN_ERROR_1);
 		e107::getRender()->tablerender('', $message);
-		
+
 		require_once(FOOTERF);
 		exit;
 	}
-	else
-	{
-		$row = $sql->fetch();
-	}
-}
-else
-{
-	$row = $sql->fetch();
 }
 
- 
+
 // ----------------------------------------------------------------------------
+
+// LITE MODIFICATION: The upstream rss_menu content-type switch (news / comments /
+// forum / download cases) that once produced the feed items here was removed in
+// Lite. Feeds are produced via each plugin's e_rss.php path (see rssCreate below).
+// Consequently the builder migration of that switch in upstream commit 9cf3520d
+// (#5811) — including the `case 'comments'` SELECT — has no target here and is
+// intentionally NOT ported. Do not re-flag this as an out-of-sync difference.
 
 if($rss = new rssCreate($content_type, $rss_type, $topic_id, $row))
 {

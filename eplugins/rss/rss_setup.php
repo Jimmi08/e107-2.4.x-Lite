@@ -22,6 +22,9 @@ class rss_setup
 */
 	function install_post($var)
 	{
+	// LITE MODIFICATION: The default "news" install seed below is intentionally
+	// disabled in Lite (commented out), so the upstream valuesTyped INSERT swap in
+	// commit 9cf3520d (#5811) has no active target and is knowingly skipped here.
 	// 	$sql = e107::getDb();
 	// 	$mes = e107::getMessage();
 
