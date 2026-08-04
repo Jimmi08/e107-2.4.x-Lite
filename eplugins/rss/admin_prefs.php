@@ -104,7 +104,9 @@ class rss_ui extends e_admin_ui
 
 
 	protected $prefs = array(
-		 
+		'rss_othernews'     => array('title' => RSS_LAN_ADMIN_13, 'type' => 'boolean', 'data' => 'int'),
+		'rss_summarydiz'    => array('title' => RSS_LAN_ADMIN_19, 'type' => 'boolean', 'data' => 'integer'),
+		'rss_shownewsimage' => array('title' => RSS_LAN_ADMIN_33, 'type' => 'boolean', 'data' => 'int')
 	);
 
 
@@ -200,6 +202,17 @@ class rss_ui extends e_admin_ui
 		$sqli = new db;
 		$feedlist = array();
 
+		// @see e107_plugins/news/e_rss.php
+
+		// Comments
+		$feed['name'] = LAN_COMMENTS;
+		$feed['url'] = 'comments';
+		$feed['topic_id'] = '';
+		$feed['path'] = 'comments';
+		$feed['text'] = RSS_PLUGIN_LAN_9;
+		$feed['class'] = '0';
+		$feed['limit'] = '9';
+		$feedlist[] = $feed;
 
 		// Plugin rss feed, using e_rss.php in plugin folder
 		$plugin_feedlist = array();
