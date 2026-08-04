@@ -102,26 +102,3 @@ if (!empty($type))
 
 	e107::getRender()->tablerender($caption, $text, 'rss');
 }
-else
-{
-	$rows = $sql->retrieve("rss", "*", true, true);
-	foreach ($rows as $res)
-	{
-		$caption = e107::getParser()->lanVars(LAN_PLUGIN_RSS_SUBSCRIBE_TO, deftrue('LAN_PLUGIN_' . strtoupper(e_CURRENT_PLUGIN) . '_NAME'));
-
-		$type  = $res['rss_type'];
-		$topic = $res['rss_topicid'];
-		$url = $res['rss_url'];
-		$plug = $res['rss_path'];
-
-
-		$rss_link = e107::url('rss', 'rss', array('rss_type' => $type, 'rss_url' => $url, 'rss_topicid' => $topic), array('mode'=>"full"));
-
-
-		$text .= "
-			<div>
-				<a class='btn btn-sm btn-default'  href='" . $rss_link . "'>" . $tp->toGlyph('fa-rss') . " RSS</a>
-			</div>";
-	}
-	e107::getRender()->tablerender($caption, $text, 'rss');
-}
