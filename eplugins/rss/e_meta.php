@@ -29,7 +29,11 @@ if(USER_AREA)
 
 	foreach($rows as $row)
 	{
-		if(strpos($row['rss_url'], "*") === false) // Wildcard topic_id's should not be listed
+		// LITE MODIFICATION: check rss_topicid (not rss_url) for the wildcard.
+		// The wildcard '*' is only ever stored in rss_topicid; rss_url is the plain
+		// feed key and never contains '*', so the upstream test on rss_url never
+		// filters anything. Reported upstream as e107inc/e107 #5872.
+		if(strpos($row['rss_topicid'], "*") === false) // Wildcard topic_id's should not be listed
 		{
 			$name = $tp->toHTML($row['rss_name'], TRUE, 'no_hook, emotes_off');
 			$title = htmlspecialchars(SITENAME, ENT_QUOTES, 'utf-8')." ".htmlspecialchars($name, ENT_QUOTES, 'utf-8');
@@ -53,4 +57,3 @@ if(USER_AREA)
 
 	unset($name, $title);
 }
-
