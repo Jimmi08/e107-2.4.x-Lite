@@ -588,7 +588,17 @@ class user_shortcodes extends e_shortcode
 	
 		if($parms[1] == 'prev')
 		{
-		
+
+			// LITE FEATURE: link/title raw-return accessors, forward-ported from upstream
+			// ad823ba03 onto Lite's newer sc_user_jump_link (scDualParams). Lite's version
+			// is ahead of upstream here; proposed upstream. Do not overwrite on sync until
+			// upstream unifies.
+			if(isset($userjump['prev']['id']))
+			{
+				if(isset($parms[2]['link']))  return $url->create('user/profile/view', $userjump['prev']);
+				if(isset($parms[2]['title'])) return $userjump['prev']['name'];
+			}
+
 			$icon = (deftrue('BOOTSTRAP')) ? $tp->toGlyph('fa-chevron-left') : '&lt;&lt;';
 	    	return isset($userjump['prev']['id']) ? "<a class='".$class."' href='".$url->create('user/profile/view', $userjump['prev']) ."' title=\"".$userjump['prev']['name']."\">".$icon." ".LAN_USER_40."</a>\n" : "&nbsp;";
 		
@@ -597,6 +607,13 @@ class user_shortcodes extends e_shortcode
 		}
 		else
 		{
+			// LITE FEATURE: link/title raw-return accessors (see prev branch)
+			if(isset($userjump['next']['id']))
+			{
+				if(isset($parms[2]['link']))  return $url->create('user/profile/view', $userjump['next']);
+				if(isset($parms[2]['title'])) return $userjump['next']['name'];
+			}
+
 			$icon = (deftrue('BOOTSTRAP')) ? $tp->toGlyph('fa-chevron-right') : '&gt;&gt;';
 			return isset($userjump['next']['id']) ? "<a class='".$class."' href='".$url->create('user/profile/view', $userjump['next'])."' title=\"".$userjump['next']['name']."\">".LAN_USER_41." ".$icon."</a>\n" : "&nbsp;";
 			// return isset($userjump['next']['id']) ? "[ <a href='".$url->create('user/profile/view', $userjump['next'])."'>".$userjump['next']['name']."</a> ] ".LAN_USER_41." &gt;&gt;" : "&nbsp;";
