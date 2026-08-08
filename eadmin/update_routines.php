@@ -56,24 +56,6 @@ if(is_readable(e_ADMIN.'ver.php'))
 }
 
 $mes = e107::getMessage();
-/*
-// If $dont_check_update is both defined and TRUE on entry, a check for update is done only once per 24 hours.
-$dont_check_update = varset($dont_check_update, FALSE);
-
-
-if ($dont_check_update === TRUE)
-{
-	$dont_check_update = FALSE;
-	if ($tempData = $e107cache->retrieve_sys('nq_admin_updatecheck',3600, TRUE))
-	{	// See when we last checked for an admin update
-		list($last_time, $dont_check_update, $last_ver) = explode(',',$tempData);
-		if ($last_ver != $e107info['e107_version'])
-		{
-			$dont_check_update = FALSE;		// Do proper check on version change
-		}
-	}
-}
-*/
 
 $dont_check_update = false;
 
@@ -151,17 +133,12 @@ class e107Update
 
 		// CSRF: the core/plugin update routines below are state-changing and
 		// write to the database, so a forged cross-site POST must not be able
-		// to trigger them. Require a valid session token before any update runs
-		// and fail closed. check() honours the site security level, so installs
-		// with token protection disabled are unaffected.
+		// to trigger them. Re-checking here turns what class2.php answers with a
+		// bare die() into an error an admin can read, and catches a token that
+		// expired between rendering the form and submitting it.
 		if((varset($_POST['update_core']) && is_array($_POST['update_core']))
 			|| (varset($_POST['update']) && is_array($_POST['update'])))
 		{
-			if(!isset($_POST['e-token']))
-			{
-				$_POST['e-token'] = '';
-			}
-
 			if(!e107::getSession()->check(false))
 			{
 				$mes->addError('Unauthorized access - invalid or missing security token.');
@@ -342,7 +319,12 @@ class e107Update
 	{
 		$ns = e107::getRender();
 		$mes = e107::getMessage();
-		
+
+		if(!e_random::isAvailable())
+		{
+			$mes->addError(e_random::UNAVAILABLE);
+		}
+
 		$caption = LAN_UPDATE;
 		$text = "
 		<form method='post' action='".e_ADMIN."e107_update.php'>
@@ -401,9 +383,22 @@ function update_check()
 
 	if ($dont_check_update === FALSE)
 	{
-		$dbUpdatesPref = array();
-
 		$skip = e107::getPref('db_updates');
+		$version = varset($e107info['e107_version'], '');
+
+		if(!is_array($skip) || e107::getPref('db_updates_version') !== $version || $version === '')
+		{
+			// A record of which checks have already passed belongs to the version
+			// that produced it. Any other version may have given those routines
+			// something to do again, so check the lot.
+			$skip = array();
+		}
+
+		// Carry forward what earlier runs settled. Rebuilding this empty made the
+		// preference alternate between the full list and nothing on every run,
+		// rewriting the row each time and leaving it useless as the skip list it
+		// is meant to be.
+		$dbUpdatesPref = $skip;
 
 		foreach($dbupdate as $func => $rmks) // See which core functions need update
 		{
@@ -432,7 +427,12 @@ function update_check()
 
 		}
 
-		e107::getConfig()->set('db_updates', $dbUpdatesPref)->save(false,true,false);
+		// Not forced. Once the list settles there is nothing to write, and a check
+		// that found nothing has no business rewriting site preferences at all.
+		e107::getConfig()
+			->set('db_updates', $dbUpdatesPref)
+			->set('db_updates_version', $version)
+			->save(false,false,false);
 
 
 		// Now check plugins - XXX DEPRECATED 
@@ -467,18 +467,6 @@ function update_check()
 }
 
 	
-//XXX to be reworked eventually - for checking remote 'new versions' of plugins and installed theme. 
-// require_once(e_HANDLER.'e_upgrade_class.php');
-//	$upg = new e_upgrade;
-
-//	$upg->checkSiteTheme();
-//	$upg->checkAllPlugins();
-
-
-
-//--------------------------------------------
-//	Check current prefs against latest list
-//--------------------------------------------
 function update_core_prefs($type='')
 {
 	global $e107info; // $pref,  $pref must be kept as global 
@@ -496,17 +484,29 @@ function update_core_prefs($type='')
 	{
 		if ($k && !array_key_exists($k,$pref))
 		{
-			$missing[] = $k;
-		//	$pref[$k] = $v;
-			e107::getConfig()->set($k,$v);
-			$admin_log->logMessage($k.' => '.$v, E_MESSAGE_NODISPLAY, E_MESSAGE_INFO);
-			$do_save = TRUE;
+			$missing[$k] = $v;
 		}
 	}
 
-	if ($just_check && !empty($missing))
+	if ($just_check)
 	{
-		return update_needed('<br>Missing prefs: <ul><li>'.implode('</li><li>',$missing).'</li></ul>');
+		// Nothing is applied while only checking. Setting the defaults here would
+		// leave them on the shared config object for whoever saves it next, and
+		// update_check() saves it moments later, so the check used to quietly
+		// apply itself and the UPDATE_03 record below never ran.
+		if (!empty($missing))
+		{
+			return update_needed('<br>Missing prefs: <ul><li>'.implode('</li><li>',array_keys($missing)).'</li></ul>');
+		}
+
+		return $just_check;
+	}
+
+	foreach ($missing as $k => $v)
+	{
+		e107::getConfig()->set($k,$v);
+		$admin_log->logMessage($k.' => '.$v, E_MESSAGE_NODISPLAY, E_MESSAGE_INFO);
+		$do_save = TRUE;
 	}
 
 	if ($do_save)
@@ -588,27 +588,6 @@ function update_core_database($type = '')
 	return $just_check;
 }
 
-/*
-	function update_218_to_219($type='')
-	{
-		$sql = e107::getDb();
-		$just_check = ($type == 'do') ? false : true;
-
-		// add common video and audio media categories if missing.
-		$count = $sql->select("core_media_cat","*","media_cat_category = '_common_video' LIMIT 1 ");
-
-		if(!$count)
-		{
-			if ($just_check) return update_needed('Media-Manager is missing the video and audio categories and needs to be updated.');
-
-			$sql->gen("INSERT INTO `".MPREFIX."core_media_cat` VALUES(0, '_common', '_common_video', '(Common Videos)', '', 'Media in this category will be available in all areas of admin. ', 253, '', 0);");
-			$sql->gen("INSERT INTO `".MPREFIX."core_media_cat` VALUES(0, '_common', '_common_audio', '(Common Audio)', '', 'Media in this category will be available in all areas of admin. ', 253, '', 0);");
-		}
-
-
-
-		return $just_check;
-	}*/
 
 
 
@@ -617,43 +596,6 @@ function update_core_database($type = '')
 	 * @param string $type
 	 * @return bool true = no update required, and false if update required.
 	 */
-/*	 function update_217_to_218($type='')
-	{
-		$just_check = ($type == 'do') ? false : true;
-
-		$e_user_list = e107::getPref('e_user_list');
-
-			e107::getPlug()->clearCache()->buildAddonPrefLists();
-			if(empty($e_user_list['user'])) // check eplugins/user/e_user.php is registered.
-			{
-				if($just_check)
-				{
-					return update_needed("user/e_user.php need to be registered"); // NO LAN.
-				}
-
-			}
-
-
-		// Make sure, that the pref "post_script" contains one of the allowed userclasses
-		// Close possible security hole
-		if (!array_key_exists(e107::getPref('post_script'), e107::getUserClass()->uc_required_class_list('nobody,admin,main,classes,no-excludes', true)))
-		{
-			if ($just_check)
-			{
-				return update_needed("Pref 'Class which can post < script > and similar tags' contains an invalid value"); // NO LAN.
-			}
-			else
-			{
-				e107::getConfig()->setPref('post_script', 255)->save(false, true);
-			}
-		}
-
-
-		return $just_check;
-
-
-
-	}*/
 
 
 
@@ -875,37 +817,6 @@ function update_706_to_800($type='')
 
 
 
-	// List of changed DB tables (defined in core_sql.php)
-	// No Longer required. - automatically checked against core_sql.php. 
-	// (primarily those which have changed significantly; for the odd field write some explicit code - it'll run faster)
-	// $changed_tables = array('user', 'dblog', 'admin_log', 'userclass_classes', 'banlist', 'menus',
-							 // 'plugin', 'news', 'news_category', 'online', 'page', 'links', 'comments');
-
-
-	// List of changed DB tables from core plugins (defined in pluginname_sql.php file)
-	// key = plugin directory name. Data = comma-separated list of tables to check
-	// (primarily those which have changed significantly; for the odd field write some explicit code - it'll run faster)
-	// No Longer required. - automatically checked by db-verify 
-	/* $pluginChangedTables = array('linkwords' => 'linkwords',
-								'featurebox' => 'featurebox',
-								'links_page' => 'links_page',
-								'poll' => 'polls',
-								'content' => 'pcontent'
-								);
-	 
-	 */
-/*
-	$setCorePrefs = array( //modified prefs during upgrade.
-		'adminstyle' 		=> 'infopanel',
-		'admintheme' 		=> 'bootstrap',
-		'admincss'			=> 'admin_style.css',
-		'resize_dimensions' => array(
-			'news-image' 	=> array('w' => 250, 'h' => 250),
-			'news-bbcode' 	=> array('w' => 250, 'h' => 250),
-			'page-bbcode' 	=> array('w' => 250, 'h' => 250)
-		)
-	);
-*/
 
 
 
@@ -1224,37 +1135,6 @@ function update_706_to_800($type='')
 
 	 
 
-	//	Add index to download history
-	// Deprecated by db-verify-class
-	// if (FALSE !== ($temp = addIndexToTable('download_requests', 'download_request_datestamp', $just_check, $updateMessages)))
-	// {
-		// if ($just_check)
-		// {
-			// return update_needed($temp);
-		// }
-	// }
-
-	// Extra index to tmp table
-	// Deprecated by db-verify-class
-	// if (FALSE !== ($temp = addIndexToTable('tmp', 'tmp_time', $just_check, $updateMessages)))
-	// {
-		// if ($just_check)
-		// {
-			// return update_needed($temp);
-		// }
-	// }
-
-	// Extra index to rss table (if used)
-	// Deprecated by db-verify-class
-	// if (FALSE !== ($temp = addIndexToTable('rss', 'rss_name', $just_check, $updateMessages, TRUE)))
-	// {
-		// if ($just_check)
-		// {
-			// return update_needed($temp);
-		// }
-	// }
-
-	// Front page prefs (logic has changed)
 	if (!isset($pref['frontpage_force'])) // Just set basic options; no real method of converting the existing
 	{	
 		if ($just_check) return update_needed('Change front page prefs');
@@ -1748,19 +1628,6 @@ function update_706_to_800($type='')
 	}
 
 
-	// Media Update - core media and core-file.
-	/*
-	$count = $sql->gen("SELECT * FROM `#core_media` WHERE media_category = '_common' LIMIT 1 ");
-	if($count ==1)
-	{
-		if ($just_check) return update_needed('Media-Manager Category Data needs to be updated.');
-		$sql->update('core_media', "media_category='_common_image' WHERE media_category = '_common' ");
-		$log->addDebug("core-media _common Category updated");
-	}
-	*/
-	
-	
-	// Media Update - core media and core-file. CATEGORY
 	$count = $sql->createQueryBuilder()->select('*')->from('core_media_cat')->where('media_cat_category', '_common')->setMaxResults(1)->fetchRow() ? 1 : 0;
 	if($count ==1)
 	{
@@ -1816,19 +1683,6 @@ function update_706_to_800($type='')
 		
 		
 		
-	//	$sql->gen("INSERT INTO `".MPREFIX."core_media_cat` VALUES(0, '_common', '_common_image', '(Common Images)', '', 'Media in this category will be available in all areas of admin. ', 253, '', 1);");
-	//	$sql->gen("INSERT INTO `".MPREFIX."core_media_cat` VALUES(0, '_common', '_common_file', '(Common Files)', '', 'Media in this category will be available in all areas of admin. ', 253, '', 2);");
-	
-	//	$sql->gen("INSERT INTO `".MPREFIX."core_media_cat` VALUES(0, 'news', 'news', 'News', '', 'Will be available in the news area. ', 253, '', 3);");
-	//	$sql->gen("INSERT INTO `".MPREFIX."core_media_cat` VALUES(0, 'page', 'page', 'Custom Pages', '', 'Will be available in the custom pages area of admin. ', 253, '', 4);");
-		
-	//	$sql->gen("INSERT INTO `".MPREFIX."core_media_cat` VALUES(0, 'download', 'download_image','', 'Download Images', '', 253, '', 5);");
-	//	$sql->gen("INSERT INTO `".MPREFIX."core_media_cat` VALUES(0, 'download', 'download_thumb', '', 'Download Thumbnails', '', 253, '', 6);");
-	//	$sql->gen("INSERT INTO `".MPREFIX."core_media_cat` VALUES(0, 'download', 'download_file', '', 'Download Files', '', 253, '', 7);");
-				
-	//	mysql_query("INSERT INTO `".MPREFIX."core_media_cat` VALUES(0, 'gallery', 'gallery_1', 'Gallery', 'Visible to the public at /gallery.php', 0, '', 0);");
-		
-	//	$sql->gen("INSERT INTO `".MPREFIX."core_media_cat` VALUES(0, 'news', 'news_thumb', 'News Thumbnails (Legacy)', '', 'Legacy news thumbnails. ', 253, '', 8);");		
 		
 		$med->import('news_thumb', e_IMAGE.'newspost_images',"^thumb_");
 		$med->import('news',e_IMAGE.'newspost_images');
@@ -2034,56 +1888,6 @@ function update_706_to_800($type='')
 	return $just_check;
 }
 
-/* No Longed Used I think 
-function core_media_import($cat,$epath)
-{
-	if(!vartrue($cat)){ return;}
-	
-	if(!is_readable($epath))
-	{
-		return;
-	}
-	
-	$fl = e107::getFile();
-	$tp = e107::getParser();
-	$sql = e107::getDb();
-	$mes = e107::getMessage();
-	
-	$fl->setFileInfo('all');
-	$img_array = $fl->get_files($epath,'','',2);
-	
-	if(!count($img_array)){ return;}
-		
-	foreach($img_array as $f)
-	{
-		$fullpath = $tp->createConstants($f['path'].$f['fname'],1);
-		
-		$insert = array(
-		'media_caption'		=> $f['fname'], 
-		'media_description'	=> '', 
-		'media_category'	=> $cat, 
-		'media_datestamp'	=> $f['modified'], 
-		'media_url'	=> $fullpath, 
-		'media_userclass'	=> 0, 
-		'media_name'	=> $f['fname'], 
-		'media_author'	=> USERID, 
-		'media_size'	=> $f['fsize'], 
-		'media_dimensions'	=> $f['img-width']." x ".$f['img-height'], 
-		'media_usedby'	=> '', 
-		'media_tags'	=> '', 
-		'media_type'	=> $f['mime']
-		);
-
-		if(!$sql->select('core_media','media_url',"media_url = '".$fullpath."' LIMIT 1"))
-		{
-			if($sql->insert("core_media",$insert))
-			{
-				$mes->add("Importing Media: ".$f['fname'], E_MESSAGE_SUCCESS); 	
-			}
-		}
-	}	
-}
-*/
 
 function update_70x_to_706($type='')
 {
