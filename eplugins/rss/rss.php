@@ -608,6 +608,7 @@ class rssCreate
 		switch ($this -> rssType)
 		{
 			case 1:		// RSS 1.0
+				// LITE MODIFICATION: RSS 0.92 <link> uses SITEURL, not $pref['siteurl'] — deliberate Lite modernisation
 				echo "<?xml version=\"1.0\" encoding=\"utf-8\" ?".">
 						<!-- generator=\"e107\" -->
 						<!-- content type=\"".$this -> contentType."\" -->
@@ -644,6 +645,7 @@ class rssCreate
 			break;
 
 			case 2:	// RSS 2.0
+				// LITE MODIFICATION: sitebutton via getConfig()+thumbUrl(w=500) and <link> SITEURL — replaces upstream SITEBUTTON / $pref['siteurl']
 				$path = e107::getConfig()->get('sitebutton');
 				$sitebutton = e107::getParser()->thumbUrl($path, 'w=500&x=1', true, true);
 				echo "<?xml version=\"1.0\" encoding=\"utf-8\"?".">
@@ -681,6 +683,7 @@ class rssCreate
 
 				if (trim(SITEBUTTON))
 				{
+					// LITE MODIFICATION: image sitebutton via getConfig()+thumbUrl(w=500), <link> SITEURL, no upstream hardcoded 88x31
 					$path = e107::getConfig()->get('sitebutton');
 					$imgPath = e107::getParser()->thumbUrl($path, 'w=500&x=1', true, true);
 					echo "
@@ -723,6 +726,7 @@ class rssCreate
 						echo "<content:encoded>".$tp->toRss($value['content_encoded'],true)."</content:encoded>\n";
 					}
 
+					// LITE MODIFICATION: category tag rendering differs from upstream (domain attribute optional)
 					if ($value['category_name'])
 					{
 						$domain = $catlink ? " domain='$catlink'" : '';
@@ -783,6 +787,7 @@ class rssCreate
 			break;
 
 			case 3: 	// RDF
+				// LITE MODIFICATION: RDF rdf:about/<link> use SITEURL, not $pref['siteurl'] — deliberate Lite modernisation
 				echo "<?xml version=\"1.0\" encoding=\"utf-8\" ?".">
 				<!-- generator=\"e107\" -->
 				<!-- content type=\"".$this -> contentType."\" -->
@@ -870,6 +875,7 @@ class rssCreate
 					</contributor>\n
 					<generator uri='https://e107.org/' version='".defset('e_VERSION')."'>e107</generator>\n";
 					//<icon>/icon.jpg</icon>\n
+					// LITE MODIFICATION: <logo> sitebutton via getConfig()+thumbUrl(w=500) — replaces upstream SITEBUTTON handling
 					$path = e107::getConfig()->get('sitebutton');
 					$imgPath = e107::getParser()->thumbUrl($path, 'w=500&x=1', true, true);
 					echo "
