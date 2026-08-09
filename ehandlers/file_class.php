@@ -1013,9 +1013,15 @@ class e_file
 		}
 
 		// === Key improvement: extend PHP time limit safely ===
-		// We give PHP a bit more time than cURL timeout + margin
-		$phpTimeout = max(ini_get('max_execution_time'), $timeout + 15);
-		@set_time_limit($phpTimeout);   // @ to suppress warning if safe_mode or disabled
+		// The execution limit is process-wide, so (per upstream b7df6d047) it is
+		// only ever raised, never lowered, and never imposed where the admin set
+		// none (max_execution_time = 0, e.g. CLI). Lite keeps its +15s headroom.
+		$executionLimit = (int) ini_get('max_execution_time');
+
+		if($executionLimit > 0 && $executionLimit < $timeout + 15)
+		{
+			@set_time_limit($timeout + 15);   // @ to suppress warning if safe_mode or disabled
+		}
 
 		// The redirect chain is walked by curlFollow(): CURLOPT_FOLLOWLOCATION is
 		// off, every Location is revalidated through isUrlSafe/resolveOutboundTarget,
