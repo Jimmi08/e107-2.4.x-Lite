@@ -581,7 +581,8 @@ class user_shortcodes extends e_shortcode
 		
 		if (!$full_perms) return;
 		$url = e107::getUrl();
-		if(!$userjump = e107::getRegistry('userjump'))
+		$cacheKey = 'userjump/'.intval($this->var['user_id']);
+		if(!$userjump = e107::getRegistry($cacheKey))
 		{
 		  $sql->execute("SELECT user_id, user_name FROM `#user` FORCE INDEX (PRIMARY) WHERE `user_id` > :userId AND `user_ban`=0 ORDER BY user_id ASC LIMIT 1", array('userId' => (int) $this->var['user_id']));
 		  if ($row = $sql->fetch())
@@ -596,43 +597,37 @@ class user_shortcodes extends e_shortcode
 			$userjump['prev']['id'] = $row['user_id'];
 			$userjump['prev']['name'] = $row['user_name'];
 		  }
-		  e107::setRegistry('userjump', $userjump);
+		  e107::setRegistry($cacheKey, $userjump);
 		}
 		
-		$class  = empty($parms[2]['class']) ? 'e-tip page-link' : $parms[2]['class'];
-	
-		if($parms[1] == 'prev')
+		$class = empty($parms[2]['class']) ? 'e-tip page-link' : $parms[2]['class'];
+		$dir   = (varset($parms[1]) === 'prev') ? 'prev' : 'next';
+
+		if(!isset($userjump[$dir]['id']))
 		{
+			return "&nbsp;";
+		}
 
-			// LITE FEATURE: link/title raw-return accessors, forward-ported from upstream
-			// ad823ba03 onto Lite's newer sc_user_jump_link (scDualParams). Lite's version
-			// is ahead of upstream here; proposed upstream. Do not overwrite on sync until
-			// upstream unifies.
-			if(isset($userjump['prev']['id']))
-			{
-				if(isset($parms[2]['link']))  return $url->create('user/profile/view', $userjump['prev']);
-				if(isset($parms[2]['title'])) return $userjump['prev']['name'];
-			}
+		if(!empty($parms[2]['link'])) // {USER_JUMP_LINK=prev|link=1}
+		{
+			return $url->create('user/profile/view', $userjump[$dir]);
+		}
 
+		if(!empty($parms[2]['title'])) // {USER_JUMP_LINK=prev|title=1}
+		{
+			return $userjump[$dir]['name'];
+		}
+
+		if($dir === 'prev')
+		{
 			$icon = (deftrue('BOOTSTRAP')) ? $tp->toGlyph('fa-chevron-left') : '&lt;&lt;';
-	    	return isset($userjump['prev']['id']) ? "<a class='".$class."' href='".$url->create('user/profile/view', $userjump['prev']) ."' title=\"".$userjump['prev']['name']."\">".$icon." ".LAN_USER_40."</a>\n" : "&nbsp;";
-		
-			// return isset($userjump['prev']['id']) ? "&lt;&lt; ".LAN_USER_40." [ <a href='".$url->create('user/profile/view', $userjump['prev'])."'>".$userjump['prev']['name']."</a> ]" : "&nbsp;";
-		
-		}
-		else
-		{
-			// LITE FEATURE: link/title raw-return accessors (see prev branch)
-			if(isset($userjump['next']['id']))
-			{
-				if(isset($parms[2]['link']))  return $url->create('user/profile/view', $userjump['next']);
-				if(isset($parms[2]['title'])) return $userjump['next']['name'];
-			}
 
-			$icon = (deftrue('BOOTSTRAP')) ? $tp->toGlyph('fa-chevron-right') : '&gt;&gt;';
-			return isset($userjump['next']['id']) ? "<a class='".$class."' href='".$url->create('user/profile/view', $userjump['next'])."' title=\"".$userjump['next']['name']."\">".LAN_USER_41." ".$icon."</a>\n" : "&nbsp;";
-			// return isset($userjump['next']['id']) ? "[ <a href='".$url->create('user/profile/view', $userjump['next'])."'>".$userjump['next']['name']."</a> ] ".LAN_USER_41." &gt;&gt;" : "&nbsp;";
+			return "<a class='".$class."' href='".$url->create('user/profile/view', $userjump['prev']) ."' title=\"".$userjump['prev']['name']."\">".$icon." ".LAN_USER_40."</a>\n";
 		}
+
+		$icon = (deftrue('BOOTSTRAP')) ? $tp->toGlyph('fa-chevron-right') : '&gt;&gt;';
+
+		return "<a class='".$class."' href='".$url->create('user/profile/view', $userjump['next'])."' title=\"".$userjump['next']['name']."\">".LAN_USER_41." ".$icon."</a>\n";
 	}
 	
 
