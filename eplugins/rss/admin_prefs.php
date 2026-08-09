@@ -272,6 +272,7 @@ class rss_form_ui extends e_admin_form_ui
 
 				$link = e107::url('rss', 'rss', array('rss_type' => $type, 'rss_url' => $curVal, 'rss_topicid' => $topic));
 
+				// LITE MODIFICATION: feed link opens in a new tab (target='_blank') — deliberate, keep on sync
 				return "<a target='_blank' href='" . $link . "'>" . $curVal . "</a>";
 				break;
 
