@@ -170,7 +170,7 @@ class eIPHandler
 
 		$this->ourIP = $this->ipEncode($this->getCurrentIP());
 
-		$this->serverIP = $this->ipEncode($_SERVER['SERVER_ADDR'] ?? 'x.x.x.x');
+		$this->serverIP = $this->ipEncode(isset($_SERVER['SERVER_ADDR']) ? $_SERVER['SERVER_ADDR'] : 'x.x.x.x');
 
 		$this->makeUserToken();
 
@@ -311,8 +311,8 @@ class eIPHandler
     {
         if(!$this->ourIP)
         {
-            $server = $server ?? $_SERVER;
-            $ip = $server['REMOTE_ADDR'] ?? 'x.x.x.x';
+            $server = isset($server) ? $server : $_SERVER;
+            $ip = isset($server['REMOTE_ADDR']) ? $server['REMOTE_ADDR'] : 'x.x.x.x';
 
             if ($ip4 = getenv('HTTP_X_FORWARDED_FOR'))
             {

@@ -26,9 +26,9 @@ if (!defined('e107_INIT'))
 
 class adminstyle_infopanel
 {
-	
+
 	private $iconlist = array();
-	
+
 	function __construct()
 	{
 
@@ -102,10 +102,10 @@ class adminstyle_infopanel
   			$('#e-adminfeed').load('".e_ADMIN."admin.php?mode=core&type=feed');
   		    $('#e-adminfeed-plugin').load('".e_ADMIN."admin.php?mode=addons&type=plugin');
   		    $('#e-adminfeed-theme').load('".e_ADMIN."admin.php?mode=addons&type=theme');
-  		    
+
   		    ".$coreUpdateCheck."
   		    ".$addonUpdateCheck."
-		
+
 		});
 		";
 
@@ -115,9 +115,9 @@ class adminstyle_infopanel
 
 
 
-		
+
 		e107::js('inline',$code,'jquery');
-		
+
 		if (isset($_POST['submit-mye107']) || varset($_POST['submit-mymenus']))
 		{
 			$this->savePref('core-infopanel-mye107', $_POST['e-mye107']);
@@ -188,7 +188,7 @@ class adminstyle_infopanel
 	{
 		return $this->iconlist;
 	}
-	
+
 	function render()
 	{
 		$tp = e107::getParser();
@@ -197,8 +197,8 @@ class adminstyle_infopanel
 		$mes = e107::getMessage();
 		$pref = e107::getPref();
 		$frm = e107::getForm();
-		
-		
+
+
 	//	XXX Check Bootstrap bug is fixed. 
 	/*
 		echo '
@@ -248,15 +248,15 @@ class adminstyle_infopanel
 		{
 			$user_pref['core-infopanel-mye107'] = e107::getNav()->getDefaultAdminPanelArray();
 		}
-		
+
 
 	//	"<form method='post' action='".e_SELF."?".e_QUERY."'>";
-		
+
 		$tp->parseTemplate("{SETSTYLE=core-infopanel}");
 
 		// Personalized Panel 
 		// Rendering the saved configuration.
-		
+
 		$mainPanel = "
 		<div id='core-infopanel_mye107' >
 		";
@@ -280,10 +280,10 @@ class adminstyle_infopanel
 				//	break;
 				//}
 			}
-	
+
 			// $mainPanel .= "<div class='clear'>&nbsp;</div>";
 			$mainPanel .= "</div>
-	      
+
 			</div>";
 
 	//	e107::getDebug()->log($this->iconlist);
@@ -293,8 +293,8 @@ class adminstyle_infopanel
 		$text3 = $this->renderAddonDashboards();
 
 		$text = $ns->tablerender($caption, $mainPanel, "core-infopanel_mye107",true);
-		
-	
+
+
 	//  ------------------------------- e107 News --------------------------------
 
 		//LITE-SKIP Lite removes the e107.org admin RSS feed entirely (no phone-home).
@@ -310,39 +310,39 @@ class adminstyle_infopanel
 	
 	
 	// ---------------------Latest Stuff ---------------------------
-	
+
 		//require_once (e_CORE."shortcodes/batch/admin_shortcodes.php");
 		e107::getScBatch('admin');
-		
 
 
-		
+
+
 	//	$text3 .= $ns->tablerender(LAN_WEBSITE_STATUS, $this->renderWebsiteStatus(),"",true);
 
 
-		
-		
+
+
 	//	$text .= $ns->tablerender(ADLAN_LAT_1,$tp->parseTemplate("{ADMIN_LATEST=norender}"),"core-infopanel_latest",true);
 	//	$text .= $ns->tablerender(LAN_STATUS,$tp->parseTemplate("{ADMIN_STATUS=norender}"),"core-infopanel_latest",true);
 	/*
-	
+
 			$text .= "<li class='span6'>
 				".$tp->parseTemplate("{ADMIN_LATEST=norender}").
 				$tp->parseTemplate("{ADMIN_STATUS=norender}")."
 						</div>";
-		
+
 		*/
-	
-	
+
+
 	$text .= $this->renderLatestComments();
-	
-	
+
+
 	// ---------------------- Who's Online  ------------------------
 	// TODO Could use a new _menu item instead.
-	
-	
+
+
 	//	$text2 .= $ns->tablerender('Visitors Online : '.vartrue($nOnline), $panelOnline,'core-infopanel_online',true);
-		
+
 	// --------------------- User Selected Menus -------------------
 
 
@@ -364,19 +364,19 @@ class adminstyle_infopanel
 				$text .= $inc;
 			}
 		}
-	
-	
-		
-		
-		
-		
-		
+
+
+
+
+
+
+
 	//	$text .= "<div class='clear'>&nbsp;</div>";
-		
+
 		$text .= $this->render_infopanel_options();
-		
-		
-		
+
+
+
 	//	$text .= "</div>";
 		
 		//LITE MODIFICATION if(vartrue($_GET['mode']) != 'customize')
@@ -420,7 +420,7 @@ class adminstyle_infopanel
 /*
 	private function renderChart()
 	{
-	
+
 
 		// REQUIRES Log Plugin to be installed. 		
 		if (e107::isInstalled('log')) 
@@ -432,7 +432,7 @@ class adminstyle_infopanel
 		{
 			return $this->renderStats('demo');
 		}
-		
+
 	}*/
 
 
@@ -540,7 +540,7 @@ class adminstyle_infopanel
 	//	{
 	//		return;
 	//	}
-				
+
 		$rows = $sql->createQueryBuilder()
 			->select('*')->from('comments')
 			->where('comment_blocked', 2)
@@ -550,19 +550,19 @@ class adminstyle_infopanel
 		{
 			return null;
 		}
-		
+
 
 		$sc = e107::getScBatch('comment');
-				
+
 		$text = '
 		  <ul class="media-list unstyled list-unstyled">';
 		// <button class='btn btn-mini'><i class='icon-pencil'></i> Edit</button> 
-		
+
 		//XXX Always keep template hardcoded here - heavy use of ajax and ids. 
 		$count = 1;
 
 		$lanVar = array('x' =>'{USERNAME}', 'y'=>'{TIMEDATE=relative}');
-				
+
 		foreach($rows as $row) 
 		{
 			$hide = ($count > 3) ? ' hide' : '';
@@ -579,12 +579,12 @@ class adminstyle_infopanel
 					<p>{COMMENT}</p> 
 				</div>
 				</li>";
-			
+
 			$sc->setVars($row);  
 		 	$text .= $tp->parseTemplate($TEMPLATE,true,$sc);
 			$count++;
 		}
-        
+
 
     	$text .= '
      		</ul>
@@ -593,35 +593,35 @@ class adminstyle_infopanel
 		    </div>
 		 ';		
 		// $text .= "<small class='text-center text-warning'>Note: Not fully functional at the moment.</small>";
-		
+
 		$ns = e107::getRender();
 		return $ns->tablerender(LAN_LATEST_COMMENTS,$text,'core-infopanel_online',true);		
 	}
-		
-		
-		
-	
-	
-	
-	
-	
-	
+
+
+
+
+
+
+
+
+
 	function render_info_panel($caption, $text)
 	{
 		return "<div class='main_caption bevel left'><b>".$caption."</b></div>
 	    <div class='left block-text' >".$text."</div>";
 	}
-	
-	
-	
-	
-		
+
+
+
+
+
 	function render_infopanel_options($render = false)
 	{
 		$frm = e107::getForm();
 		$mes = e107::getMessage();
 		$ns = e107::getRender();
-		
+
 	    if($render == false){ return ""; }
 
 		$text2 = $ns->tablerender(LAN_PERSONALIZE_ICONS, $this->render_infopanel_icons(),'personalize',true);
@@ -638,7 +638,7 @@ class adminstyle_infopanel
 
 	function render_infopanel_icons()
 	{
-	
+
 		$frm = e107::getForm();
 		$user_pref = $this->getUserPref();
 
@@ -667,8 +667,8 @@ class adminstyle_infopanel
 			);
 			$user_pref['core-infopanel-mye107'] = $defArray;
 		}
-	
-	
+
+
 		foreach ($this->iconlist as $key=>$icon)
 		{
 			if (getperms($icon['perms']))
@@ -676,10 +676,10 @@ class adminstyle_infopanel
 				$checked = (varset($user_pref['core-infopanel-mye107']) && in_array($key, $user_pref['core-infopanel-mye107'])) ? true : false;
 				$text .= "<div class='left f-left list field-spacer form-inline' style='display:block;height:24px;width:200px;'>
 		                        ".$icon['icon'].' '.$frm->checkbox_label($icon['title'], 'e-mye107[]', $key, $checked)."</div>";
-								
+
 			}
 		}
-		
+
 		if (isset($pluglist) && is_array($pluglist))
 		{
 			foreach ($pluglist as $key=>$icon)
@@ -708,8 +708,8 @@ class adminstyle_infopanel
 
 		$frm = e107::getForm();
 		$user_pref = $this->getUserPref();
-		
-	
+
+
 		$text = "<div style='padding-left:20px'>";
 		$menuRows = e107::getDb()->createQueryBuilder()
 			->select('*')->from('menus')
@@ -740,21 +740,21 @@ class adminstyle_infopanel
 				$text .= "</div>";
 			}
 		}
-		
+
 		$text .= "</div><div class='clear'>&nbsp;</div>";
 		return $text;
 	}
-	
 
-	
 
-	
+
+
+
 /*	private function renderStats($type)
 	{
 
 		$data = $this->getStats($type);
 
-		
+
 		$cht = e107::getChart();
 		$cht->setType('line');
 		$cht->setOptions(array(
@@ -763,8 +763,8 @@ class adminstyle_infopanel
 		));
 		$cht->setData($data,'canvas');
 		$text = $cht->render('canvas');
-	
-			
+
+
 		if($type == 'demo')
 		{
 			$text .= "<div class='center'><small>".ADLAN_170."<a class='btn btn-xs btn-mini' href='".e_ADMIN."plugin.php?avail'>".ADLAN_171."</a></small></div>";
@@ -776,10 +776,10 @@ class adminstyle_infopanel
 			<span style='color:rgba(151,187,205,1)'>&diams;</span>".ADLAN_169."
 			</small></div>";
 		}
-		
-		
+
+
 		return $text;
-		
+
 	}*/
 	
 }

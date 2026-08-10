@@ -341,9 +341,12 @@ class eFront
 	}
 	
 	/**
-	 * Dispatch
-	 */
-	public function dispatch(eRequest|null $request = null, eResponse|null $response = null, eDispatcher|null $dispatcher = null)
+     * Dispatch
+     * @param \eRequest|null $request
+     * @param \eResponse|null $response
+     * @param \eDispatcher|null $dispatcher
+     */
+    public function dispatch($request = null, $response = null, $dispatcher = null)
 	{
 		if(null === $request)
 		{
@@ -591,7 +594,7 @@ class eDispatcher
 	 * @return void
 	 * @throws eException
 	 */
-	public function dispatch(eRequest|null $request = null, eResponse|null $response = null)
+	public function dispatch($request = null, $response = null)
 	{
 		$controllerName = $request->getControllerName();
 		$moduleName = $request->getModuleName();
@@ -1420,7 +1423,7 @@ class eRouter
 					$ret[$module] = $current[$module];
 					continue;
 				}
-				
+
 				// in all other cases additional re-check will be made - see below
 			}
 			
@@ -2983,7 +2986,7 @@ abstract class eUrlConfig
 	 * @param array $config
 	 * @return false string route or false on error
 	 */
-	public function parse($pathInfo, $params = array(), eRequest|null $request = null, eRouter|null $router = null, $config = array())
+	public function parse($pathInfo, $params = array(), $request = null, $router = null, $config = array())
 	{
 		return false;
 	}
@@ -3059,7 +3062,7 @@ class eController
 	 * @param eRequest $request
 	 * @param eResponse|null $response
 	 */
-	public function __construct(eRequest $request, eResponse|null $response = null)
+	public function __construct(eRequest $request, $response = null)
 	{
 		$this->setRequest($request)
 			->setResponse($response)
@@ -3213,7 +3216,7 @@ class eController
 	 * @return eResponse
 	 * @throws eException
 	 */
-	public function run(eRequest|null $request = null, eResponse|null $response = null)
+	public function run($request = null, $response = null)
 	{
 		if(null === $request) $request = $this->getRequest();
 		else $this->setRequest($request);
@@ -3379,9 +3382,10 @@ class eControllerFront extends eController
 	protected $filter = array();
 	
 	/**
-	 * Base constructor - set 404/403 locations
-	 */
-	public function __construct(eRequest $request, eResponse|null $response = null)
+     * Base constructor - set 404/403 locations
+     * @param \eResponse|null $response
+     */
+    public function __construct(eRequest $request, $response = null)
 	{
 		parent::__construct($request, $response);
 		$this->_init();
@@ -3931,7 +3935,7 @@ class eRequest
 		$this->setModule($parts[0])
 			->setController(vartrue($parts[1], 'index'))
 			->setAction(vartrue($parts[2], 'index'));
-			
+
 		return $this;//->getRoute(true);
 	}
 
