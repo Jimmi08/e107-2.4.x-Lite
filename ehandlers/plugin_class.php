@@ -1319,7 +1319,7 @@ class e_plugin
 				// legacy shortcodes - plugin root *.sc files
 				if (substr($adds, -3) === ".sc")
 				{
-					$sc_name = substr($adds, 0, -3); // remove the .sc
+					$sc_name = (string) substr($adds, 0, -3); // remove the .sc
 					if ($is_installed)
 					{
 						$scl_array[$sc_name] = "0"; // default userclass = e_UC_PUBLIC
@@ -1332,7 +1332,7 @@ class e_plugin
 				// new shortcodes location - shortcodes/single/*.php
 				elseif (strpos($adds, "sc_") === 0)
 				{
-					$sc_name = substr(substr($adds, 3), 0, -4); // remove the sc_ and .php
+					$sc_name = (string) substr((string) substr($adds, 3), 0, -4); // remove the sc_ and .php
 
 					if ($is_installed)
 					{
@@ -1349,14 +1349,14 @@ class e_plugin
 					// simple bbcode
 					if(substr($adds,-3) == ".bb")
 					{
-						$bb_name = substr($adds, 0,-3); // remove the .bb
+						$bb_name = (string) substr($adds, 0,-3); // remove the .bb
                     	$bb_array[$bb_name] = "0"; // default userclass.
 					}
 					// bbcode class
 					elseif(strpos($adds, "bb_") === 0 && substr($adds, -4) == ".php")
 					{
-						$bb_name = substr($adds, 0,-4); // remove the .php
-						$bb_name = substr($bb_name, 3);
+						$bb_name = (string) substr($adds, 0,-4); // remove the .php
+						$bb_name = (string) substr($bb_name, 3);
                     	$bb_array[$bb_name] = "0"; // TODO - instance and getPermissions() method
 					}
 				}
@@ -1771,7 +1771,7 @@ class e107plugin
 
 		foreach ($pluginList as $p)
 		{
-			$p['path'] = substr(str_replace(e_PLUGIN, "", $p['path']), 0, -1);
+			$p['path'] = (string) substr(str_replace(e_PLUGIN, "", $p['path']), 0, -1);
 			$plugin_path = $p['path'];
 
 			if (strpos($plugin_path, 'e107_') !== FALSE)
@@ -2819,7 +2819,7 @@ class e107plugin
 
 		if (strpos($pref[$prefname], ",") === 0)
 		{
-			$pref[$prefname] = substr($pref[$prefname], 1);
+			$pref[$prefname] = (string) substr($pref[$prefname], 1);
 		}
 
 		e107::getConfig('core')->setPref($pref);
@@ -5201,7 +5201,7 @@ class e107plugin
 					// legacy shortcodes - plugin root *.sc files
 					if (substr($adds, -3) === ".sc")
 					{
-						$sc_name = substr($adds, 0, -3); // remove the .sc
+						$sc_name = (string) substr($adds, 0, -3); // remove the .sc
 						if ($is_installed)
 						{
 							$scl_array[$sc_name] = "0"; // default userclass = e_UC_PUBLIC
@@ -5214,7 +5214,7 @@ class e107plugin
 					// new shortcodes location - shortcodes/single/*.php
 					elseif (strpos($adds, "sc_") === 0)
 					{
-						$sc_name = substr(substr($adds, 3), 0, -4); // remove the sc_ and .php
+						$sc_name = (string) substr((string) substr($adds, 3), 0, -4); // remove the sc_ and .php
 						
 						if ($is_installed)
 						{
@@ -5231,14 +5231,14 @@ class e107plugin
 						// simple bbcode
 						if(substr($adds,-3) == ".bb")
 						{
-							$bb_name = substr($adds, 0,-3); // remove the .bb
+							$bb_name = (string) substr($adds, 0,-3); // remove the .bb
 	                    	$bb_array[$bb_name] = "0"; // default userclass.
 						}
 						// bbcode class
 						elseif(strpos($adds, "bb_") === 0 && substr($adds, -4) == ".php")
 						{
-							$bb_name = substr($adds, 0,-4); // remove the .php
-							$bb_name = substr($bb_name, 3);
+							$bb_name = (string) substr($adds, 0,-4); // remove the .php
+							$bb_name = (string) substr($bb_name, 3);
 	                    	$bb_array[$bb_name] = "0"; // TODO - instance and getPermissions() method
 						}
 					}
