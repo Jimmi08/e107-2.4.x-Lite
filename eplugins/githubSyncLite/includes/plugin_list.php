@@ -3,41 +3,75 @@
 /**
  * githubSyncLite — plugin list source.
  *
- * Fetches the list of plugin folders present in a GitHub repo's eplugins/
- * directory (a single, small GitHub Contents API call) and caches it in
- * e107's SYSTEM cache (esystem/cache/). The cached list has NO time
- * expiry — it is used until a manual "Refresh plugin cache" clears it, or
- * a system cache clear removes it.
+ * Fetches the list of plugin folders present in a GitHub repo's plugins
+ * directory — 'eplugins' (Lite layout) or 'e107_plugins' (standard layout),
+ * per the 'plugins_folder' preference — with a single, small GitHub Contents
+ * API call, and stores it in the PLUGIN PREFERENCES (not the system cache:
+ * the core sync itself clears the system cache when it finishes, which used
+ * to wipe the list, and admin cache clears did the same). The stored list
+ * has no expiry — it is used until a manual "Refresh plugin list" replaces
+ * it. The plugins-folder name is stored with the list, so a list made for
+ * one layout is never served for the other.
  *
  * One deliberate API call on refresh only; every normal page load reads
- * the cache. This keeps well clear of GitHub's unauthenticated rate limit.
+ * the stored preference. This keeps well clear of GitHub's unauthenticated
+ * rate limit.
  *
  * No database table. Standalone (no dependency on the full githubSync
  * plugin).
  */
 class githubSyncLite_plugin_list
 {
-	/** System-cache tag for the plugin list. */
+	/** Plugin-pref key the list is stored under. */
+	const PREF_KEY = 'plugin_list';
+
+	/** Legacy system-cache tag (pre-0.3.1 storage) — cleared on refresh. */
 	const CACHE_TAG = 'githubSyncLite_plugins';
 
 	/**
-	 * Return the cached plugin-folder list, or null if nothing is cached
-	 * yet (caller should prompt for a refresh). Never hits the network.
+	 * Whitelist the plugins-folder name. The value becomes a GitHub API URL
+	 * segment, so only the two known layouts are ever accepted; anything
+	 * else falls back to the Lite default. (Duplicated in the sync engine
+	 * on purpose — both files are standalone by design.)
 	 *
-	 * @return array|null  array of folder names, or null if not cached
+	 * @param mixed $value
+	 * @return string  'eplugins' or 'e107_plugins'
 	 */
-	public static function getCached()
+	public static function normalizePluginsFolder($value)
 	{
-		// retrieve_sys(tag, MaximumAge=false => no expiry, ForcedCheck=true)
-		$raw = e107::getCache()->retrieve_sys(self::CACHE_TAG, false, true);
-		if ($raw === false || $raw === null || $raw === '')
+		return in_array($value, array('eplugins', 'e107_plugins'), true) ? $value : 'eplugins';
+	}
+
+	/**
+	 * Return the stored plugin-folder list, or null if nothing is stored
+	 * yet or the stored list belongs to a different plugins-folder setting
+	 * (caller should prompt for a refresh). Never hits the network.
+	 *
+	 * @param string $pluginsFolder  current 'plugins_folder' preference
+	 * @return array|null  array of folder names, or null if not stored
+	 */
+	public static function getCached($pluginsFolder = 'eplugins')
+	{
+		$pluginsFolder = self::normalizePluginsFolder($pluginsFolder);
+
+		$raw = e107::getPlugConfig('githubSyncLite')->get(self::PREF_KEY, '');
+		if (!is_string($raw) || $raw === '')
 		{
 			return null;
 		}
 
-		$list = json_decode($raw, true);
+		$data = json_decode($raw, true);
 
-		return is_array($list) ? $list : null;
+		// Stored format: {'folder': <plugins folder>, 'list': [...]}.
+		// A list made for the other layout counts as stale — prompt for a
+		// refresh instead.
+		if (!is_array($data) || !isset($data['folder'], $data['list'])
+			|| $data['folder'] !== $pluginsFolder || !is_array($data['list']))
+		{
+			return null;
+		}
+
+		return $data['list'];
 	}
 
 	/**
@@ -45,7 +79,7 @@ class githubSyncLite_plugin_list
 	 * system cache. One Contents API call. Returns the list on success or
 	 * false on failure (reason reported via getMessage()).
 	 *
-	 * @param array $p  organization, repo, branch, token, public_repo
+	 * @param array $p  organization, repo, branch, token, public_repo, plugins_folder
 	 * @return array|false
 	 */
 	public static function refresh(array $p)
@@ -56,6 +90,7 @@ class githubSyncLite_plugin_list
 		$repo   = trim((string) ($p['repo'] ?? ''));
 		$branch = trim((string) ($p['branch'] ?? ''));
 		$token  = trim((string) ($p['token'] ?? ''));
+		$plugDir = self::normalizePluginsFolder($p['plugins_folder'] ?? 'eplugins');
 
 		if ($org === '' || $repo === '' || $branch === '')
 		{
@@ -75,8 +110,10 @@ class githubSyncLite_plugin_list
 			}
 		}
 
+		// $plugDir is whitelisted above ('eplugins'/'e107_plugins' only), so it
+		// is safe to place in the URL path.
 		$url = 'https://api.github.com/repos/' . rawurlencode($org) . '/' . rawurlencode($repo)
-			. '/contents/eplugins?ref=' . rawurlencode($branch);
+			. '/contents/' . $plugDir . '?ref=' . rawurlencode($branch);
 
 		// SSL verification stays ON in production; relaxed only under e_DEBUG
 		// (local development), matching the sync engine's behaviour.
@@ -113,7 +150,7 @@ class githubSyncLite_plugin_list
 		}
 		if ($httpCode === 404)
 		{
-			$mes->addError('No eplugins/ folder found in ' . htmlspecialchars($org . '/' . $repo, ENT_QUOTES, 'utf-8') . ' (branch ' . htmlspecialchars($branch, ENT_QUOTES, 'utf-8') . ').');
+			$mes->addError('No ' . $plugDir . '/ folder found in ' . htmlspecialchars($org . '/' . $repo, ENT_QUOTES, 'utf-8') . ' (branch ' . htmlspecialchars($branch, ENT_QUOTES, 'utf-8') . '). Check the \'Repo plugins folder\' setting on the Source screen.');
 			return false;
 		}
 		if ($httpCode === 403)
@@ -134,29 +171,43 @@ class githubSyncLite_plugin_list
 			return false;
 		}
 
-		// Keep only directory entries; collect their names.
+		// Keep only directory entries; collect their names. Names come from a
+		// remote API, so validate them like any other path segment before they
+		// are stored and later rendered as checkbox values / checked on disk.
 		$folders = array();
 		foreach ($data as $entry)
 		{
-			if (isset($entry['type'], $entry['name']) && $entry['type'] === 'dir')
+			if (isset($entry['type'], $entry['name']) && $entry['type'] === 'dir'
+				&& preg_match('/^[A-Za-z0-9._-]+$/', (string) $entry['name'])
+				&& strpos((string) $entry['name'], '..') === false)
 			{
 				$folders[] = (string) $entry['name'];
 			}
 		}
 		sort($folders, SORT_STRING);
 
-		// set_sys(tag, data, ForceCache=true) — write even if cache pref off.
-		e107::getCache()->set_sys(self::CACHE_TAG, json_encode($folders), true);
+		// Store in the PLUGIN PREFS (survives every cache clear — the core
+		// sync itself clears the system cache when it finishes, which used to
+		// wipe the list). The plugins-folder name is stored alongside the list
+		// so getCached() can reject a list made for the other layout.
+		e107::getPlugConfig('githubSyncLite')
+			->set(self::PREF_KEY, json_encode(array('folder' => $plugDir, 'list' => $folders)))
+			->save(false, true, false);
+
+		// Drop the legacy pre-0.3.1 system-cache copy if one is still around.
+		e107::getCache()->clear_sys(self::CACHE_TAG);
 
 		return $folders;
 	}
 
 	/**
-	 * Clear the cached plugin list (used by the manual refresh before a
-	 * fresh fetch, and available for a plain "clear" action).
+	 * Clear the stored plugin list (used by the manual refresh before a
+	 * fresh fetch, and available for a plain "clear" action). Also drops
+	 * the legacy pre-0.3.1 system-cache copy.
 	 */
 	public static function clearCache()
 	{
+		e107::getPlugConfig('githubSyncLite')->remove(self::PREF_KEY)->save(false, true, false);
 		e107::getCache()->clear_sys(self::CACHE_TAG);
 	}
 
@@ -172,8 +223,11 @@ class githubSyncLite_plugin_list
 	}
 
 	/**
-	 * Is a plugin folder already present on disk (eplugins/{folder}/)?
-	 * Local filesystem check only — no network.
+	 * Is a plugin folder already present on disk (e_PLUGIN . {folder}/ —
+	 * the LOCAL plugins directory, whatever this site names it)?
+	 * Local filesystem check only — no network. NOTE: on-disk is NOT the
+	 * same as installed — a standard e107 ships every core plugin folder
+	 * on disk. Use isInstalled() for the real installation state.
 	 *
 	 * @param string $folder
 	 * @return bool
@@ -187,5 +241,23 @@ class githubSyncLite_plugin_list
 		}
 
 		return is_dir(e_PLUGIN . $folder);
+	}
+
+	/**
+	 * Is the plugin actually INSTALLED on this site (registered in the
+	 * plugin table), as opposed to merely present on disk?
+	 *
+	 * @param string $folder
+	 * @return bool
+	 */
+	public static function isInstalled($folder)
+	{
+		$folder = trim((string) $folder, '/');
+		if ($folder === '' || strpos($folder, '..') !== false || strpos($folder, '/') !== false)
+		{
+			return false;
+		}
+
+		return e107::isInstalled($folder);
 	}
 }

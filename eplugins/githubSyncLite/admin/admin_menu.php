@@ -4,9 +4,10 @@
  * githubSyncLite — shared admin dispatcher.
  *
  * Standalone: no dependency on the full githubSync plugin.
- * Two modes:
+ * Three modes:
  *   sync   (default) — core sync + plugin selection   (admin_sync.php)
  *   config           — source repository settings      (admin_config.php)
+ *   debug            — connection diagnostics          (admin_debug.php)
  */
 
 e107::coreLan('db', true); // DBLAN_* copy reused on the confirmation screen
@@ -29,6 +30,12 @@ class githubSyncLite_adminArea extends e_admin_dispatcher
 			'ui'         => 'githubSyncLite_config_form_ui',
 			'uipath'     => null,
 		),
+		'debug' => array(
+			'controller' => 'githubSyncLite_debug_ui',
+			'path'       => null,
+			'ui'         => 'githubSyncLite_debug_form_ui',
+			'uipath'     => null,
+		),
 	);
 
 	protected $adminMenu = array(
@@ -43,6 +50,12 @@ class githubSyncLite_adminArea extends e_admin_dispatcher
 			'perm'    => '0',
 			'icon'    => 'fas-cog',
 			'url'     => '{e_PLUGIN}githubSyncLite/admin/admin_config.php',
+		),
+		'debug/main' => array(
+			'caption' => 'Diagnostics',
+			'perm'    => '0',
+			'icon'    => 'fas-stethoscope',
+			'url'     => '{e_PLUGIN}githubSyncLite/admin/admin_debug.php',
 		),
 	);
 

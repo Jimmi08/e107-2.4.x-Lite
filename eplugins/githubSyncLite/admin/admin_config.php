@@ -62,6 +62,33 @@ class githubSyncLite_config_ui extends e_admin_ui
 			'help'  => 'Branch to sync from, e.g. main',
 			'writeParms' => array('size' => 'xlarge', 'default' => 'main'),
 		),
+		'plugins_folder' => array(
+			'title' => 'Repo plugins folder',
+			'tab'   => 0,
+			'type'  => 'dropdown',
+			'data'  => 'str',
+			'help'  => 'Name of the plugins directory in the SOURCE repo: <strong>eplugins</strong> (Lite layout) '
+				. 'or <strong>e107_plugins</strong> (standard e107 layout). Used for the plugin list and plugin '
+				. 'sync. After changing it, refresh the plugin cache on the Core Sync screen.',
+			'writeParms' => array(
+				'optArray' => array('eplugins' => 'eplugins (Lite)', 'e107_plugins' => 'e107_plugins (standard)'),
+				'default'  => 'eplugins',
+			),
+		),
+		'folder_prefix' => array(
+			'title' => 'Repo folder prefix',
+			'tab'   => 0,
+			'type'  => 'dropdown',
+			'data'  => 'str',
+			'help'  => 'Prefix of the standard core directories in the SOURCE repo: <strong>e</strong> for the Lite '
+				. 'layout (eadmin, ehandlers, esystem, …) or <strong>e107_</strong> for the standard layout '
+				. '(e107_admin, e107_handlers, …). Used by Core Sync when extracting. The two settings are '
+				. 'independent — a repo may combine e107_ core folders with an eplugins folder, or the other way round.',
+			'writeParms' => array(
+				'optArray' => array('e' => 'e  (Lite: eadmin, ehandlers, …)', 'e107_' => 'e107_  (standard: e107_admin, …)'),
+				'default'  => 'e',
+			),
+		),
 		'public_repo' => array(
 			'title' => 'Public repository',
 			'tab'   => 0,
@@ -94,6 +121,20 @@ class githubSyncLite_config_ui extends e_admin_ui
 			$new_data['token'] = $old_data['token'] ?? '';
 		}
 
+		// Security: the layout prefs later become an API URL segment and archive
+		// path prefixes. Whitelist strictly on save (the dropdown alone is not a
+		// guarantee — POST values can be tampered with); readers whitelist again.
+		if (!isset($new_data['plugins_folder'])
+			|| !in_array($new_data['plugins_folder'], array('eplugins', 'e107_plugins'), true))
+		{
+			$new_data['plugins_folder'] = 'eplugins';
+		}
+		if (!isset($new_data['folder_prefix'])
+			|| !in_array($new_data['folder_prefix'], array('e', 'e107_'), true))
+		{
+			$new_data['folder_prefix'] = 'e';
+		}
+
 		return $new_data;
 	}
 
@@ -114,6 +155,11 @@ class githubSyncLite_config_ui extends e_admin_ui
 		$text .= '<ul>';
 		$text .= '<li><strong>Organization / Repository / Branch</strong> — the GitHub location, '
 			. 'e.g. <em>Jimmi08 / e107-2.4.x-Lite / main</em>.</li>';
+		$text .= '<li><strong>Repo plugins folder</strong> — whether the source repo keeps its plugins in '
+			. '<em>eplugins/</em> (Lite layout) or <em>e107_plugins/</em> (standard layout).</li>';
+		$text .= '<li><strong>Repo folder prefix</strong> — whether the source repo\'s core directories use the '
+			. 'short <em>e</em> prefix (eadmin, ehandlers, …) or the standard <em>e107_</em> prefix (e107_admin, …). '
+			. 'The two layout settings are independent and may be mixed.</li>';
 		$text .= '<li><strong>Public repository</strong> — leave on for a public repo. Turn it off only '
 			. 'for a private repo, which then needs a token.</li>';
 		$text .= '<li><strong>GitHub token</strong> — a Personal Access Token, needed only for private '

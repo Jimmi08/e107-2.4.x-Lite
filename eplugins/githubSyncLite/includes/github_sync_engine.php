@@ -62,6 +62,8 @@ class github_sync_engine
 	 *     @type string $type         One of SUPPORTED_TYPES.
 	 *     @type string $token        GitHub PAT (required for private repos).
 	 *     @type int    $public_repo  1 = public (no token), 0 = private (token required).
+	 *     @type string $plugins_folder  Source repo's plugins dir: 'eplugins' (default) or 'e107_plugins'.
+	 *     @type string $folder_prefix   Source repo's core-dir prefix: 'e' (default, Lite) or 'e107_'.
 	 * }
 	 * @return array|false FALSE on hard failure (validation / download / extraction);
 	 *                     otherwise ['success' => [...], 'error' => [...], 'skipped' => [...]].
@@ -106,7 +108,7 @@ class github_sync_engine
 		}
 
 		$keepPrefix = $this->buildKeepPrefix($p, $zipBase);
-		$result     = $this->relocate($unarc, $folderMap, $zipBase, $p['type'], $keepPrefix);
+		$result     = $this->relocate($unarc, $folderMap, $zipBase, $p, $keepPrefix);
 
 		$this->cleanup($localfile, $zipBase);
 
@@ -130,7 +132,23 @@ class github_sync_engine
 			'type'         => trim((string) ($params['type'] ?? '')),
 			'token'        => trim((string) ($params['token'] ?? '')),
 			'public_repo'  => (int) ($params['public_repo'] ?? 1),
+			'plugins_folder' => trim((string) ($params['plugins_folder'] ?? '')),
+			'folder_prefix'  => trim((string) ($params['folder_prefix'] ?? '')),
 		);
+
+		// Source-repo layout. Whitelist strictly — these values become archive
+		// path prefixes in the folder map, so nothing outside the two known
+		// layouts is ever accepted; anything else falls back to the Lite
+		// defaults. The two settings are independent (a repo may combine
+		// e107_ core folders with an eplugins folder, or the other way round).
+		if (!in_array($p['plugins_folder'], array('eplugins', 'e107_plugins'), true))
+		{
+			$p['plugins_folder'] = 'eplugins';
+		}
+		if (!in_array($p['folder_prefix'], array('e', 'e107_'), true))
+		{
+			$p['folder_prefix'] = 'e';
+		}
 
 		$folder = trim((string) ($params['folder'] ?? ''), '/ ');
 		$p['folder'] = ($folder !== '') ? $folder : $p['repo'];
@@ -228,9 +246,26 @@ class github_sync_engine
 
 		$remotefile = "https://codeload.github.com/{$p['organization']}/{$p['repo']}/zip/{$p['branch']}";
 
-		if (e107::getFile()->getRemoteFile($remotefile, $localfile) === false)
+		$fl = e107::getFile();
+		if ($fl->getRemoteFile($remotefile, $localfile) === false)
 		{
 			$mes->addError('Failed to download ZIP from ' . $remotefile);
+
+			// Surface the reason instead of failing silently. The core handler
+			// reports SSRF-guard refusals via getErrorMessage(); plain cURL
+			// errors it writes only to the PHP error log — point there, and to
+			// the plugin's Diagnostics screen, when the message is empty.
+			$reason = method_exists($fl, 'getErrorMessage') ? (string) $fl->getErrorMessage() : '';
+			if ($reason !== '')
+			{
+				$mes->addError('Core handler: ' . htmlspecialchars($reason, ENT_QUOTES, 'utf-8'));
+			}
+			else
+			{
+				$mes->addInfo('No reason reported by the core handler — check the PHP error log for a '
+					. '"cURL error [" line, or use the plugin\'s Diagnostics screen.');
+			}
+
 			return false;
 		}
 
@@ -348,11 +383,11 @@ class github_sync_engine
 	 * Build the {zip path prefix => destination path} remap for a sync type.
 	 *
 	 * NOTE: the folder names on the LEFT side depend on the SOURCE repo's
-	 * directory layout. The `core`/`themepack` maps assume the e107sk/Lite
-	 * layout (short `eadmin`, `ehandlers`, … names); `pluginspack`/
-	 * `language` assumes long `e107_plugins`, `e107_themes`, … names.
-	 * This mixed convention is carried over verbatim from the tested plugin
-	 * and should be verified against the actual repos before relying on it.
+	 * directory layout and come from two whitelisted params (see
+	 * validateParams()): $p['folder_prefix'] ('e' or 'e107_') for the
+	 * standard core directories, and $p['plugins_folder'] ('eplugins' or
+	 * 'e107_plugins') for the plugins directory. The former hardcoded mixed
+	 * convention was replaced by these preferences (v0.2.0).
 	 *
 	 * @param array  $p
 	 * @param string $zipBase
@@ -360,16 +395,19 @@ class github_sync_engine
 	 */
 	private function buildFolderMap(array $p, $zipBase)
 	{
+		$px      = $p['folder_prefix'];   // 'e' or 'e107_' (whitelisted)
+		$plugDir = $p['plugins_folder'];  // 'eplugins' or 'e107_plugins' (whitelisted)
+
 		switch ($p['type'])
 		{
 			case 'plugin':
-				// Folder-scoped single plugin. Extract ONLY e107_plugins/{folder}/
-				// from the repo zip into eplugins/{folder}/. The folder stays in the
+				// Folder-scoped single plugin. Extract ONLY {plugins_folder}/{folder}/
+				// from the repo zip into the LOCAL plugins dir. The folder stays in the
 				// path after str_replace, so it is NOT appended to the destination.
 				// relocate() additionally skips anything outside keepPrefix (see
 				// buildKeepPrefix()). Identical layout to the marketplace reference.
 				return array(
-					$zipBase . '/e107_plugins/' => e_BASE . e107::getFolder('PLUGINS'),
+					$zipBase . '/' . $plugDir . '/' => e_BASE . e107::getFolder('PLUGINS'),
 				);
 
 			case 'theme':
@@ -381,47 +419,49 @@ class github_sync_engine
 
 			case 'core':
 				return array(
-					$zipBase . '/eadmin/'     => e_BASE . e107::getFolder('ADMIN'),
-					$zipBase . '/ecore/'      => e_BASE . e107::getFolder('CORE'),
-					$zipBase . '/edocs/'      => e_BASE . e107::getFolder('DOCS'),
-					$zipBase . '/ehandlers/'  => e_BASE . e107::getFolder('HANDLERS'),
-					$zipBase . '/eimages/'    => e_BASE . e107::getFolder('IMAGES'),
-					$zipBase . '/elanguages/' => e_BASE . e107::getFolder('LANGUAGES'),
-					$zipBase . '/emedia/'     => e_BASE . e107::getFolder('MEDIA'),
-					// LITE MODIFICATION (githubSyncLite): eplugins/ intentionally NOT
-					// mapped for a core sync. Plugins are pulled selectively, not with
-					// the core. relocate() actively skips eplugins/ for type 'core' so
-					// the catch-all below cannot pull them in either.
-					$zipBase . '/esystem/'    => e_BASE . e107::getFolder('SYSTEM'),
-					$zipBase . '/ethemes/'    => e_BASE . e107::getFolder('THEMES'),
-					$zipBase . '/eweb/'       => e_BASE . e107::getFolder('WEB'),
-					$zipBase . '/'            => e_BASE,
+					$zipBase . '/' . $px . 'admin/'     => e_BASE . e107::getFolder('ADMIN'),
+					$zipBase . '/' . $px . 'core/'      => e_BASE . e107::getFolder('CORE'),
+					$zipBase . '/' . $px . 'docs/'      => e_BASE . e107::getFolder('DOCS'),
+					$zipBase . '/' . $px . 'files/'     => e_BASE . e107::getFolder('FILES'),
+					$zipBase . '/' . $px . 'handlers/'  => e_BASE . e107::getFolder('HANDLERS'),
+					$zipBase . '/' . $px . 'images/'    => e_BASE . e107::getFolder('IMAGES'),
+					$zipBase . '/' . $px . 'languages/' => e_BASE . e107::getFolder('LANGUAGES'),
+					$zipBase . '/' . $px . 'media/'     => e_BASE . e107::getFolder('MEDIA'),
+					// LITE MODIFICATION (githubSyncLite): the plugins folder is
+					// intentionally NOT mapped for a core sync. Plugins are pulled
+					// selectively, not with the core. relocate() actively skips both
+					// plugins-folder spellings for type 'core' so the catch-all below
+					// cannot pull them in either.
+					$zipBase . '/' . $px . 'system/'    => e_BASE . e107::getFolder('SYSTEM'),
+					$zipBase . '/' . $px . 'themes/'    => e_BASE . e107::getFolder('THEMES'),
+					$zipBase . '/' . $px . 'web/'       => e_BASE . e107::getFolder('WEB'),
+					$zipBase . '/'                      => e_BASE,
 				);
 
 			case 'themepack':
 				return array(
-					$zipBase . '/eplugins/' => e_BASE . e107::getFolder('PLUGINS'),
-					$zipBase . '/ethemes/'  => e_BASE . e107::getFolder('THEMES'),
-					$zipBase . '/'          => e_BASE,
+					$zipBase . '/' . $plugDir . '/'      => e_BASE . e107::getFolder('PLUGINS'),
+					$zipBase . '/' . $px . 'themes/'     => e_BASE . e107::getFolder('THEMES'),
+					$zipBase . '/'                       => e_BASE,
 				);
 
 			case 'other':
 				// Root-layout grab for ad-hoc / manually-synced repos that do NOT
-				// follow the e107_plugins/{folder}/ standard: the whole repo root
-				// goes into one named plugin folder (eplugins/{folder}). No
-				// e107_plugins/ remap and no pack-style catch-all into e_BASE, so it
-				// cannot overwrite core directories. hasTraversal() still guards
-				// every entry in relocate().
+				// follow the {plugins_folder}/{folder}/ standard: the whole repo root
+				// goes into one named LOCAL plugin folder. No plugins-folder remap
+				// and no pack-style catch-all into e_BASE, so it cannot overwrite
+				// core directories. hasTraversal() still guards every entry in
+				// relocate().
 				return array(
 					$zipBase => e_BASE . e107::getFolder('PLUGINS') . $p['folder'],
 				);
 
 			case 'language':
 				return array(
-					$zipBase . '/e107_languages/' => e_BASE . e107::getFolder('LANGUAGES'),
-					$zipBase . '/e107_plugins/'   => e_BASE . e107::getFolder('PLUGINS'),
-					$zipBase . '/e107_themes/'    => e_BASE . e107::getFolder('THEMES'),
-					$zipBase . '/'                => e_BASE,
+					$zipBase . '/' . $px . 'languages/' => e_BASE . e107::getFolder('LANGUAGES'),
+					$zipBase . '/' . $plugDir . '/'     => e_BASE . e107::getFolder('PLUGINS'),
+					$zipBase . '/' . $px . 'themes/'    => e_BASE . e107::getFolder('THEMES'),
+					$zipBase . '/'                      => e_BASE,
 				);
 		}
 
@@ -442,7 +482,7 @@ class github_sync_engine
 	{
 		if ($p['type'] === 'plugin')
 		{
-			return $zipBase . '/e107_plugins/' . $p['folder'] . '/';
+			return $zipBase . '/' . $p['plugins_folder'] . '/' . $p['folder'] . '/';
 		}
 
 		// 'theme' will join here once it becomes folder-scoped (see buildFolderMap).
@@ -459,12 +499,13 @@ class github_sync_engine
 	 * @param array  $unarc
 	 * @param array  $folderMap
 	 * @param string $zipBase
-	 * @param string $type
+	 * @param array  $p           Validated sync params (type, plugins_folder, folder_prefix, …).
 	 * @param string $keepPrefix
 	 * @return array ['success' => [...], 'error' => [...], 'skipped' => [...]]
 	 */
-	private function relocate(array $unarc, array $folderMap, $zipBase, $type, $keepPrefix = '')
+	private function relocate(array $unarc, array $folderMap, $zipBase, array $p, $keepPrefix = '')
 	{
+		$type = $p['type'];
 		$excludes = array();
 		foreach ($this->excludeFiles as $f)
 		{
@@ -490,10 +531,13 @@ class github_sync_engine
 			}
 
 			// LITE MODIFICATION (githubSyncLite): for a core sync, never write
-			// anything under eplugins/. buildFolderMap('core') drops the eplugins
-			// mapping, but the catch-all ($zipBase.'/' => e_BASE) would still
-			// relocate plugin files, so skip them explicitly here. Plugins are
-			// installed selectively, not as part of the core.
+			// anything under the plugins folder. buildFolderMap('core') has no
+			// plugins mapping, but the catch-all ($zipBase.'/' => e_BASE) would
+			// still relocate plugin files, so skip them explicitly here. BOTH
+			// spellings are skipped unconditionally (not just the configured
+			// one) as belt-and-braces: a core sync must never write plugin
+			// files, whichever layout the Source repo uses — even when the
+			// 'plugins_folder' preference is set wrong.
 			if ($type === 'core'
 				&& (strpos($stored, $zipBase . '/eplugins/') === 0
 					|| strpos($stored, $zipBase . '/e107_plugins/') === 0))
@@ -512,7 +556,7 @@ class github_sync_engine
 			}
 
 			// language: only translate plugins/themes that exist here.
-			if ($this->skipMissingTarget($stored, $zipBase, $type))
+			if ($this->skipMissingTarget($stored, $zipBase, $p))
 			{
 				$skipped[] = $stored;
 				continue;
@@ -646,25 +690,25 @@ class github_sync_engine
 	/**
 	 * For a 'language' pack, decide whether an entry should be skipped because
 	 * it carries a translation for a plugin/theme that is not present on this
-	 * site. Entries under e107_plugins/<X>/ or e107_themes/<X>/ are skipped
-	 * when the local <X> folder does not exist. Core (e107_languages) and root
-	 * entries are always kept.
+	 * site. Entries under {plugins_folder}/<X>/ or {prefix}themes/<X>/ are
+	 * skipped when the local <X> folder does not exist. Core languages and
+	 * root entries are always kept.
 	 *
 	 * @param string $stored   Archive entry path.
 	 * @param string $zipBase  Archive top-level folder.
-	 * @param string $type     Sync type.
+	 * @param array  $p        Validated sync params (type, plugins_folder, folder_prefix, …).
 	 * @return bool
 	 */
-	private function skipMissingTarget($stored, $zipBase, $type)
+	private function skipMissingTarget($stored, $zipBase, array $p)
 	{
-		if ($type !== 'language')
+		if ($p['type'] !== 'language')
 		{
 			return false;
 		}
 
 		$targets = array(
-			$zipBase . '/e107_plugins/' => e_BASE . e107::getFolder('PLUGINS'),
-			$zipBase . '/e107_themes/'  => e_BASE . e107::getFolder('THEMES'),
+			$zipBase . '/' . $p['plugins_folder'] . '/'       => e_BASE . e107::getFolder('PLUGINS'),
+			$zipBase . '/' . $p['folder_prefix'] . 'themes/'  => e_BASE . e107::getFolder('THEMES'),
 		);
 
 		foreach ($targets as $prefix => $localBase)
@@ -677,7 +721,7 @@ class github_sync_engine
 			$rest = substr($stored, strlen($prefix));
 			if ($rest === '')
 			{
-				return false; // the e107_plugins/ container folder itself
+				return false; // the plugins container folder itself
 			}
 
 			$name = strtok($rest, '/');
