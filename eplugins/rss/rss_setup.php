@@ -45,7 +45,7 @@ class rss_setup
 				'rss_limit'     => '9'
 			);
 
-			$status = ($sql->createQueryBuilder()->insert('rss')->valuesTyped($insert, $sql->getFieldDefs('rss')['_FIELD_TYPES'])->execute()) ? E_MESSAGE_SUCCESS : E_MESSAGE_ERROR;
+			$status = ($sql->createQueryBuilder()->insert('rss')->valuesTyped($insert)->execute()) ? E_MESSAGE_SUCCESS : E_MESSAGE_ERROR;
 			$mes->add(LAN_DEFAULT_TABLE_DATA.": rss", $status);
 		}
 	}
