@@ -2338,18 +2338,6 @@ return [
 		// Set prefs, save
 		e107::getConfig()->setPref($this->previous_steps['prefs']);
 
-		// csrf_enforce is normally left unset so the site follows e107's
-		// recommendation and moves with it. The one case where that is the wrong
-		// thing to hand a new site is decided in e_session, where it can be
-		// tested; see e_session::installTimeMode().
-		$csrfInstallMode = e_session::installTimeMode($_SERVER);
-
-		if($csrfInstallMode !== null)
-		{
-			e107::getConfig()->set('csrf_enforce', $csrfInstallMode);
-			installLog::add('Installing browser sent no Sec-Fetch-Site; csrf_enforce pinned to '.$csrfInstallMode);
-		}
-
 		e107::getConfig()->save(FALSE,TRUE, FALSE); // save preferences made during install.
 		installLog::add('Core prefs set to install choices');
 
@@ -2533,7 +2521,7 @@ return [
 		{
 			$this->previous_steps['language'] = $_POST['language'];
 		}		
-		
+
 		if(!isset($this->previous_steps['language']))
 		{
 			$this->previous_steps['language'] = "English";
@@ -2767,6 +2755,8 @@ return [
 		{
 			$sql_table = preg_replace("/create table\s/si", "CREATE TABLE {$this->previous_steps['mysql']['prefix']}", $sql_table);
 
+			$sql_table = $this->adaptTableToServer($sql_table);
+
 			// Drop existing tables before creating.
 			$tmp = explode("\n",$sql_table);
 			$drop_table = str_replace($srch,$repl,$tmp[0]);
@@ -2781,6 +2771,78 @@ return [
 
 		return FALSE;
 
+	}
+
+	/** @var db_verify|null Engine and charset adviser, built once per install */
+	private $tableAdviser = null;
+
+	/**
+	 * Fit one CREATE TABLE statement to what this server can actually do.
+	 *
+	 * core_sql.php declares InnoDB for all 30 tables and names no character set,
+	 * so they inherit the database default. That has worked by luck rather than
+	 * design: where InnoDB has no FULLTEXT (MySQL before 5.6) the four tables
+	 * declaring one are refused with error 1214, and where the database defaults
+	 * to utf8mb4 the five widest indexes pass the 767-byte limit and are refused
+	 * with 1071. db_verify already knows which engine and character set this
+	 * server can give a table, so ask it and say the answer out loud.
+	 *
+	 * If it cannot be consulted the statement is used exactly as written, which
+	 * is how installation behaved before.
+	 *
+	 * @param string $statement one CREATE TABLE, already prefixed
+	 * @return string
+	 */
+	private function adaptTableToServer($statement)
+	{
+		try
+		{
+			if ($this->tableAdviser === null)
+			{
+				require_once(e_HANDLER . 'db_verify_class.php');
+
+				// Built without init(): that reads preferences, and the core
+				// tables this is helping to create do not exist yet.
+				$this->tableAdviser = new db_verify(false);
+				$this->tableAdviser->availableStorageEngines = $this->tableAdviser->getAvailableStorageEngines();
+			}
+
+			$dbv = $this->tableAdviser;
+
+			if (!preg_match('/^(.*\))\s*ENGINE\s*=\s*(\w+)(.*?);?\s*$/is', $statement, $m))
+			{
+				return $statement;
+			}
+
+			$body     = $m[1];
+			$declared = $m[2];
+			$trailing = trim($m[3]);
+
+			// Engine first: how wide an index may be depends on the engine that
+			// ends up holding it.
+			$requirements = $dbv->deriveTableRequirements($dbv->getFields($body), $dbv->getIndex($body));
+
+			$engine = $dbv->getIntendedStorageEngine($declared, $requirements);
+
+			if (empty($engine))
+			{
+				return $statement;
+			}
+
+			$requirements['engine'] = $engine;
+
+			$charset = $dbv->getIntendedCharset('', $requirements);
+
+			return $body . ' ENGINE=' . $engine . ' DEFAULT CHARSET=' . $charset
+				. ($trailing !== '' ? ' ' . $trailing : '') . ';';
+		}
+		catch (Exception $e)
+		{
+			installLog::add('Could not fit a table definition to this server, using it as written: '
+				. $e->getMessage(), 'error');
+
+			return $statement;
+		}
 	}
 
 	function write_config($data)
@@ -2929,11 +2991,11 @@ function create_tables_unattended()
 	if(is_array($config) && !empty($config['database'])) // New e107_config.php format. v2.4+
 	{
 		$dbInfo = $config['database'];
-		$mySQLserver    = $dbInfo['server']   ?? null;
-		$mySQLuser      = $dbInfo['user']     ?? null;
-		$mySQLpassword  = $dbInfo['password'] ?? null;
-		$mySQLdefaultdb = $dbInfo['db']       ?? null;
-		$mySQLprefix    = $dbInfo['prefix']   ?? null;
+		$mySQLserver    = isset($dbInfo['server']) ? $dbInfo['server'] : null;
+		$mySQLuser      = isset($dbInfo['user']) ? $dbInfo['user'] : null;
+		$mySQLpassword  = isset($dbInfo['password']) ? $dbInfo['password'] : null;
+		$mySQLdefaultdb = isset($dbInfo['db']) ? $dbInfo['db'] : null;
+		$mySQLprefix    = isset($dbInfo['prefix']) ? $dbInfo['prefix'] : null;
 	}
 
 	//If mysql info not set, config file is not created properly

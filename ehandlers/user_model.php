@@ -242,6 +242,24 @@ class e_user_model extends e_admin_model
 	}
 
 	/**
+	 * Whether a posted 'ac' field carries the value the current administrator's
+	 * form was rendered with.
+	 *
+	 * This confirms that the submission came from a form this account was
+	 * served. It is not a forgery check, which is e-token, and it is not an
+	 * authorisation check: the value is md5 of a timestamp, it is md5('0') for
+	 * any administrator who has never changed their password, and it is
+	 * md5('') for everyone who is not an administrator at all.
+	 *
+	 * @param string $value posted value
+	 * @return bool
+	 */
+	final public function checkAdminPwchangeToken($value)
+	{
+		return hash_equals(md5((string) $this->getAdminPwchange()), (string) $value);
+	}
+
+	/**
 	 * @return false|mixed
 	 */
 	final public function getAdminPerms()
@@ -799,8 +817,8 @@ class e_user_model extends e_admin_model
 		// revised - don't call extended object, no permission checks, just return joined user data
 		$ret = $this->getData();
 		// $ret = array_merge($this->getExtendedModel()->getExtendedData(), $this->getData());
-		if ($ret['user_perms'] == '0.') $ret['user_perms'] = '0';
-		$ret['user_baseclasslist'] = $ret['user_class'];
+		if (varset($ret['user_perms']) == '0.') $ret['user_perms'] = '0';
+		$ret['user_baseclasslist'] = varset($ret['user_class']);
 		$ret['user_class'] = $this->getRealClassList(true); // identity data; never the emulation overlay (#5745)
 		return $ret;
 	}
@@ -946,7 +964,7 @@ class e_user_model extends e_admin_model
 		}
 		else
 		{
-			$mfield = substr($field, 5);
+			$mfield = (string) substr($field, 5);
 		}
 
 		// check for BC/override method first e.g. getSingatureValue($default, $system = false, $rawExtended);
@@ -983,7 +1001,7 @@ class e_user_model extends e_admin_model
 		}
 		else
 		{
-			$mfield = substr($field, 5);
+			$mfield = (string) substr($field, 5);
 		}
 
 		// check for BC/override method first e.g. setSingatureValue($value, $system = false);
@@ -1027,7 +1045,7 @@ class e_user_model extends e_admin_model
 		}
 		else
 		{
-			$mfield = substr($field, 5);
+			$mfield = (string) substr($field, 5);
 		}
 
 		// check for BC/override method first e.g. getSingatureValue($default, $system = true, $rawExtended);
@@ -1063,7 +1081,7 @@ class e_user_model extends e_admin_model
 		}
 		else
 		{
-			$mfield = substr($field, 5);
+			$mfield = (string) substr($field, 5);
 		}
 
 		// check for BC/override method first e.g. setSingatureValue($value, $system = true);
@@ -1308,7 +1326,7 @@ class e_user_model extends e_admin_model
 	 */
 	protected function clearTarget()
 	{
-		e107::setRegistry('core/e107/user'.$this->getId(), null);
+		e107::setRegistry('core/e107/user/'.$this->getId(), null);
 		return $this;
 	}
 

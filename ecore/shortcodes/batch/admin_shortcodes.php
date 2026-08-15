@@ -36,7 +36,7 @@ class admin_shortcodes extends e_shortcode
             {	//TODO LANVARS
 				$text = ADLAN_122.'  v'.$cacheData.'</a>.
 					<a class="btn btn-success" href="'.$installUrl.'">'.ADLAN_121.'</a>'; //Install
-				
+
 				$mes->addInfo($text);
 				return null; //  $mes->render();
 			}
@@ -2064,6 +2064,8 @@ Inverse 	10 	<span class="badge badge-inverse">10</span>
 				'tools'		=> array(4,'toolMenu'),
 				'manage'	=> array(6,'managMenu'),
 				'misc'		=> array(7,'miscMenu'),
+				'menu'		=> array(7,'miscMenu'),
+				'about'		=> array(20,'aboutMenu'),
 				'help'		=> array(20,'helpMenu')
 			);
 
@@ -2072,7 +2074,7 @@ Inverse 	10 	<span class="badge badge-inverse">10</span>
 			 {
 			    if(!empty($pg['category']))
 			    {
-			 	    $id = $convert[$pg['category']][1];
+			 	    $id = isset($convert[$pg['category']]) ? $convert[$pg['category']][1] : 'miscMenu';
              	    $menu_vars[$id]['sub'][] = $pg;
 
 				    if(strpos(e_REQUEST_SELF,$pg['link'])!==false)

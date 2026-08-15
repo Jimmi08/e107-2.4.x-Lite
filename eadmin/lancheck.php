@@ -387,7 +387,12 @@ class lancheck
 		// Edit the Language File.
 		if($mode == 'edit' && vartrue($file) && !empty($lan) && in_array($lan, $acceptedLans))
 		{
-			
+			if(!$this->isLanFileTarget($file))
+			{
+				e107::getMessage()->addError(LAN_ERROR);
+				return false;
+			}
+
 			if (empty($_GET['type']))
 			{
 				$dir1 =  e_LANGUAGEDIR."English/";
@@ -399,13 +404,13 @@ class lancheck
 			{
 				$fullpath_orig = $tp->toDB($file);
 				$fullpath_trans = str_replace("English", $lan, $tp->toDB($file));
-		
+
 				$f1 = basename($fullpath_orig);
 				$f2 = basename($fullpath_trans);
 				$dir1 = dirname($fullpath_orig)."/";
 				$dir2 = dirname($fullpath_trans)."/";
 			}
-			
+
 			return $this->edit_lanfiles($dir1,$dir2,$f1,$f2,$lan, varset($_GET['type']));
 			// return true;
 		}	
@@ -965,7 +970,7 @@ class lancheck
 			echo "debug: ".__METHOD__." missing \$lan";
 			return false;
 		}
-			
+
 	//	$lan = key($_POST['language_sel']);
 
 		$_SESSION['lancheck'][$lan] = array();
@@ -974,14 +979,14 @@ class lancheck
 		$_SESSION['lancheck'][$lan]['bom']	= 0;
 		$_SESSION['lancheck'][$lan]['utf']	= 0;
 		$_SESSION['lancheck'][$lan]['total']	= 0;
-	
-	
+
+
 		$core_text 	= $this->check_core_lanfiles($lan);
 		$core_admin = $this->check_core_lanfiles($lan,"admin/");
 		$plug_text = "";
 		$theme_text = "";
-	
-	
+
+
 		// Plugins -------------
 		$plug_header = "<table class='table table-striped'>
 		<tr>
@@ -989,7 +994,7 @@ class lancheck
 		<td class='fcaption'>".LAN_CHECK_16."</td>
 		<td class='fcaption'>".$lan."</td>
 		<td class='fcaption'>".LAN_OPTIONS."</td></tr>";
-	
+
 		foreach($this->core_plugins as $plugs)
 		{
 			if(is_readable(e_PLUGIN.$plugs))
@@ -997,9 +1002,9 @@ class lancheck
 				$plug_text .= $this->check_lanfiles('P',$plugs,"English",$lan);
 			}
 		}
-		
+
 		$plug_footer = "</table>";
-	
+
 		// Themes  -------------
 		$theme_header = "<table class='table table-striped'>
 		<tr>
@@ -1015,32 +1020,32 @@ class lancheck
 			}
 		}
 		$theme_footer = "</table>";
-		
-		// -------------------------
-		
 
-		
-		
+		// -------------------------
+
+
+
+
 		if($mode != 'render')
 		{
 			 return null;
 		}
-	
+
 		$message = "
 		<form id='lancheck' method='post' action='".e_ADMIN."language.php?mode=main&action=tools'>
 		<div>\n";
-		
+
 	//	$icon = ($_SESSION['lancheck'][$lan]['total']>0) ? ADMIN_FALSE_ICON : ADMIN_TRUE_ICON;
-		
-		
+
+
 		$errors_diz = (deftrue('LAN_CHECK_23')) ? LAN_CHECK_23 : "Errors Found";
 
 		$message .= $errors_diz.": ".$_SESSION['lancheck'][$lan]['total'];
-	
+
 		$just_go_diz = (deftrue('LAN_CHECK_20')) ? LAN_CHECK_20 : "Generate Language Pack";
 		$lang_sel_diz = (deftrue('LAN_CHECK_21')) ? LAN_CHECK_21 : "Verify Again";
 		$lan_pleasewait = (deftrue('LAN_PLEASEWAIT')) ? LAN_PLEASEWAIT : "Please Wait";
-		
+
 		$message .= "
 		<br /><br />
 		<input type='hidden' name='language' value='".$lan."' />
@@ -1050,16 +1055,16 @@ class lancheck
 		</div>
 	    </form>
 		";
-		
+
 //	print_a($_SESSION['lancheck'][$lan]);
 
 		$plug_text = ($plug_text) ? $plug_header.$plug_text.$plug_footer : "<div class='alert alert-success'>".LAN_OK."</div>";
 		$theme_text = ($theme_text) ? $theme_header.$theme_text.$theme_footer : "<div class='alert alert-success'>".LAN_OK."</div>";
 
 		$mesStatus = ($_SESSION['lancheck'][$lan]['total']>0) ? E_MESSAGE_INFO : E_MESSAGE_SUCCESS;
-			
+
 		$mes->add($message, $mesStatus);	
-			
+
 	//	$ns -> tablerender(LAN_SUMMARY.": ".$lan,$message);
 
 
@@ -1091,6 +1096,115 @@ class lancheck
 
 
 
+
+	/**
+	 * Is this a name that may be written into generated PHP as a constant?
+	 *
+	 * Matches what fill_phrases_array() is willing to read back, so a name that
+	 * passes here survives a save/reload cycle.
+	 *
+	 * @param string $name candidate constant name from the newdef[] field
+	 * @return bool
+	 */
+	private function isConstantName($name)
+	{
+		return is_string($name) && preg_match('/^\w+$/', $name) === 1;
+	}
+
+	/**
+	 * Turn the setlocale() field into a list of quoted PHP string literals.
+	 *
+	 * The field reaches us either as a bare locale name or as the argument list
+	 * lifted out of the file, so accept both and re-quote every name found.
+	 * Anything that is not shaped like a locale is dropped rather than written.
+	 *
+	 * @param string $raw contents of the LC_ALL textarea
+	 * @return array PHP literals, ready to join with commas
+	 */
+	private function localeArguments($raw)
+	{
+		if(preg_match_all('/[\'"]([^\'"]*)[\'"]/', $raw, $quoted))
+		{
+			$candidates = $quoted[1];
+		}
+		else
+		{
+			$candidates = explode(',', $raw);
+		}
+
+		$args = array();
+
+		foreach($candidates as $candidate)
+		{
+			$candidate = trim($candidate);
+
+			if($candidate !== '' && preg_match('/^[A-Za-z0-9_.@+-]+$/', $candidate))
+			{
+				$args[] = var_export($candidate, true);
+			}
+		}
+
+		return $args;
+	}
+
+	/**
+	 * Is this a language file the editor may open?
+	 *
+	 * The value arrives on the query string and ends up inside the path this
+	 * class creates directories at, writes stub files to, and finally saves
+	 * over, so it has to be a plain relative path to a .php file.
+	 *
+	 * @param string $file candidate path, relative to a language root
+	 * @return bool
+	 */
+	private function isLanFileTarget($file)
+	{
+		if(!is_string($file) || $file === '' || strlen($file) > 255)
+		{
+			return false;
+		}
+
+		if(strpos($file, "\0") !== false || strpos($file, '..') !== false || strpos($file, '\\') !== false)
+		{
+			return false;
+		}
+
+		if($file[0] === '/' || strtolower(substr($file, -4)) !== '.php')
+		{
+			return false;
+		}
+
+		return preg_match('#^[\w./-]+$#', $file) === 1;
+	}
+
+	/**
+	 * Does this directory still sit under one of the roots language files are
+	 * kept in?
+	 *
+	 * The roots themselves are relative to the calling script (e_LANGUAGEDIR
+	 * reads as ../elanguages/ from the admin area), so this compares
+	 * against the constants rather than trying to reason about the path.
+	 *
+	 * @param string $dir directory built from one of the language roots
+	 * @return bool
+	 */
+	private function withinLanRoots($dir)
+	{
+		if(!is_string($dir) || $dir === '' || strpos($dir, "\0") !== false)
+		{
+			return false;
+		}
+
+		foreach(array(e_LANGUAGEDIR, e_PLUGIN, e_THEME) as $root)
+		{
+			if($root !== '' && strpos($dir, $root) === 0)
+			{
+				return true;
+			}
+		}
+
+		return false;
+	}
 
 	function write_lanfile($lan='')
 	{
@@ -1165,34 +1279,47 @@ class lancheck
 			$notdef_end = "\n";
 			$deflang = (MAGIC_QUOTES_GPC === TRUE) ? stripslashes($_POST['newlang'][$i]) : $_POST['newlang'][$i];
 			$func = "define";
-			$quote = chr(34);
-	
-			if (strpos($_POST['newdef'][$i],"ndef++") !== FALSE )
+
+			$rawdef = isset($_POST['newdef'][$i]) ? $_POST['newdef'][$i] : '';
+			$guarded = (strpos($rawdef,"ndef++") !== FALSE);
+			$defvar = $guarded ? str_replace("ndef++","",$rawdef) : $rawdef;
+
+			if(!is_string($deflang) || !$this->isConstantName($defvar))
 			{
-				$defvar = str_replace("ndef++","",$_POST['newdef'][$i]);
-				$notdef_start = "if (!defined(".chr(34).$defvar.chr(34).")) {";
-				$notdef_end = "}\n";
+				continue;
 			}
-			else
-			{
-				$defvar = $_POST['newdef'][$i];
-			}
+
+			$deflang = str_replace(chr(0), '', $deflang);
 
 			if(empty($deflang))
 			{
 				continue; 
 			}
-	
-			if($_POST['newdef'][$i] == "LC_ALL" && vartrue($_SESSION['lancheck-edit-file']))
+
+			if($guarded)
 			{
-				$message .= $notdef_start.'setlocale('.htmlentities($defvar).','.$deflang.');<br />'.$notdef_end;
-				$input .= $notdef_start."setlocale(".$defvar.",".$deflang.");".$notdef_end;
+				$notdef_start = "if (!defined(".var_export($defvar, true).")) {";
+				$notdef_end = "}\n";
+			}
+
+			if($rawdef == "LC_ALL" && vartrue($_SESSION['lancheck-edit-file']))
+			{
+				$locales = $this->localeArguments($deflang);
+
+				if(empty($locales))
+				{
+					continue;
+				}
+
+				$statement = "setlocale(".$defvar.", ".implode(", ", $locales).");";
 			}
 			else
 			{
-				$message .= $notdef_start.$func.'('.$quote.htmlentities($defvar).$quote.',"'.$deflang.'");<br />'.$notdef_end;
-				$input .= $notdef_start.$func."(".$quote.$defvar.$quote.", ".chr(34).$deflang.chr(34).");".$notdef_end;
+				$statement = $func."(".var_export($defvar, true).", ".var_export($deflang, true).");";
 			}
+
+			$message .= htmlspecialchars($notdef_start.$statement, ENT_QUOTES, 'UTF-8').'<br />'.$notdef_end;
+			$input .= $notdef_start.$statement.$notdef_end;
 		}
 	
 		$message .="<br />";
@@ -1205,7 +1332,7 @@ class lancheck
 		$writeit = str_replace("//","/",$writeit); // Quick Fix. 
 		
 		$fp = @fopen($writeit,"w");
-		if(!@fwrite($fp, $input))
+		if($fp === false || !@fwrite($fp, $input))
 		{
 			$caption = LAN_ERROR;
 			$message = LAN_CHECK_17;
@@ -1217,7 +1344,10 @@ class lancheck
 			$caption = LAN_SAVED." <b>".str_replace('..','',$writeit)."</b>";
 			$status = e107::getMessage()->addSuccess($caption)->render();
 		}
-		fclose($fp);
+		if($fp !== false)
+		{
+			fclose($fp);
+		}
 
 	/*
 		$message .= "<form method='post' action='".e_SELF."?tools' id='select_lang'>
@@ -1781,19 +1911,25 @@ class lancheck
 			$dir1 = e_THEME.$dir1;
 			$dir2 = e_THEME.$dir2;
 		}
-		
+
+		if(!$this->withinLanRoots($dir1) || !$this->withinLanRoots($dir2))
+		{
+			e107::getMessage()->addError(LAN_ERROR);
+			return null;
+		}
+
 	//	$ns = e107::getRender();
 		$sql = e107::getDb();
 
-	
+
 		/*    echo "<br />dir1 = $dir1";
 		echo "<br />file1 = $f1";
-	
+
 		echo "<br />dir2 = $dir2";
 		echo "<br />file2 = $f2";*/
-		
-	
-	
+
+
+
 		if($dir2.$f2 == e_LANGUAGEDIR.$lan."/English.php") // it's a language config file.
 		{
 			$f2 = $lan.".php";
@@ -1803,7 +1939,7 @@ class lancheck
 		{
 			$root_file = $dir2.$f2;
 		}
-	
+
 		if($dir2.$f2 == e_LANGUAGEDIR.$lan."/English_custom.php") // it's a language config file.
 		{
 			$f2 = $lan."_custom.php";
@@ -1822,7 +1958,7 @@ class lancheck
 
 		$keys = array_keys($trans);
 		sort($keys);
-	
+
 		$text = "<div style='text-align:center'>
 		<form method='post' action='".e_SELF."?".e_QUERY."' id='transform'>
 		<table class='table table-striped'>
@@ -1833,7 +1969,7 @@ class lancheck
 			<th>".$lan."</th>
 		</tr>
 		</thead><tbody>";
-	
+
 		$subkeys = array_keys($trans['orig']);
 		foreach($subkeys as $sk)
 		{
@@ -1868,39 +2004,39 @@ class lancheck
 			}
 			$text .="</td></tr>";
 		}
-	
+
 		unset($_SESSION['lancheck-edit-file']);
-	
+
 		//Check if directory is writable
-		
+
 		$text .= "</tbody></table>";
-		
+
 		if($writable)
 		{
 			$text .= '<div class="buttons-bar center">
 			<input type="hidden" name="lan" value="'.$lan.'" />
 			<button id="etrigger-submit" class="btn btn-warning" type="submit" name="saveLanguageFile" value="1" >'.LAN_SAVE.' '.str_replace($dir2,'',$root_file).'</button>
 			</div>';
-	
+
 			if($root_file)
 			{			
 				$_SESSION['lancheck-edit-file'] = $root_file;
 			}
-	
-			
+
+
 		}
-	
+
 		$text .= "
-		
+
 		</form>
 		</div>";
-	
+
 		$text .= "<form method='post' action='".e_SELF."?tools' id='select_lang'>
 		<div style='text-align:center'><br />";
 		$text .= (!$writable) ? "<br />".$dir2.$f2.LAN_NOTWRITABLE : "";
 	//	$text .= "<br /><br /><input class='btn' type='submit' name='language_sel[{$lan}]' value=\"".LAN_BACK."\" />";
 		$text .= "</div></form>";
-	
+
 		$capFile = str_replace("../","",$dir2.$f2);
 		$caption = LANG_LAN_21.SEP.$lan.SEP.LAN_CHECK_2.SEP.LAN_EDIT.SEP.$capFile;
 

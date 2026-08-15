@@ -52,7 +52,7 @@ class rss_setup
 /*	
 	function uninstall_options()
 	{
-	
+
 	}
 
 

@@ -71,10 +71,10 @@ class e_db_pdo implements e_db
 		$config =  e107::getMySQLConfig();
 
 
-		$this->mySQLserver      = $config['mySQLserver'] ?? '';
-		$this->mySQLuser        = $config['mySQLuser'] ?? '';
-		$this->mySQLpassword    = $config['mySQLpassword'] ?? '';
-		$this->mySQLdefaultdb   = $config['mySQLdefaultdb'] ?? '';
+		$this->mySQLserver      = isset($config['mySQLserver']) ? $config['mySQLserver'] : '';
+		$this->mySQLuser        = isset($config['mySQLuser']) ? $config['mySQLuser'] : '';
+		$this->mySQLpassword    = isset($config['mySQLpassword']) ? $config['mySQLpassword'] : '';
+		$this->mySQLdefaultdb   = isset($config['mySQLdefaultdb']) ? $config['mySQLdefaultdb'] : '';
 		$this->mySQLport        = varset($config['port'], 3306);
 		$this->mySQLPrefix      = varset($config['mySQLprefix'], 'e107_');
 
@@ -252,6 +252,13 @@ class e_db_pdo implements e_db
 	 * The array ['PREPARE' => ..., 'BIND' => ..., 'EXECUTE' => ...] contract is
 	 * internal plumbing; new code should call {@see e_db::execute()} instead.
 	 *
+	 * The recorded error state describes this query and no earlier one. It is
+	 * cleared before the statement runs, so a caller reading
+	 * {@see ConnectionInterface::getLastErrorNumber()} afterwards gets this
+	 * query's outcome rather than the last failure the connection ever saw.
+	 * The mysqli driver already behaves this way, refreshing the state from
+	 * mysqli_errno() after every statement.
+	 *
 	 * @param string|array  $query ['BIND'] eg. array['my_field'] = array('value'=>'whatever', 'type'=>'str');
 	 * @param object $rli connection resource.
 	 * @param string $qry_from eg. SELECT, INSERT, UPDATE mode.
@@ -287,6 +294,29 @@ class e_db_pdo implements e_db
 			$this->log($log_type, $log_remark, $query);
 		}
 
+		$this->resetLastError();
+
+		// PDO raises a ValueError on an empty statement and a TypeError on one that
+		// is not a string. Neither descends from PDOException, so neither is caught
+		// below, and a caller that would have read back false instead loses the
+		// whole request to an uncaught fatal (#5904). Every caller here already
+		// tests the return value, so answer them the way a refused query does.
+		//
+		// Both shapes need checking. A bare empty string reaches PDO::query()
+		// directly; an array whose PREPARE is empty or absent fails the branch
+		// below and lands in the string path, where preg_match() is handed an
+		// array and raises a TypeError of its own.
+		$statement = is_array($query)
+			? (isset($query['PREPARE']) ? $query['PREPARE'] : null)
+			: $query;
+
+		if(!is_string($statement) || trim($statement) === '')
+		{
+			$this->mySQLlastErrText = 'Empty or non-string query passed to '.__FUNCTION__.'()';
+
+			return false;
+		}
+
 		$b = microtime();
 
 
@@ -299,7 +329,12 @@ class e_db_pdo implements e_db
 			{
 				foreach($query['BIND'] as $k=>$v)
 				{
-					$prep->bindValue(':'.$k, $v['value'], $v['type']);
+					// A PARAM_NULL bind must carry a null value: PHP's modern
+					// PDO discards the value and sends SQL NULL either way,
+					// but PHP 5's pdo_mysql sends whatever value it was
+					// handed, silently un-nulling the bind.
+					$value = ($v['type'] === PDO::PARAM_NULL) ? null : $v['value'];
+					$prep->bindValue(':'.$k, $value, $v['type']);
 				}
 			}
 
@@ -965,7 +1000,7 @@ class e_db_pdo implements e_db
 	 */
 	protected function _escape($data)
 	{
-		return substr($this->quoteStringLiteral($data), 1, -1);
+		return (string) substr($this->quoteStringLiteral($data), 1, -1);
 	}
 
 	/**
@@ -1059,7 +1094,7 @@ class e_db_pdo implements e_db
 				$length = strlen($prefix);
 				while($rows = $this->fetch('num'))
 				{
-					$table[] = substr($rows[0],$length);
+					$table[] = (string) substr($rows[0],$length);
 				}
 			}
 			return $table;

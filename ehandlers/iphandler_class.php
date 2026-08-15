@@ -170,7 +170,7 @@ class eIPHandler
 
 		$this->ourIP = $this->ipEncode($this->getCurrentIP());
 
-		$this->serverIP = $this->ipEncode($_SERVER['SERVER_ADDR'] ?? 'x.x.x.x');
+		$this->serverIP = $this->ipEncode(isset($_SERVER['SERVER_ADDR']) ? $_SERVER['SERVER_ADDR'] : 'x.x.x.x');
 
 		$this->makeUserToken();
 
@@ -311,8 +311,8 @@ class eIPHandler
     {
         if(!$this->ourIP)
         {
-            $server = $server ?? $_SERVER;
-            $ip = $server['REMOTE_ADDR'] ?? 'x.x.x.x';
+            $server = isset($server) ? $server : $_SERVER;
+            $ip = isset($server['REMOTE_ADDR']) ? $server['REMOTE_ADDR'] : 'x.x.x.x';
 
             if ($ip4 = getenv('HTTP_X_FORWARDED_FOR'))
             {
@@ -398,7 +398,7 @@ class eIPHandler
 						fclose($tmp);
 					}
 				}
-				$line = trim(substr($line, strlen($search)));
+				$line = trim((string) substr($line, strlen($search)));
 				if ((strpos($line, 'http://') === 0) || (strpos($line, 'https://') === 0))
 				{	// Display a specific web page
 					if (strpos($line, '?') === FALSE)
@@ -849,7 +849,7 @@ class eIPHandler
 
 		$sanitized_email = addslashes($email);
 
-		$domain = strtolower(substr($email, strrpos($email, '@') + 1));
+		$domain = strtolower((string) substr($email, strrpos($email, '@') + 1));
 
 		if($domain === '' || strpos($domain, '.') === false)
 		{
@@ -1510,12 +1510,12 @@ class banlistManager
 		$temp = strpos($ip, 'x');
 		if ($temp !== FALSE)
 		{
-			return substr($ip, 0, $temp);
+			return (string) substr($ip, 0, $temp);
 		}
 		$temp = strpos($ip, '*');
 		if ($temp !== FALSE)
 		{
-			return substr($ip, 0, $temp);
+			return (string) substr($ip, 0, $temp);
 		}
 		return $ip;
 	}
@@ -1733,11 +1733,15 @@ class banlistManager
 			{
 				if ($row = $ourDb->fetch())
 				{
-					// @todo check next line
-					// NOTE: behaviour-preserving - the original update had no WHERE clause,
-					// so this still updates every banlist row (pre-existing behaviour).
+					if (empty($pref['ban_durations'][$row['banlist_bantype']]))
+					{
+						continue;
+					}
+
+					$dur = (int) $pref['ban_durations'][$row['banlist_bantype']];
 					$writeDb->createQueryBuilder()->update('banlist')
-						->set('banlist_banexpires', intval($row['banlist_banexpires'] + $pref['ban_durations'][$row['banlist_banreason']]))
+						->setTyped('banlist_banexpires', time() + ($dur * 60 * 60), 'int')
+						->where('banlist_ip', $row['banlist_ip'])
 						->execute();
 					$numRet++;
 				}

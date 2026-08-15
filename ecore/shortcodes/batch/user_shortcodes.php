@@ -65,9 +65,13 @@ class user_shortcodes extends e_shortcode
 	
 	function sc_total_forumposts($parm = null)
 	{
+		// forum_post holds one row per post, forum_thread one per topic. The
+		// tally this total is compared against, user_plugin_forum_posts, is
+		// stepped once per forum_post row, and sc_user_forumper() caches its
+		// denominator under this same key, so both have to count posts.
 		if(!$forumposts = e107::getRegistry('total_forumposts'))
 		{
-			$forumposts = e107::getDb()->createQueryBuilder()->from('forum_thread')->count();
+			$forumposts = (e107::isInstalled("forum")) ? intval(e107::getDb()->createQueryBuilder()->from('forum_post')->count()) : 0;
 			e107::setRegistry('total_forumposts', $forumposts);
 		}
 
@@ -148,13 +152,17 @@ class user_shortcodes extends e_shortcode
 		{
 			$total_forumposts = (e107::isInstalled("forum")) ? intval(e107::getDb()->createQueryBuilder()->from('forum_post')->count()) : 0;
 			e107::setRegistry('total_forumposts', $total_forumposts);
-			//$user_forumposts = $sql->count("forum_thread","(*)","where thread_user=".$this->var['user_id']);
-			$user_forumposts = e107::getDb()->createQueryBuilder()
-				->select('user_plugin_forum_posts')->from('user_extended')
-				->where('user_extended_id', (int) $this->var['user_id'])
-				->fetchOne();
-
 		}
+
+		// Only the site-wide total may be cached. This member's own tally
+		// changes with every row a member list renders, so it is read on each
+		// call, cache hit or miss.
+		//$user_forumposts = $sql->count("forum_thread","(*)","where thread_user=".$this->var['user_id']);
+		$user_forumposts = (int) e107::getDb()->createQueryBuilder()
+			->select('user_plugin_forum_posts')->from('user_extended')
+			->where('user_extended_id', (int) $this->var['user_id'])
+			->fetchOne();
+
 		return ($total_forumposts > 0) ? round(($user_forumposts/$total_forumposts) * 100, 2) : 0;
 	}
 
@@ -296,17 +304,17 @@ class user_shortcodes extends e_shortcode
 	{
 		$boot = deftrue('BOOTSTRAP');
 		$tp = e107::getParser();
-		
+
 		switch ($parm) 
 		{
 			case 'email':
 				return ($boot) ? $tp->toGlyph('fa-envelope') : $this->sc_user_email_icon();
 			break;
-			
+
 			case 'lastvisit':
 				return ($boot) ? $tp->toGlyph('fa fa-clock-o') : '';
 			break;
-			
+
 			case 'birthday':
 				return ($boot) ? $tp->toGlyph('fa-calendar') : $this->sc_user_birthday_icon();
 			break;
@@ -314,11 +322,11 @@ class user_shortcodes extends e_shortcode
 			case 'level':
 				return ($boot) ? $tp->toGlyph('fa-signal') : '';
 			break;
-			
+
 			case 'website':
 				return ($boot) ? $tp->toGlyph('fa-home') : '';
 			break;
-			
+
 			case 'location':
 				return ($boot) ? $tp->toGlyph('fa-map-marker') : '';
 			break;
@@ -335,7 +343,7 @@ class user_shortcodes extends e_shortcode
 			break;
 		}
 
-	
+
 		/*
 		if(defined("USER_ICON"))
 		{
@@ -345,7 +353,7 @@ class user_shortcodes extends e_shortcode
 		{
 			return "<img src='".THEME_ABS."images/user.png' alt='' style='vertical-align:middle;' /> ";
 		}
-		
+
 		return "<img src='".e_IMAGE_ABS."user_icons/user.png' alt='' style='vertical-align:middle;' /> ";
 		*/
 	}
@@ -646,7 +654,7 @@ class user_shortcodes extends e_shortcode
 		/*
 
 		return $tp->parseTemplate("{USER_AVATAR=".$this->var['user_sess']."}",true);
-		
+
 		if ($this->var['user_sess'] && file_exists(e_MEDIA."avatars/".$this->var['user_sess']))
 		{
 			//return $tp->parseTemplate("{USER_AVATAR=".$this->var['user_image']."}", true); // this one will resize. 
@@ -987,7 +995,7 @@ class user_shortcodes extends e_shortcode
 			
 			//if the first char of parm is an ! mark, it means it should not render the following parms
 			if(strpos($parm,'!')===0){
-				$tmp = explode(",", substr($parm,1) );
+				$tmp = explode(",", (string) substr($parm,1) );
 				foreach($tmp as $not){
 					$not=trim($not);
 					if(isset($key[$not])){
@@ -995,7 +1003,7 @@ class user_shortcodes extends e_shortcode
 						unset($key[$not]);
 					}
 				}
-			
+
 			//else it means we render only the following parms
 			}else{
 				$tmp = explode(",", $parm );

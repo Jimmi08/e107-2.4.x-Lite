@@ -390,16 +390,24 @@ class system_tools
 	// Developer Mode ONly.. No LANS.
 	private function githubSyncProcess()
 	{
-		$result = e107::getFile()->unzipGithubArchive('core');
+		$fl = e107::getFile();
+		$result = $fl->unzipGithubArchive('core');
 
 		if($result === false)
 		{
-			e107::getMessage()->addError( DBLAN_118 );
+			$reason = $fl->getErrorMessage();
+
+			// Queuing the message without rendering it answers the administrator
+			// with the admin furniture and an empty content area.
+			e107::getMessage()->addError(DBLAN_118 . (!empty($reason) ? '<br />' . e107::getParser()->toHTML($reason) : ''));
+			e107::getRender()->tablerender(DBLAN_10 . SEP . DBLAN_112, e107::getMessage()->render());
+
 			return null;
 		}
 
 		$success = $result['success'];
 		$error = $result['error'];
+		$skipped = $result['skipped'];
 
 	//		$message = e107::getParser()->lanVars(DBLAN_121, array('x'=>$oldPath, 'y'=>$newPath));
 
@@ -479,7 +487,7 @@ class system_tools
 	{	
 		$sql 		= e107::getDb('new');
 		$mes 		= e107::getMessage();
-		
+
 		$user 		= $_POST['name'];
 		$pass 		= $_POST['password'];
 		$server 	= e107::getMySQLConfig('server'); // $_POST['server'];
@@ -525,32 +533,32 @@ class system_tools
 					return;
 				}
 			}
-			
+
 			if(!$sql->database($database))
 			{
 				$mes->addError(DBLAN_76);
 			}
-					
+
 			$mes->addSuccess(DBLAN_76);
-					
+
 			if($this->multiSiteCreateTables($sql, $prefix))
 			{
 				$coreConfig = e_CORE. "xml/default_install.xml";		
 				$ret = e107::getXml()->e107Import($coreConfig, 'add', true, false, $sql); // Add core pref values
 				$mes->addInfo(print_a($ret,true));
 			}	
-				
+
 		}
 		else
 		{
 			$mes->addSuccess(DBLAN_74);
 		}
-		
+
 		if($error = $sql->getLastErrorText())
 		{
 			$mes->addError($error);
 		}
-			
+
 		//	print_a($_POST);
 
 		
@@ -1020,8 +1028,8 @@ class system_tools
 		}
 
 		return $qry;
-		
-		
+
+
 		/*
 		if(!$result = mysql_query($query))
 		{
@@ -1182,7 +1190,6 @@ class system_tools
 					<td>".LAN_UPLOAD."</td>
 					<td>
 						<input type='hidden' name='MAX_FILE_SIZE' value='{$max_file_size}' />
-						<input type='hidden' name='ac' value='".md5(ADMINPWCHANGE)."' />
 						<input class='tbox' type='file' name='file_userfile[]' accept='text/xml' size='50' />
 					</td>
 					</tr>
@@ -1473,11 +1480,11 @@ class system_tools
 	{
 		if(strpos($type,'plugin_') === 0)
 		{
-			$config = e107::getPlugConfig(substr($type,7));
+			$config = e107::getPlugConfig((string) substr($type,7));
 		}
 		elseif(strpos($type,'theme_') === 0)
 		{
-			$config = e107::getThemeConfig(substr($type,6));
+			$config = e107::getThemeConfig((string) substr($type,6));
 		}
 		else
 		{
@@ -1614,11 +1621,11 @@ class system_tools
 
 		if(strpos($type,'plugin_') === 0)
 		{
-			$caption = LAN_PLUGIN . SEP . ucfirst(substr($type,7));
+			$caption = LAN_PLUGIN . SEP . ucfirst((string) substr($type,7));
 		}
 		elseif(strpos($type,'theme_') === 0)
 		{
-			$caption = LAN_THEME . SEP . ucfirst(substr($type,6));
+			$caption = LAN_THEME . SEP . ucfirst((string) substr($type,6));
 		}
 		else
 		{
@@ -1649,7 +1656,7 @@ class system_tools
 		{
 			foreach($fList as $file)
 			{
-				$scList[] = strtoupper(substr($file['fname'], 0, -4));
+				$scList[] = strtoupper((string) substr($file['fname'], 0, -4));
 			}
 			$scList = implode(',', $scList);
 		}
@@ -1662,7 +1669,7 @@ class system_tools
 		{
 			foreach($fList as $file)
 			{
-				$scList[] = substr($file['fname'], 0, -4);
+				$scList[] = (string) substr($file['fname'], 0, -4);
 			}
 			$scList = implode(',', $scList);
 		}

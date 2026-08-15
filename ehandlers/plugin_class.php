@@ -1319,7 +1319,7 @@ class e_plugin
 				// legacy shortcodes - plugin root *.sc files
 				if (substr($adds, -3) === ".sc")
 				{
-					$sc_name = substr($adds, 0, -3); // remove the .sc
+					$sc_name = (string) substr($adds, 0, -3); // remove the .sc
 					if ($is_installed)
 					{
 						$scl_array[$sc_name] = "0"; // default userclass = e_UC_PUBLIC
@@ -1332,7 +1332,7 @@ class e_plugin
 				// new shortcodes location - shortcodes/single/*.php
 				elseif (strpos($adds, "sc_") === 0)
 				{
-					$sc_name = substr(substr($adds, 3), 0, -4); // remove the sc_ and .php
+					$sc_name = (string) substr((string) substr($adds, 3), 0, -4); // remove the sc_ and .php
 
 					if ($is_installed)
 					{
@@ -1349,14 +1349,14 @@ class e_plugin
 					// simple bbcode
 					if(substr($adds,-3) == ".bb")
 					{
-						$bb_name = substr($adds, 0,-3); // remove the .bb
+						$bb_name = (string) substr($adds, 0,-3); // remove the .bb
                     	$bb_array[$bb_name] = "0"; // default userclass.
 					}
 					// bbcode class
 					elseif(strpos($adds, "bb_") === 0 && substr($adds, -4) == ".php")
 					{
-						$bb_name = substr($adds, 0,-4); // remove the .php
-						$bb_name = substr($bb_name, 3);
+						$bb_name = (string) substr($adds, 0,-4); // remove the .php
+						$bb_name = (string) substr($bb_name, 3);
                     	$bb_array[$bb_name] = "0"; // TODO - instance and getPermissions() method
 					}
 				}
@@ -1771,7 +1771,7 @@ class e107plugin
 
 		foreach ($pluginList as $p)
 		{
-			$p['path'] = substr(str_replace(e_PLUGIN, "", $p['path']), 0, -1);
+			$p['path'] = (string) substr(str_replace(e_PLUGIN, "", $p['path']), 0, -1);
 			$plugin_path = $p['path'];
 
 			if (strpos($plugin_path, 'e107_') !== FALSE)
@@ -1779,14 +1779,14 @@ class e107plugin
 				$mes->addWarning("Folder error: <i>{$p['path']}</i>.  'e107_' is not permitted within plugin folder names.");
 				continue;
 			}
-			
+
 			if(in_array($plugin_path, $this->disAllowed))
 			{
 				$mes->addWarning("Folder error: <i>{$p['path']}</i> is not permitted as an acceptable folder name.");
 				continue;	
 			}
-			
-			
+
+
 			$plug['plug_action'] = 'scan'; // Make sure plugin.php knows what we're up to
 
 			if (!$this->parse_plugin($p['path']))
@@ -1798,14 +1798,14 @@ class e107plugin
 
 			$plug_info = $this->plug_vars;
 			$eplug_addons = $this->getAddons($plugin_path);
-			
+
 			//Ensure the plugin path lives in the same folder as is configured in the plugin.php/plugin.xml - no longer relevant. 
 			if ($plugin_path == $plug_info['folder'])
 			{
 				if (array_key_exists($plugin_path, $pluginDBList))
 				{ // Update the addons needed by the plugin
 					$pluginDBList[$plugin_path]['status'] = 'exists';
-					
+
 						// Check for name (lan) changes
 					if (vartrue($plug_info['@attributes']['lan']) && $pluginDBList[$plugin_path]['plugin_name'] != $plug_info['@attributes']['lan'])
 					{
@@ -1815,7 +1815,7 @@ class e107plugin
 						$this->plugFolder = $plugin_path;
 						$this->XmlLanguageFiles('upgrade');
 					}
-					
+
 					// Reconcile the global/log language-file lists on a folder scan too, not just 'refresh'.
 					// XmlLanguageFileCheck() forces an 'uninstall' (removePref) when the plugin is not
 					// installed, so a stale lan_global_list/lan_log_list entry for an uninstalled plugin
@@ -1870,10 +1870,10 @@ class e107plugin
 					if ($plug_info['@attributes']['name'])
 					{					
 						$pName = vartrue($plug_info['@attributes']['lan']) ? $plug_info['@attributes']['lan'] : $plug_info['@attributes']['name'] ;
-						
+
 						$_installed = ($plug_info['@attributes']['installRequired'] == 'true' || $plug_info['@attributes']['installRequired'] == 1 ? 0 : 1);
-						
-						
+
+
 						$pInsert = array(
 							'plugin_id' 			=> 0,
 							'plugin_name'			=> $tp->toDB($pName, true),
@@ -1883,7 +1883,7 @@ class e107plugin
 							'plugin_addons'			=> $eplug_addons,
 							'plugin_category'		=> $this->manage_category($plug_info['category'])
 						);
-						
+
 							if (e107::getDb()->createQueryBuilder()->insert('plugin')->insertGetId($pInsert))
 							{
 								$log->addDebug("Added <b>".$tp->toHTML($pName,false,"defs")."</b> to the plugin table.");
@@ -1892,7 +1892,7 @@ class e107plugin
 							{
 								$log->addDebug("Failed to add ".$tp->toHTML($pName,false,"defs")." to the plugin table.");
 							}
-							
+
 							$log->flushMessages("Updated Plugins table");
 						}
 					}
@@ -2042,7 +2042,7 @@ class e107plugin
 
 				foreach($iconTypes as $key)
 				{
-					if(!empty($attrib[$key]) && str_ends_with($attrib[$key], '.png'))
+					if(!empty($attrib[$key]) && substr_compare($attrib[$key], '.png', -strlen('.png')) === 0)
 					{
 						$path = e_PLUGIN.$folder."/".$attrib[$key];
 						$file = basename($path);
@@ -2819,7 +2819,7 @@ class e107plugin
 
 		if (strpos($pref[$prefname], ",") === 0)
 		{
-			$pref[$prefname] = substr($pref[$prefname], 1);
+			$pref[$prefname] = (string) substr($pref[$prefname], 1);
 		}
 
 		e107::getConfig('core')->setPref($pref);
@@ -3133,8 +3133,17 @@ class e107plugin
 			$txt .= $ret;
 		}
 		
-		// Handle tables
-		$this->XmlTables($function, $plug, $options);
+		// Handle tables. A null return means there was nothing to do (no
+		// {plugin}_sql.php), which is normal; false means a table could not be
+		// created, and a plugin whose tables are missing is not installed, so
+		// stop before the rest of this registers it as though it were.
+		if($this->XmlTables($function, $plug, $options) === false)
+		{
+			e107::getMessage()->addError("Aborted ".$function." of ".$plug['plugin_path'].": its tables could not be created.");
+			$this->log("Aborted ".$function." of ".$plug['plugin_path'].": table creation failed");
+
+			return false;
+		}
 
 		if (varset($plug_vars['adminLinks']))
 		{
@@ -3630,8 +3639,20 @@ class e107plugin
 
 			foreach($tableData['tables'] as $k=>$v)
 			{
-				$engine = $dbv->getIntendedStorageEngine($tableData['engine'][$k]);
-				$charset = $dbv->getIntendedCharset($tableData['charset'][$k]);
+				// Settle the engine before the character set: how wide an index
+				// may be depends on the engine that ends up holding it, so a
+				// table pushed onto MyISAM for its FULLTEXT index is measured
+				// against MyISAM's limit and not InnoDB's.
+				$requirements = $dbv->deriveTableRequirements(
+					$dbv->getFields($tableData['data'][$k]),
+					$dbv->getIndex($tableData['data'][$k])
+				);
+
+				$engine = $dbv->getIntendedStorageEngine($tableData['engine'][$k], $requirements);
+
+				$requirements['engine'] = $engine;
+
+				$charset = $dbv->getIntendedCharset($tableData['charset'][$k], $requirements);
 
 				switch($function)
 				{
@@ -3641,7 +3662,38 @@ class e107plugin
 						$query .= "\n) ENGINE=$engine DEFAULT CHARSET=$charset ";
 
 						$txt = EPL_ADLAN_239." <b>{$v}</b> ";
-						$status = $sql->db_Query($query) ? E_MESSAGE_SUCCESS : E_MESSAGE_ERROR;
+
+						if(!$sql->db_Query($query))
+						{
+							$errno = (string) $sql->getLastErrorNumber();
+							$error = $sql->getLastErrorText();
+
+							// "Table already exists" is normal rather than a
+							// failure: uninstalling a plugin leaves its tables in
+							// place unless delete_tables was asked for, so every
+							// reinstall meets them again, and the table being
+							// there is all this step wanted. PDO reports it as
+							// SQLSTATE 42S01 and mysqli as 1050, so take either.
+							if(in_array($errno, array('42S01', '1050'), true))
+							{
+								$txt = "Table {$v} already present.";
+								$status = E_MESSAGE_INFO;
+								break;
+							}
+
+							// Anything else means the table is not there. Carrying
+							// on is what let a plugin report itself installed with
+							// one table out of four, so that the first query
+							// against a missing one died with "table doesn't
+							// exist" long after anything named the cause.
+							e107::getMessage()->addError("Could not create table `".MPREFIX.$v."`: ".$error);
+							e107::getMessage()->addDebug($query);
+							$this->log("Failed to create table ".MPREFIX.$v." (".$errno."): ".$error);
+
+							return false;
+						}
+
+						$status = E_MESSAGE_SUCCESS;
 						break;
 
 					case "uninstall":
@@ -4533,19 +4585,19 @@ class e107plugin
 	function execute_function($path = null, $what = '', $when = '', $callbackData = null)
 	{
 		$mes = e107::getMessage();
-		
+
 		if($path == null)
 		{
 			$path = $this->plugFolder;	
 		}
-		
+
 		$class_name = $path."_setup"; // was using $this->pluginFolder; 
 		$method_name = $what."_".$when;
-		
-		
+
+
 			// {PLUGIN}_setup.php should ALWAYS be the name of the file.. 
-			
-			
+
+
 	//	if (varset($this->plug_vars['@attributes']['setupFile']))
 	//	{
 	//		$setup_file = e_PLUGIN.$this->plugFolder.'/'.$this->plug_vars['@attributes']['setupFile'];
@@ -4573,15 +4625,15 @@ class e107plugin
 			{
 				$mes->addDebug("Found setup file <b>".$path."_setup.php</b> ");
 			}
-			
+
 			include_once($setup_file);
-			
+
 
 			if (class_exists($class_name))
 			{
 				$obj = new $class_name;
 			//	$obj->version_from = $this; // Not used?
-				
+
 				if (method_exists($obj, $method_name))
 				{
 					if(e_PAGE == 'e107_update.php' && E107_DBG_INCLUDES)
@@ -5149,7 +5201,7 @@ class e107plugin
 					// legacy shortcodes - plugin root *.sc files
 					if (substr($adds, -3) === ".sc")
 					{
-						$sc_name = substr($adds, 0, -3); // remove the .sc
+						$sc_name = (string) substr($adds, 0, -3); // remove the .sc
 						if ($is_installed)
 						{
 							$scl_array[$sc_name] = "0"; // default userclass = e_UC_PUBLIC
@@ -5162,7 +5214,7 @@ class e107plugin
 					// new shortcodes location - shortcodes/single/*.php
 					elseif (strpos($adds, "sc_") === 0)
 					{
-						$sc_name = substr(substr($adds, 3), 0, -4); // remove the sc_ and .php
+						$sc_name = (string) substr((string) substr($adds, 3), 0, -4); // remove the sc_ and .php
 						
 						if ($is_installed)
 						{
@@ -5179,14 +5231,14 @@ class e107plugin
 						// simple bbcode
 						if(substr($adds,-3) == ".bb")
 						{
-							$bb_name = substr($adds, 0,-3); // remove the .bb
+							$bb_name = (string) substr($adds, 0,-3); // remove the .bb
 	                    	$bb_array[$bb_name] = "0"; // default userclass.
 						}
 						// bbcode class
 						elseif(strpos($adds, "bb_") === 0 && substr($adds, -4) == ".php")
 						{
-							$bb_name = substr($adds, 0,-4); // remove the .php
-							$bb_name = substr($bb_name, 3);
+							$bb_name = (string) substr($adds, 0,-4); // remove the .php
+							$bb_name = (string) substr($bb_name, 3);
 	                    	$bb_array[$bb_name] = "0"; // TODO - instance and getPermissions() method
 						}
 					}

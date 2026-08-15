@@ -958,7 +958,7 @@ class e_model extends e_object
         $simple = false;
         if(strpos($key, '//') === 0)
         {
-        	$key = substr($key, 2);
+        	$key = (string) substr($key, 2);
         	$simple = true;
         }
         /*elseif($key[0] == '/')
@@ -1074,6 +1074,8 @@ class e_model extends e_object
      */
     protected function _setData($key, $value = null, $strict = false, $data_src = '_data')
     {
+        $this->_resetParsedKeys();
+
         if(is_array($key))
         {
             if($strict)
@@ -1108,7 +1110,7 @@ class e_model extends e_object
         	// Example: '//some/key'; NOTE: '//some/key//more/depth' is NOT parsed
         	// if you wish to have array('some/key' => array('more/depth' => value))
         	// right syntax is 'some/key//more/depth'
-        	$key = substr($key, 2);
+        	$key = (string) substr($key, 2);
         	$simple = true;
         }
         /*elseif($key[0] == '/')
@@ -1185,6 +1187,8 @@ class e_model extends e_object
      */
 	protected function _setDataSimple($key, $value = null, $strict = false, $data_src = '_data')
     {
+        $this->_resetParsedKeys();
+
     	$key = $key.'';//smart toString
     	if(!$strict)
     	{
@@ -1262,6 +1266,8 @@ class e_model extends e_object
      */
     protected function _unsetData($key = null, $data_src = '_data')
     {
+        $this->_resetParsedKeys();
+
         if (null === $key)
         {
         	if('_data' === $data_src && !empty($this->_data))
@@ -1294,7 +1300,7 @@ class e_model extends e_object
 	        	{
 	        		$this->data_has_changed = true;
 	        	}
-	        	unset($data[$unskey], $this->_parsed_keys[$data_src.'/'.$key]);
+	        	unset($data[$unskey]);
 	        }
         }
         else
@@ -1317,6 +1323,8 @@ class e_model extends e_object
      */
     protected function _unsetDataSimple($key, $data_src = '_data')
     {
+        $this->_resetParsedKeys();
+
 		if('_data' === $data_src && isset($this->{$data_src}[$key]))
        	{
        		$this->data_has_changed = true;
@@ -1353,6 +1361,25 @@ class e_model extends e_object
     protected function _isData($key, $data_src = '_data')
     {
         return (null !== $this->_getData($key, null, null, $data_src));
+    }
+
+    /**
+     * Forget every path lookup {@link _getData()} has resolved so far.
+     *
+     * Those lookups are remembered under their full path, and a write anywhere
+     * can contradict one: replacing 'a' makes a remembered 'a/b' wrong, and
+     * writing 'a/b' makes a remembered 'a' wrong, so no part of the memo is
+     * reliably untouched by a given write. It saves walking a few array levels
+     * and the next read fills it again, so it is dropped whole rather than
+     * reasoned about.
+     *
+     * @return e_model
+     */
+    protected function _resetParsedKeys()
+    {
+        $this->_parsed_keys = array();
+
+        return $this;
     }
 
 	/**
@@ -3743,7 +3770,7 @@ class e_tree_model extends e_front_model
 			// string form. execute($var) is an opaque dynamic-SQL passthrough boundary.
 			$result = ($sql->execute($QRY) !== false) ? $sql->fetch() : array();
 			if(!is_array($result)) $result = array();
-			$total = $result['e_tree_total'] ?? 0;
+			$total = isset($result['e_tree_total']) ? $result['e_tree_total'] : 0;
 
 			if(E107_DEBUG_LEVEL == E107_DBG_SQLQUERIES)
 			{
@@ -3803,7 +3830,7 @@ class e_tree_model extends e_front_model
 			return $qry;
 		}
 
-		$projection = substr($qry, strlen($lead[0]), $from - strlen($lead[0]));
+		$projection = (string) substr($qry, strlen($lead[0]), $from - strlen($lead[0]));
 		if(preg_match_all('/[\w`]\s*\.\s*\*/', $projection, $m) < 2)
 		{
 			return $qry;
@@ -3858,7 +3885,7 @@ class e_tree_model extends e_front_model
 			{
 				if($depth > 0) $depth--;
 			}
-			elseif($depth === 0 && ($ch === 'f' || $ch === 'F') && strcasecmp(substr($qry, $i, 4), 'FROM') === 0)
+			elseif($depth === 0 && ($ch === 'f' || $ch === 'F') && strcasecmp((string) substr($qry, $i, 4), 'FROM') === 0)
 			{
 				$before = $i === 0 ? ' ' : $qry[$i - 1];
 				$after = $i + 4 >= $len ? ' ' : $qry[$i + 4];

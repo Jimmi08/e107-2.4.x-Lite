@@ -1188,7 +1188,8 @@ class theme_builder extends e_admin_ui
 			$newThemeXML = e_THEME.$this->themeName."/theme.xml";
 			if(file_exists($newThemeXML))
 			{
-				$info = e107::getTheme()::getThemeInfo($this->themeName);
+				$tmp = e107::getTheme();
+                $info = $tmp::getThemeInfo($this->themeName);
 
 				e107::getDebug()->log($info);
 

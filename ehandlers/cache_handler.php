@@ -161,15 +161,15 @@ class ecache {
 
 					if (strpos($ret, self::CACHE_PREFIX) === 0)
 					{
-						$ret = substr($ret, strlen(self::CACHE_PREFIX));
+						$ret = (string) substr($ret, strlen(self::CACHE_PREFIX));
 					}
 					elseif(strpos($ret, '<?php exit;') === 0)
 					{
-						$ret = substr($ret, 11);
+						$ret = (string) substr($ret, 11);
 					}
 					elseif(strpos($ret,'<?php') === 0)
 					{
-						$ret = substr($ret, 5);		// Handle the history for now
+						$ret = (string) substr($ret, 5);		// Handle the history for now
 					}
 
 					return $ret;
@@ -358,7 +358,10 @@ class ecache {
  			$d = opendir($dir);
 			while ($file = readdir($d)) {
 				if (is_file($dir.$file) && preg_match("/^{$pattern}$/", $file)) {
-					unlink($dir.$file);
+					// Another request clearing the same cache can take the file
+					// between the is_file() above and here, and the intent is
+					// only that it end up gone.
+					@unlink($dir.$file);
 				}
 			}
 			closedir($d);

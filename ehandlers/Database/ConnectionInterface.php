@@ -433,7 +433,7 @@ use PDOStatement;
 		 *
 		 * <code>
 		 * e107::getDb()->schema()->addColumn('user_extended', 'user_twitter',
-		 *     Column::define('VARCHAR', 255)->notNull()->default(''));
+		 *     Column::define('VARCHAR', 255)->notNull()->defaultValue(''));
 		 * </code>
 		 *
 		 * @return SchemaBuilder
@@ -512,6 +512,17 @@ use PDOStatement;
 		 * @return array|false
 		 */
 		public function getFieldDefs($tableName);
+
+		/**
+		 * The '_FIELD_TYPES' map alone, for {@see QueryBuilder::valuesTyped()}
+		 * and its siblings. Empty when no definition is on record for the table,
+		 * which is how the array-form CRUD has always proceeded without one:
+		 * every column then binds as 'string'.
+		 *
+		 * @param string $tableName Logical table name.
+		 * @return array column => field-type token
+		 */
+		public function getFieldTypes($tableName);
 
 
 		/**

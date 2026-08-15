@@ -487,7 +487,7 @@ class e_parse
 			return ($length === null) ? mb_substr($str, $start) : mb_substr($str, $start, $length);
 		}
 
-		return substr($str, $start, $length);
+		return (string) substr($str, $start, $length);
 
 	}
 
@@ -1135,7 +1135,7 @@ class e_parse
 			{
 				// We are within an HTML tag
 				// Create a lowercase copy of this tag's contents
-				$lvalue = strtolower(substr($value, 1, -1));
+				$lvalue = strtolower((string) substr($value, 1, -1));
 				if ($lvalue)
 				{
 					// Tag of non-zero length
@@ -1231,7 +1231,7 @@ class e_parse
 									}
 									else
 									{
-										$pulled = substr($sp, 0, $i + 1);
+										$pulled = (string) substr($sp, 0, $i + 1);
 									}
 								}
 								$loopCount++;
@@ -1255,18 +1255,18 @@ class e_parse
 								if ($i == 0)
 								{
 									// No 'special' break boundary character found - break at the word boundary
-									$pulled = substr($sp, 0, $width);
+									$pulled = (string) substr($sp, 0, $width);
 								}
 								else
 								{
-									$pulled = substr($sp, 0, $i);
+									$pulled = (string) substr($sp, 0, $i);
 								}
 							}
 							if ($pulled)
 							{
 								$value .= $pulled . $break;
 								// Shorten $sp by whatever we've processed (will work even for utf-8)
-								$sp = substr($sp, strlen($pulled));
+								$sp = (string) substr($sp, strlen($pulled));
 							}
 						}
 						// Add in any residue
@@ -1505,7 +1505,7 @@ class e_parse
 		{
 			$this->e_highlighting = false;
 			$shr = (isset($_SERVER['HTTP_REFERER']) ? $_SERVER['HTTP_REFERER'] : '');
-			if ($pref['search_highlight'] && (strpos(e_SELF, 'search.php') === false) && ((strpos($shr, 'q=') !== false) || (strpos($shr, 'p=') !== false)))
+			if (!empty($pref['search_highlight']) && (strpos(e_SELF, 'search.php') === false) && ((strpos($shr, 'q=') !== false) || (strpos($shr, 'p=') !== false)))
 			{
 				$this->e_highlighting = true;
 				if (!isset($this->e_query))
@@ -1617,7 +1617,7 @@ class e_parse
 			$parm .= '<' . $tag . '>';
 		}
 
-		return strip_tags($html, $parm);
+		return strip_tags($html, $parm !== null && is_array($parm) ? '<' . implode('><', $parm) . '>' : $parm);
 	}
 
 	/**
@@ -1982,9 +1982,9 @@ class e_parse
 
 			if ($lt > $textStart)
 			{
-				$blocks[] = array('text', substr($html, $textStart, $lt - $textStart));
+				$blocks[] = array('text', (string) substr($html, $textStart, $lt - $textStart));
 			}
-			$blocks[] = array($tag, substr($html, $lt, $end - $lt));
+			$blocks[] = array($tag, (string) substr($html, $lt, $end - $lt));
 
 			$pos = $end;
 			$textStart = $end;
@@ -1992,7 +1992,7 @@ class e_parse
 
 		if ($textStart < $length)
 		{
-			$blocks[] = array('text', substr($html, $textStart));
+			$blocks[] = array('text', (string) substr($html, $textStart));
 		}
 
 		return $blocks;
@@ -2013,7 +2013,7 @@ class e_parse
 	{
 		foreach (array('script', 'style') as $tag)
 		{
-			if (strcasecmp(substr($html, $offset + 1, strlen($tag)), $tag) !== 0)
+			if (strcasecmp((string) substr($html, $offset + 1, strlen($tag)), $tag) !== 0)
 			{
 				continue;
 			}
@@ -2295,7 +2295,7 @@ class e_parse
 		{
 			if (!empty($unprepend) && substr($key, 0, strlen($unprepend)) == $unprepend)
 			{
-				$key = substr($key, strlen($unprepend));
+				$key = (string) substr($key, strlen($unprepend));
 			}
 			$parts = explode('/', $key);
 			$nested = &$output;
@@ -2428,8 +2428,8 @@ class e_parse
 		}
 
 		return (float) (
-			preg_replace('/[^-0-9]/', '', substr($value, 0, $sep)) . '.' .
-			preg_replace('/[^0-9]/', '', substr($value, $sep + 1, strlen($value)))
+			preg_replace('/[^-0-9]/', '', (string) substr($value, 0, $sep)) . '.' .
+			preg_replace('/[^0-9]/', '', (string) substr($value, $sep + 1, strlen($value)))
 		);
 	}
 
@@ -2663,7 +2663,7 @@ class e_parse
 		$tmp = explode('.', $filename);
 		$ext = end($tmp);
 		$len = strlen($ext) + 1;
-		$start = substr($filename, 0, -$len);
+		$start = (string) substr($filename, 0, -$len);
 
 		// cleanup.
 		$newOpts = array(
@@ -2846,11 +2846,19 @@ class e_parse
 	/**
 	 * Used internally to store e_HTTP_STATIC.
 	 *
-	 * @param string|null $url The static URL ie. e_HTTP_STATIC
+	 * Discards the state {@see e_parse::staticUrl()} derived from the previous
+	 * value: the map of domains already issued per path, and the round-robin
+	 * position within the configured domains. Both describe the configuration
+	 * being replaced, so carrying them over would serve a path a domain the
+	 * caller has just stopped configuring.
+	 *
+	 * @param string|string[]|null $url The static URL ie. e_HTTP_STATIC
 	 */
 	public function setStaticUrl($url)
 	{
 		$this->staticUrl = $url;
+		$this->staticUrlMap = [];
+		$this->staticCount(0);
 	}
 
 	public function getStaticUrlMap()
@@ -2878,8 +2886,6 @@ class e_parse
 	public function thumbUrl($url = null, $options = array(), $raw = false, $full = false)
 	{
 		$url = (string) $url;
-
-		$this->staticCount++; // increment counter.
 
 		$ext = pathinfo($url, PATHINFO_EXTENSION);
 
@@ -2918,6 +2924,16 @@ class e_parse
 		if ($raw)
 		{
 			$url = $this->createConstants($url, 'mix');
+		}
+
+		// Again, because createConstants() above has just minted the very form
+		// the check at the top of this method converts away. e107::set_request()
+		// strips { and } out of every query string, so a src= that still carries
+		// braces reaches thumb.php as e_IMAGEgeneric/blank_avatar.jpg and names
+		// nothing at all.
+		if (strpos($url, '{e_') === 0)
+		{
+			$url = str_replace($this->getUrlConstants('sc'), $this->getUrlConstants('raw'), $url);
 		}
 
 		$baseurl = ($full ? SITEURL : e_HTTP) . 'thumb.php?';
@@ -4684,7 +4700,7 @@ class e_parse
 			elseif (strpos($image, '-upload-') === 0)
 			{
 
-				$image = substr($image, 8); // strip the -upload- from the beginning.
+				$image = (string) substr($image, 8); // strip the -upload- from the beginning.
 				if (file_exists(e_AVATAR_UPLOAD . $image))
 				{
 					$file = e_AVATAR_UPLOAD . $image;
@@ -5330,7 +5346,7 @@ class e_parse
 		{
 			if (strpos($k, 'youtube_') === 0)
 			{
-				$key = substr($k, 8);
+				$key = (string) substr($k, 8);
 				$ytpref[$key] = $v;
 			}
 		}
@@ -5733,6 +5749,8 @@ class e_parse
 
 		$this->nodesToConvert = array(); // required.
 		$this->nodesToDelete = array(); // required.
+		$this->nodesToDisableSC = array(); // required.
+		$this->pathList = array(); // required.
 		$this->removedList = array();
 
 		$tmp = $doc->getElementsByTagName('*');

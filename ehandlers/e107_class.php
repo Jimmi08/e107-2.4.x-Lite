@@ -1975,6 +1975,17 @@ class e107
                 "Error message: " .
                 $e->getMessage()
             );
+        } catch (\Exception $e) {
+            // TODO: LAN
+            self::getMessage()->addWarning(
+                "The core integrity image is corrupt. " .
+                "File Inspector will be inoperative. " .
+                "Resolve this issue by uploading a good copy of the core image to " .
+                escapeshellarg($fileInspectorPath) . ". " .
+                "If uploading with FTP, use binary transfer mode. " .
+                "Error message: " .
+                $e->getMessage()
+            );
         }
 
         return $fileInspector;
@@ -3037,7 +3048,7 @@ class e107
 		$filename = $addonName; // e.g. 'e_cron';
 		if(!$className)
 		{
-			$className = substr($filename, 2); // remove 'e_'
+			$className = (string) substr($filename, 2); // remove 'e_'
 		}
 
 		$elist = self::getPref($filename.'_list');
@@ -4249,9 +4260,18 @@ class e107
 		$fname = ($admin ? 'admin/' : '').'lan_'.preg_replace('/[\W]/', '', trim($fname, '/')).'.php';
 		$path = e_LANGUAGEDIR.e_LANGUAGE.'/'.$fname;
 
+		// Marked loaded after the include, not before. An error part way through
+		// a language file leaves every constant below that point undefined, and
+		// PHP keeps the file in get_included_files() regardless, so include_once
+		// will not retry it. Recording success before the attempt turned that
+		// into a permanent hole: every later caller was told the file was
+		// already loaded and no constant below the failure could ever be
+		// defined again. Recursion is still safe, because include_once guards it.
+		$ret = self::includeLan($path);
+
 		self::setRegistry($cstring, true);
 
-		return self::includeLan($path);
+		return $ret;
 	}
 
 	/**
@@ -4356,10 +4376,11 @@ class e107
 		}
 
 
-			self::setRegistry($cstring, true);
-
+		// After the include, not before. @see coreLan()
 		$ret = self::includeLan($path);
-		
+
+		self::setRegistry($cstring, true);
+
 		if(($ret === false) && deftrue('E107_DBG_INCLUDES') && strpos($path, '_global.php') === false )
 		{
 			$result = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 4);
@@ -4429,9 +4450,12 @@ class e107
 			self::getMessage()->addDebug("Attempting to Load: ".$path);
 		}
 
+		// After the include, not before. @see coreLan()
+		$ret = self::includeLan($path);
+
 		self::setRegistry($cstring, true);
 
-		return self::includeLan($path);
+		return $ret;
 	}
 
 
@@ -5259,14 +5283,14 @@ class e107
 			str_replace(
 				array('ajax_used=1', '&&'),
 				array('', '&'),
-				($_SERVER['QUERY_STRING'] ?? '')
+				(isset($_SERVER['QUERY_STRING']) ? $_SERVER['QUERY_STRING'] : '')
 			), '&');
 
 
 		// If url contains a .php in it, PHP_SELF is set wrong (imho), affecting all paths.  We need to 'fix' it if it does.
-		$_SERVER['PHP_SELF'] = (($pos = stripos($_SERVER['PHP_SELF'], '.php')) !== false ? substr($_SERVER['PHP_SELF'], 0, $pos+4) : $_SERVER['PHP_SELF']);
-		$_SERVER['SERVER_NAME'] = $_SERVER['SERVER_NAME'] ?? '';
-		$_SERVER['HTTP_HOST'] = $_SERVER['HTTP_HOST'] ?? '';
+		$_SERVER['PHP_SELF'] = (($pos = stripos($_SERVER['PHP_SELF'], '.php')) !== false ? (string) substr($_SERVER['PHP_SELF'], 0, $pos+4) : $_SERVER['PHP_SELF']);
+		$_SERVER['SERVER_NAME'] = isset($_SERVER['SERVER_NAME']) ? $_SERVER['SERVER_NAME'] : '';
+		$_SERVER['HTTP_HOST'] = isset($_SERVER['HTTP_HOST']) ? $_SERVER['HTTP_HOST'] : '';
 		// Prefer the client `Host` header so a non-standard port survives into
 		// every URL built from HTTP_HOST (form actions, SITEURL, redirects); a
 		// malformed/crafted Host falls back to SERVER_NAME. See resolveHttpHost().
@@ -5751,7 +5775,7 @@ class e107
 	function fix_windows_paths($path)
 	{
 		$fixed_path = str_replace(array('\\\\', '\\'), array('/', '/'), $path);
-		$fixed_path = (substr($fixed_path, 1, 2) === ":/" ? substr($fixed_path, 2) : $fixed_path);
+		$fixed_path = ((string) substr($fixed_path, 1, 2) === ":/" ? (string) substr($fixed_path, 2) : $fixed_path);
 		return $fixed_path;
 	}
 
@@ -5920,7 +5944,7 @@ class e107
 
 		if(!deftrue('e_SINGLE_ENTRY') && !deftrue('e_SELF_OVERRIDE') )
 		{
-			$page = substr(strrchr($_SERVER['PHP_SELF'], '/'), 1);
+			$page = (string) substr(strrchr($_SERVER['PHP_SELF'], '/'), 1);
 
 			if(!empty($_SERVER['_']) && self::isCli())
 			{
@@ -5956,8 +5980,8 @@ class e107
 
 		if ($isPluginDir)
 		{
-			$temp = substr($e107Path, strpos($e107Path, '/') +1);
-			$plugDir = substr($temp, 0, strpos($temp, '/'));
+			$temp = (string) substr($e107Path, strpos($e107Path, '/') +1);
+			$plugDir = (string) substr($temp, 0, strpos($temp, '/'));
 			define('e_CURRENT_PLUGIN', rtrim($plugDir,'/'));
 			define('e_PLUGIN_DIR', e_PLUGIN.e_CURRENT_PLUGIN.'/');
 			define('e_PLUGIN_DIR_ABS', e_PLUGIN_ABS.e_CURRENT_PLUGIN.'/');
@@ -6042,7 +6066,7 @@ class e107
 		elseif(!empty($configured_host) && strpos($siteurl,'http')!== false && !$this->isAllowedHost($allowed_hosts, $http_host))
 		{
 			error_log('e107 host check: HTTP_HOST '.var_export($http_host, true).' is not allowed by the configured siteurl preference '.var_export($siteurl, true).' or any of the configured `trusted_hosts` pref entries');
-			$this->renderHostMismatchKillswitch();
+			$this->renderConfigurationIssue();
 		}
 		else
 		{
@@ -6139,7 +6163,7 @@ class e107
 			}
 
 			if($httpHost === $allowedHost
-				|| substr($httpHost, -strlen('.' . $allowedHost)) === '.' . $allowedHost)
+				|| (string) substr($httpHost, -strlen('.' . $allowedHost)) === '.' . $allowedHost)
 			{
 				return true;
 			}
@@ -6259,18 +6283,21 @@ class e107
 	/**
 	 * Emit a 503 Service Unavailable response and terminate the request.
 	 *
-	 * Fires when `set_urls_deferred()` rejects the incoming `Host` header. The
-	 * response is rendered inline because none of the theme, plugin, or session
-	 * bootstrap has run yet at this point.
+	 * The page for a request e107 cannot serve because its own configuration
+	 * or database is not in a state to serve it: a `Host` header rejected by
+	 * {@see e107::set_urls_deferred()}, a database server that cannot be
+	 * reached, a database that holds no e107 tables. The response is rendered
+	 * inline because none of the theme, plugin, or session bootstrap has run
+	 * yet at this point.
 	 *
 	 * The body intentionally carries no diagnostic detail (no echo of the
-	 * incoming `Host`, no configured hostname, no admin URL). The diagnostic
-	 * detail is sent to `error_log()` by the caller, which is the channel that
-	 * already requires server access.
+	 * incoming `Host`, no configured hostname, no database name, no path). The
+	 * caller sends the diagnostic detail to `error_log()` first, which is the
+	 * channel that already requires server access.
 	 *
 	 * @return void
 	 */
-	private function renderHostMismatchKillswitch()
+	public function renderConfigurationIssue()
 	{
 		if(!headers_sent())
 		{
@@ -6983,7 +7010,7 @@ class e107
 	 * @param array $sqlinfo
 	 * @return void
 	 */
-	private function setMySQLConfig($sqlinfo): void
+	private function setMySQLConfig($sqlinfo)
 	{
 		if(!empty($sqlinfo['server']))
 		{

@@ -256,7 +256,7 @@ class e_file
 		if(!empty($fmask) && strpos($fmask, '~') === 0)
 		{
 			$invert = true;                        // Invert selection - exclude files which match selection
-			$fmask = substr($fmask, 1);
+			$fmask = (string) substr($fmask, 1);
 		}
 
 		if($recurse_level < 0)
@@ -267,7 +267,7 @@ class e_file
 
 		if(substr($path, -1) == '/')
 		{
-			$path = substr($path, 0, -1);
+			$path = (string) substr($path, 0, -1);
 		}
 
 
@@ -703,7 +703,7 @@ class e_file
 
 		if($host[0] === '[' && substr($host, -1) === ']')
 		{
-			$host = substr($host, 1, -1);
+			$host = (string) substr($host, 1, -1);
 		}
 
 		return filter_var($host, FILTER_VALIDATE_IP) ? $host : false;
@@ -728,9 +728,9 @@ class e_file
 			return false;
 		}
 
-		if(strlen($packed) === 16 && substr($packed, 0, 10) === str_repeat("\x00", 10) && substr($packed, 10, 2) === "\xff\xff")
+		if(strlen($packed) === 16 && substr($packed, 0, 10) === str_repeat("\x00", 10) && (string) substr($packed, 10, 2) === "\xff\xff")
 		{
-			return inet_ntop(substr($packed, 12, 4));
+			return inet_ntop((string) substr($packed, 12, 4));
 		}
 
 		return $ip;
@@ -1506,7 +1506,7 @@ class e_file
 
 		$path = (isset($parts['path']) && $parts['path'] !== '') ? $parts['path'] : '/';
 		$slash = strrpos($path, '/');
-		$path = ($slash === false) ? '/' : substr($path, 0, $slash + 1);
+		$path = ($slash === false) ? '/' : (string) substr($path, 0, $slash + 1);
 
 		return $authority . $path . $location;
 	}
@@ -1906,7 +1906,7 @@ class e_file
 		{
 			if(stripos($header, $name . ':') === 0)
 			{
-				$value = trim(substr($header, strlen($name) + 1));
+				$value = trim((string) substr($header, strlen($name) + 1));
 			}
 		}
 
@@ -1973,7 +1973,7 @@ class e_file
 		if($path[strlen($path) - 1] === '/')
 			//	if(substr($path, -1) == '/')
 		{
-			$path = substr($path, 0, -1);
+			$path = (string) substr($path, 0, -1);
 		}
 
 		if(!$handle = opendir($path))
@@ -3299,7 +3299,10 @@ class e_file
 			unlink(e_TEMP . $localfile);
 		}
 
-		$result = $this->getRemoteFile($remotefile, $localfile);
+		// One budget covers the whole transfer, and these archives run to tens of
+		// megabytes, so the 40 second default asks for a sustained rate a home
+		// connection does not always have. 120 is what outboundTimeout() allows.
+		$result = $this->getRemoteFile($remotefile, $localfile, 'temp', 120);
 
 		if($result === false)
 		{
