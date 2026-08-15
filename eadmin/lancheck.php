@@ -15,10 +15,15 @@ if (!defined('e107_INIT'))
 	require_once(__DIR__.'/../class2.php');
 }
 
+if (!getperms('L'))
+{
+	e107::redirect('admin');
+	exit;
+}
+
 e107::coreLan('lancheck', true);
 
 $e_sub_cat = 'language';
-// require_once("auth.php");
 
 $frm = e107::getForm();
 $mes = e107::getMessage();
@@ -643,6 +648,11 @@ class lancheck
 		}
 
 
+		// LITE MODIFICATION: language-pack ZIP built with Lite directory names
+		// (ehandlers/, elanguages/, ethemes/, edocs/help/, eplugins/) and the ZIP
+		// ADD_PATH 'elanguages/'. Upstream ships e107_* names here; Lite does not use
+		// language-pack generation in practice, so this is kept diverged, not synced.
+		// REVERT WHEN: Lite adopts upstream directory names, or lancheck is dropped.
 		global $THEMES_DIRECTORY, $PLUGINS_DIRECTORY, $LANGUAGES_DIRECTORY, $HANDLERS_DIRECTORY, $HELP_DIRECTORY;
 
 		if(($HANDLERS_DIRECTORY != "ehandlers/") || ( $LANGUAGES_DIRECTORY != "elanguages/") || ($THEMES_DIRECTORY != "ethemes/") || ($HELP_DIRECTORY != "edocs/help/") || ($PLUGINS_DIRECTORY != "eplugins/"))
@@ -682,6 +692,8 @@ class lancheck
 
 			if(file_put_contents($fileName,$fileData))
 			{
+				// LITE MODIFICATION: ZIP ADD_PATH uses the Lite 'elanguages/' name; see the
+				// language-pack directory-name note above the $THEMES_DIRECTORY globals.
 				$addTag = $archive->add($fileName, PCLZIP_OPT_ADD_PATH, 'elanguages/'.$language, PCLZIP_OPT_REMOVE_PATH, e_FILE.'public/');
 				$_SESSION['lancheck'][$language]['xml'] = "Yes";
 			}

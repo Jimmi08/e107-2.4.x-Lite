@@ -146,59 +146,60 @@ if(e_AJAX_REQUEST &&  ADMIN && varset($_GET['mode']) == 'core' && ($_GET['type']
 
 if(ADMIN && (e_AJAX_REQUEST || deftrue('e_DEBUG_FEEDS')) && varset($_GET['mode']) == 'addons' )
 {
-	$type = ($_GET['type'] == 'plugin') ? 'plugin' : 'theme';
-	$tag = 'Infopanel_'.$type;
-
-	$cache = e107::getCache();
-
-	$feed = 'https://e107.org/feed/?limit=3&type='.$type;
-
-	if($text = $cache->retrieve($tag,180,true, true)) // check every 3 hours.
-	{
-		echo $text;
-
-		if(e_DEBUG === true)
-		{
-			echo "<span class='label label-warning' title='".$feed."'>Cached</span>";
-		}
-		exit;
-	}
-
-
-	if($data = e107::getXml()->getRemoteFile($feed,3))
-	{
-		$rows = e107::getXml()->parseXml($data, 'advanced');
-//	print_a($rows);
-//  exit;
-		$link = ($type == 'plugin') ? e_ADMIN."plugin.php?mode=online" : e_ADMIN."theme.php?mode=main&action=online";
-
-		$text = "<div style='margin-top:10px'>";
-
-		foreach($rows[$type] as $val)
-		{
-			$meta = $val['@attributes'];
-			$img = ($type == 'theme') ? $meta['thumbnail'] : $meta['icon'];
-			$text .= '<div class="media">';
-			$text .= '<div class="media-left">
-		    <a href="'.$link.'">
-		      <img class="media-object img-rounded rounded" src="'.$img.'" style="width:100px" alt="" />
-		    </a>
-		  </div>
-		  <div class="media-body">
-		    <h4 class="media-heading"><a href="'.$link.'">'.$meta['name'].' v'.$meta['version'].'</a> <small>&mdash; '.$meta['author'].'</small></h4>
-		    '.$val['description'].'
-		  </div>';
-			$text .= '</div>';
-		}
-
-		$text .= "</div>";
-		$text .= "<div class='right'><a href='".$link."'>".LAN_MORE."</a></div>";
-
-		echo $text;
-
-		$cache->set($tag, $text, true, null, true);
-
-	}
+	// LITE MODIFICATION: ADDONFEED addons-panel feed stripped (phone-home) — do not re-add on sync; upstream 02a8d69ae encodes this block instead.
+	//$type = ($_GET['type'] == 'plugin') ? 'plugin' : 'theme';
+	//$tag = 'Infopanel_'.$type;
+	//
+	//$cache = e107::getCache();
+	//
+	//$feed = 'https://e107.org/feed/?limit=3&type='.$type;
+	//
+	//if($text = $cache->retrieve($tag,180,true, true)) // check every 3 hours.
+	//{
+	//	echo $text;
+	//
+	//	if(e_DEBUG === true)
+	//	{
+	//		echo "<span class='label label-warning' title='".$feed."'>Cached</span>";
+	//	}
+	//	exit;
+	//}
+	//
+	//
+	//if($data = e107::getXml()->getRemoteFile($feed,3))
+	//{
+	//	$rows = e107::getXml()->parseXml($data, 'advanced');
+	////	print_a($rows);
+	////  exit;
+	//	$link = ($type == 'plugin') ? e_ADMIN."plugin.php?mode=online" : e_ADMIN."theme.php?mode=main&action=online";
+	//
+	//	$text = "<div style='margin-top:10px'>";
+	//
+	//	foreach($rows[$type] as $val)
+	//	{
+	//		$meta = $val['@attributes'];
+	//		$img = ($type == 'theme') ? $meta['thumbnail'] : $meta['icon'];
+	//		$text .= '<div class="media">';
+	//		$text .= '<div class="media-left">
+	//	    <a href="'.$link.'">
+	//	      <img class="media-object img-rounded rounded" src="'.$img.'" style="width:100px" alt="" />
+	//	    </a>
+	//	  </div>
+	//	  <div class="media-body">
+	//	    <h4 class="media-heading"><a href="'.$link.'">'.$meta['name'].' v'.$meta['version'].'</a> <small>&mdash; '.$meta['author'].'</small></h4>
+	//	    '.$val['description'].'
+	//	  </div>';
+	//		$text .= '</div>';
+	//	}
+	//
+	//	$text .= "</div>";
+	//	$text .= "<div class='right'><a href='".$link."'>".LAN_MORE."</a></div>";
+	//
+	//	echo $text;
+	//
+	//	$cache->set($tag, $text, true, null, true);
+	//
+	//}
 	exit;
 
 }

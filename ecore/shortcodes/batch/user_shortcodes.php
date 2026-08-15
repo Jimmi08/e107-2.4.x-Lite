@@ -460,13 +460,28 @@ class user_shortcodes extends e_shortcode
 	}
 
 	
+	/**
+	 * {USER_SENDPM}
+	 * {USER_SENDPM: class=btn btn-lg&glyph=fa-envelope}
+	 *
+	 * Parms are forwarded to {SENDPM}, which understands 'class' and 'glyph'
+	 * alongside the user id.
+	 *
+	 * @param string|array $parm
+	 * @return string|null
+	 */
 	function sc_user_sendpm($parm=null)
 	{
-		$pref = e107::getPref();
-		$tp = e107::getParser();
 		if(e107::isInstalled("pm") && ($this->var['user_id'] > 0))
 		{
-		  return $tp->parseTemplate("{SENDPM={$this->var['user_id']}}");
+			if(!is_array($parm))
+			{
+				$parm = array();
+			}
+
+			$parm['user'] = $this->var['user_id'];
+
+			return e107::getParser()->parseTemplate("{SENDPM:".http_build_query($parm).'}');
 		}
 	}
 
@@ -566,7 +581,8 @@ class user_shortcodes extends e_shortcode
 		
 		if (!$full_perms) return;
 		$url = e107::getUrl();
-		if(!$userjump = e107::getRegistry('userjump'))
+		$cacheKey = 'userjump/'.intval($this->var['user_id']);
+		if(!$userjump = e107::getRegistry($cacheKey))
 		{
 		  $sql->execute("SELECT user_id, user_name FROM `#user` FORCE INDEX (PRIMARY) WHERE `user_id` > :userId AND `user_ban`=0 ORDER BY user_id ASC LIMIT 1", array('userId' => (int) $this->var['user_id']));
 		  if ($row = $sql->fetch())
@@ -581,26 +597,37 @@ class user_shortcodes extends e_shortcode
 			$userjump['prev']['id'] = $row['user_id'];
 			$userjump['prev']['name'] = $row['user_name'];
 		  }
-		  e107::setRegistry('userjump', $userjump);
+		  e107::setRegistry($cacheKey, $userjump);
 		}
 		
-		$class  = empty($parms[2]['class']) ? 'e-tip page-link' : $parms[2]['class'];
-	
-		if($parms[1] == 'prev')
+		$class = empty($parms[2]['class']) ? 'e-tip page-link' : $parms[2]['class'];
+		$dir   = (varset($parms[1]) === 'prev') ? 'prev' : 'next';
+
+		if(!isset($userjump[$dir]['id']))
 		{
-		
+			return "&nbsp;";
+		}
+
+		if(!empty($parms[2]['link'])) // {USER_JUMP_LINK=prev|link=1}
+		{
+			return $url->create('user/profile/view', $userjump[$dir]);
+		}
+
+		if(!empty($parms[2]['title'])) // {USER_JUMP_LINK=prev|title=1}
+		{
+			return $userjump[$dir]['name'];
+		}
+
+		if($dir === 'prev')
+		{
 			$icon = (deftrue('BOOTSTRAP')) ? $tp->toGlyph('fa-chevron-left') : '&lt;&lt;';
-	    	return isset($userjump['prev']['id']) ? "<a class='".$class."' href='".$url->create('user/profile/view', $userjump['prev']) ."' title=\"".$userjump['prev']['name']."\">".$icon." ".LAN_USER_40."</a>\n" : "&nbsp;";
-		
-			// return isset($userjump['prev']['id']) ? "&lt;&lt; ".LAN_USER_40." [ <a href='".$url->create('user/profile/view', $userjump['prev'])."'>".$userjump['prev']['name']."</a> ]" : "&nbsp;";
-		
+
+			return "<a class='".$class."' href='".$url->create('user/profile/view', $userjump['prev']) ."' title=\"".$userjump['prev']['name']."\">".$icon." ".LAN_USER_40."</a>\n";
 		}
-		else
-		{
-			$icon = (deftrue('BOOTSTRAP')) ? $tp->toGlyph('fa-chevron-right') : '&gt;&gt;';
-			return isset($userjump['next']['id']) ? "<a class='".$class."' href='".$url->create('user/profile/view', $userjump['next'])."' title=\"".$userjump['next']['name']."\">".LAN_USER_41." ".$icon."</a>\n" : "&nbsp;";
-			// return isset($userjump['next']['id']) ? "[ <a href='".$url->create('user/profile/view', $userjump['next'])."'>".$userjump['next']['name']."</a> ] ".LAN_USER_41." &gt;&gt;" : "&nbsp;";
-		}
+
+		$icon = (deftrue('BOOTSTRAP')) ? $tp->toGlyph('fa-chevron-right') : '&gt;&gt;';
+
+		return "<a class='".$class."' href='".$url->create('user/profile/view', $userjump['next'])."' title=\"".$userjump['next']['name']."\">".LAN_USER_41." ".$icon."</a>\n";
 	}
 	
 

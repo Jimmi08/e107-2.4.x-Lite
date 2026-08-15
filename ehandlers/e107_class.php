@@ -205,7 +205,6 @@ class e107
 		'e_file_inspector_json_phar'     => '{e_HANDLER}e_file_inspector_json_phar.php',
 		'e_form'                         => '{e_HANDLER}form_handler.php',
 		'e_jshelper'                     => '{e_HANDLER}js_helper.php',
-		'e_jwt'                          => '{e_HANDLER}e_jwt_class.php',
 		'e_media'                        => '{e_HANDLER}media_class.php',
 		'e_menu'                         => '{e_HANDLER}menu_class.php',
 		'e_model'                        => '{e_HANDLER}model_class.php',
@@ -224,6 +223,8 @@ class e107
 		'e_random_exception'             => '{e_HANDLER}random_handler.php',
 		'e_ranks'                        => '{e_HANDLER}e_ranks_class.php',
 		'e_render'                       => '{e_HANDLER}e_render_class.php',
+		'e_sealed_token'                 => '{e_HANDLER}sealed_token_handler.php',
+		'e_sealed_token_exception'       => '{e_HANDLER}sealed_token_handler.php',
 		'e_search'                       => '{e_HANDLER}search_class.php',
 		'e_shortcode'                    => '{e_HANDLER}shortcode_handler.php',
 		'e_system_user'                  => '{e_HANDLER}user_model.php',
@@ -761,6 +762,13 @@ class e107
 
 			$path = e_ROOT . $this->e107_dirs[$directory];
 			$file->prepareDirectory($path, FILE_CREATE_DIRECTORY);
+		}
+
+		// Written at runtime rather than shipped, so it reaches the sites that
+		// already exist and an upgrade cannot overwrite an edited copy.
+		if(isset($this->e107_dirs['MEDIA_BASE_DIRECTORY']))
+		{
+			$file->blockScriptExecution(e_ROOT . $this->e107_dirs['MEDIA_BASE_DIRECTORY']);
 		}
 	}
 
@@ -1623,6 +1631,26 @@ class e107
 	{
 		return self::getSingleton('secure_image'); // more flexible.
 		// return self::getObject('secure_image');
+	}
+
+	/**
+	 * Retrieve the handler that seals server-side state into a token a client
+	 * can be trusted to carry, and opens it again.
+	 *
+	 * The claims are encrypted, not merely signed, so a CAPTCHA answer or a
+	 * session fingerprint may be sealed. One instance per purpose is kept for
+	 * the request, because the key derivation is paid for on construction.
+	 *
+	 * @param string $purpose what the token is for. A token sealed under one
+	 *                purpose cannot be opened under any other, so give every
+	 *                feature its own and never take this from a visitor
+	 * @return e_sealed_token
+	 */
+	public static function getSealedToken($purpose = 'general')
+	{
+		$purpose = (string) $purpose;
+
+		return self::getSingleton('e_sealed_token', true, $purpose, $purpose);
 	}
 
 	/**
@@ -2875,16 +2903,6 @@ class e107
 
 		self::js('footer-inline', $text);
 
-	}
-
-	/**
-	 * Get the handler that can encrypt and decrypt a string secret that only the e107 server can read
-	 *
-	 * @return e_jwt JWT handler
-	 */
-	public static function getJWT()
-	{
-		return self::getSingleton('e_jwt');
 	}
 
 	/**
@@ -4896,12 +4914,15 @@ class e107
 	 *  - 304: Not Modified.
 	 *  - 305: Use Proxy.
 	 *  - 307: Temporary Redirect.
+	 * @param bool $allowOffsite
+	 *  Permit a destination on another host. Refused by default; see
+	 *  {@see redirection::go()}.
 	 * @see https://www.w3.org/Protocols/rfc2616/rfc2616-sec10.html#sec10.3
 	 * @see https://tools.ietf.org/html/draft-reschke-http-status-308-07
 	 */
-	public static function redirect($url = '', $http_response_code = 301)
+	public static function redirect($url = '', $http_response_code = 301, $allowOffsite = false)
 	{
-		self::getRedirect()->go($url, true, $http_response_code);
+		self::getRedirect()->go($url, true, $http_response_code, true, $allowOffsite);
 	}
 
 	/**
