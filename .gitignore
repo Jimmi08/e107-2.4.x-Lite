@@ -28,8 +28,7 @@ phpunit/
 # Ignore Lite files
 emedia/*
 esystem/*
-ecore/override
-
+ 
 
 # Mono auto generated files
 mono_crash.*
