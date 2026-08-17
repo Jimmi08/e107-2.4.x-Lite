@@ -120,7 +120,7 @@ class parseXml extends xmlClass // BC with v1.x
 				return FALSE;
             }
         }
-		xml_parser_free( $this->parser );
+		$this->parser = null;
 		return $this -> xmlData;
 	}
 
@@ -367,7 +367,7 @@ class xmlClass
 	 */
 	public function setOptAddRoot($flag)
 	{
-		$this->_optAddRoot = (boolean) $flag;
+		$this->_optAddRoot = (bool) $flag;
 		return $this;
 	}
 
@@ -401,7 +401,7 @@ class xmlClass
 	 */
 	public function setOptForceArray($flag)
 	{
-		$this->_optForceArray = (boolean) $flag;
+		$this->_optForceArray = (bool) $flag;
 		return $this;
 	}
 
@@ -425,7 +425,7 @@ class xmlClass
 	 */
 	public function setOptStripComments($flag)
 	{
-		$this->stripComments = (boolean) $flag;
+		$this->stripComments = (bool) $flag;
 		return $this;
 	}
 
@@ -1388,7 +1388,6 @@ class xmlClass
 				// (plain values() would bind raw). $table is import-derived; the
 				// builder validates it fail-closed.
 				$fieldDefs  = $sql->getFieldDefs($table);
-				$fieldTypes = (is_array($fieldDefs) && isset($fieldDefs['_FIELD_TYPES'])) ? $fieldDefs['_FIELD_TYPES'] : array();
 				$notNull    = (is_array($fieldDefs) && isset($fieldDefs['_NOTNULL'])) ? $fieldDefs['_NOTNULL'] : array();
 
 				foreach($val['item'] as $item)
@@ -1417,11 +1416,11 @@ class xmlClass
 					// are byte-identical to the deprecated array CRUD. The original
 					// fall-through is preserved: in replace mode a failed REPLACE still
 					// attempts an INSERT.
-					if(($mode === "replace") && $sql->createQueryBuilder()->replace($table)->valuesTyped($insert_array, $fieldTypes)->execute()!==false)
+					if(($mode === "replace") && $sql->createQueryBuilder()->replace($table)->valuesTyped($insert_array)->execute()!==false)
 					{
 						$ret['success'][] = $table;
 					}
-					elseif($sql->createQueryBuilder()->insert($table)->valuesTyped($insert_array, $fieldTypes)->execute()!==false)
+					elseif($sql->createQueryBuilder()->insert($table)->valuesTyped($insert_array)->execute()!==false)
 					{
 						$ret['success'][] = $table;
 					}
@@ -1643,7 +1642,7 @@ class XMLParse
             $this->isError = true;
             $this->error = 'error: '.xml_error_string(xml_get_error_code($parser)).' at line '.xml_get_current_line_number($parser);
         }
-        xml_parser_free($parser);
+        $this->parser = null;
 
         return $res;
     }

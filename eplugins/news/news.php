@@ -57,6 +57,7 @@ class news_front
 		e107::includeLan(e_LANGUAGEDIR.e_LANGUAGE.'/lan_'.e_PAGE);
 		e107::includeLan(e_LANGUAGEDIR.e_LANGUAGE.'/lan_news.php');		// Temporary
 		e107::includeLan(e_LANGUAGEDIR.e_LANGUAGE.'/lan_comment.php');		// Temporary
+		e107::plugLan('news', 'global');
 
 		$this->pref = e107::getPref();
 
@@ -69,7 +70,7 @@ class news_front
 
 		if(isset($NEWSHEADER))
 		{
-			return false;
+			return;
 		}
 
 		$this->nobody_regexp = "'(^|,)(".str_replace(",", "|", e_UC_NOBODY).")(,|$)'";
@@ -82,8 +83,6 @@ class news_front
 		$this->setPagination();
 		$this->detect();
 		$this->setBreadcrumb();
-
-		return null;
 	}
 
 

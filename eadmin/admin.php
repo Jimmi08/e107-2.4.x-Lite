@@ -138,7 +138,7 @@ class admin_start
 
 		if(e_AJAX_REQUEST || !getperms('0') || varset($_GET['mode']) === 'customize') // don't display this tuff to regular admins only main admin.
 		{
-			return null;
+			return;
 		}
 
 
@@ -196,7 +196,7 @@ class admin_start
 
 		if($this->exit === true)
 		{
-			return null;
+			return;
 		}
 
 		e107::getDebug()->logTime('Check New Install');

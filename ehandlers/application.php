@@ -44,8 +44,8 @@ class e_url
 		$this->_alias           = e107::getPref('e_url_alias');
 
 		$this->_rootnamespace   = e107::getPref('url_main_module');
-		$this->_legacy          = e107::getPref('url_config');
-		$this->_legacyAliases   = e107::getPref('url_aliases');
+		$this->_legacy          = (array) e107::getPref('url_config');
+		$this->_legacyAliases   = (array) e107::getPref('url_aliases');
 
 
 		$this->setRootNamespace();
@@ -1244,8 +1244,8 @@ class eRouter
 		{
 			$fileContent = '<?php'."\n### Auto-generated - DO NOT EDIT ### \nreturn ";
 			$fileContent .= trim(var_export($config, true)).';';
-			
-			file_put_contents(e_CACHE_URL.'config.php', $fileContent);
+
+			e107::writeFileAtomic(e_CACHE_URL.'config.php', $fileContent);
 		}
 		return $config;
 	}
@@ -1311,7 +1311,7 @@ class eRouter
 		$ret = array('core' => array(), 'plugin' => array(), 'override' => array());
 		$plugins = array();
 		
-		if($type == 'all' || $type = 'core')
+		if($type == 'all' || $type == 'core')
 		{
 			$location = eDispatcher::getDispatchLocationPath('core');
 			// search for controllers first
@@ -1329,7 +1329,7 @@ class eRouter
 			sort($ret['core']);
 		}
 		
-		if($type == 'all' || $type = 'plugin')
+		if($type == 'all' || $type == 'plugin')
 		{
 			$plugins = $f->get_dirs(e_PLUGIN);
 			foreach ($plugins as $plugin) 
@@ -1362,7 +1362,7 @@ class eRouter
 			sort($ret['plugin']);
 		}
 		
-		if($type == 'all' || $type = 'override')
+		if($type == 'all' || $type == 'override')
 		{
 			// search for controllers first
 			$location = eDispatcher::getDispatchLocationPath('override');
@@ -1385,7 +1385,7 @@ class eRouter
 				foreach ($ret['override'] as $i => $l) 
 				{
 					// it's a plugin override, but not listed in current plugin array - remove
-					if(in_array($l, $plugins) && !in_array($l, $ret['plugin']))
+					if(!in_array($l, $ret['core']) && in_array($l, $plugins) && !in_array($l, $ret['plugin']))
 					{
 						unset($ret['override'][$i]);
 					}

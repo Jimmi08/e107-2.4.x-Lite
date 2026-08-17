@@ -1947,6 +1947,57 @@ class e107
 	}
 
 	/**
+	 * Write $data to $file so that a concurrent reader gets the old file or
+	 * the new one, never a partial one.
+	 *
+	 * Falls back to a plain file_put_contents() when the temporary file or the
+	 * rename() cannot be made, so on such a host the write can still be torn.
+	 * The read side is not covered: a reader that checks a file exists and
+	 * then opens it can still lose to a delete in between.
+	 *
+	 * @param string   $file absolute path
+	 * @param string   $data
+	 * @param int|null $mode chmod() mode for the result; null gives what a plain
+	 *                       write would have under the current umask
+	 * @return bool true when $file holds $data
+	 */
+	public static function writeFileAtomic($file, $data, $mode = null)
+	{
+		$dir = dirname($file);
+		$tmp = @tempnam($dir, 'e107');
+
+		if($tmp !== false && realpath(dirname($tmp)) === realpath($dir))
+		{
+			if(@file_put_contents($tmp, $data) !== false)
+			{
+				@chmod($tmp, $mode === null ? 0666 & ~umask() : $mode);
+
+				if(@rename($tmp, $file))
+				{
+					return true;
+				}
+			}
+		}
+
+		if($tmp !== false)
+		{
+			@unlink($tmp);
+		}
+
+		if(@file_put_contents($file, $data) === false)
+		{
+			return false;
+		}
+
+		if($mode !== null)
+		{
+			@chmod($file, $mode);
+		}
+
+		return true;
+	}
+
+	/**
 	 * Create a new file inspector object
 	 *
 	 * Note: Only the core file inspector is supported right now.
@@ -2132,9 +2183,7 @@ class e107
 		trigger_error('<b>'.__METHOD__.' is deprecated.</b>  Use the e_user_provider interfaces instead (e107::getUserProvider())', E_USER_DEPRECATED); // NO LAN
 
 		$e_user_provider = new e_user_provider(null, $config);
-		$reflection = new ReflectionClass('e_user_provider');
-		$reflection_property = $reflection->getProperty('hybridauth');
-		$reflection_property->setAccessible(true);
+		$reflection_property = new \e107\Reflection\ReflectionProperty('e_user_provider', 'hybridauth');
 		return $reflection_property->getValue($e_user_provider);
 	}
 
@@ -3530,12 +3579,7 @@ class e107
 		elseif($cacheFile !== null)
 		{
 			$payload = "<?php\nreturn " . var_export($names, true) . ";\n";
-			// Atomic-ish write: temp + rename.
-			$tmp = $cacheFile . '.' . getmypid() . '.tmp';
-			if(@file_put_contents($tmp, $payload, LOCK_EX) !== false)
-			{
-				@rename($tmp, $cacheFile);
-			}
+			self::writeFileAtomic($cacheFile, $payload);
 		}
 
 		$local[$key] = $names;
