@@ -8,7 +8,7 @@
  *
  * Administration - e107 System Update
  *
- * $Source: /cvs_backup/e107_0.8/eadmin/e107_update.php,v $
+ * $Source: /cvs_backup/e107_0.8/e107_admin/e107_update.php,v $
  * $Revision$
  * $Date$
  * $Author$
