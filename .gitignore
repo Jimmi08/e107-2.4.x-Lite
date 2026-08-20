@@ -19,7 +19,7 @@ e107_media/*
 e107_system/*
 e107Install.log
 /.settings
-e107_core/override
+## e107_core/override
 test/*
 tmp/*
 phpunit/
