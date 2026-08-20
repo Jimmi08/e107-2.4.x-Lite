@@ -8,7 +8,7 @@
  *
  *
  *
- * $Source: /cvs_backup/e107_0.8/ehandlers/search_class.php,v $
+ * $Source: /cvs_backup/e107_0.8/e107_handlers/search_class.php,v $
  * $Revision$
  * $Date$
  * $Author$
@@ -513,7 +513,7 @@ class e_search
 	/**
 	 * Resolve the file that provides a comment search handler.
 	 *
-	 * Core handlers live in ehandlers/search/ and are named after the pref
+	 * Core handlers live in e107_handlers/search/ and are named after the pref
 	 * key; plugin handlers live in the plugin folder named by 'dir'.
 	 *
 	 * @param string $key handler key from the search_prefs 'comments_handlers' array

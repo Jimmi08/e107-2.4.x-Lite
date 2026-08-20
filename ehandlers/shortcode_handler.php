@@ -347,11 +347,11 @@ class e_parse_shortcode
 	 * // simple use
 	 * e107::getScParser()->getScObject('news_shortcodes'); // For Globally Registered shortcodes, including plugins using e_shortcode.php
 	 *
-	 * // plugin override - eplugins/myplug/shortcodes/batch/news_shortcodes.php -> class plugin_myplug_news_shortcodes
+	 * // plugin override - e107_plugins/myplug/shortcodes/batch/news_shortcodes.php -> class plugin_myplug_news_shortcodes
 	 * e107::getScParser()->getScObject('news_shortcodes', 'myplug', true);
 	 *
 	 * // more complex plugin override
-	 * // eplugins/myplug/shortcodes/batch/news2_shortcodes.php -> class plugin_myplug_news2_shortcodes
+	 * // e107_plugins/myplug/shortcodes/batch/news2_shortcodes.php -> class plugin_myplug_news2_shortcodes
 	 * e107::getScParser()->getScObject('news_shortcodes', 'myplug', 'news2_shortcodes');
 	 * </code>
 	 * @param string $className

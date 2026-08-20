@@ -254,7 +254,7 @@ class e_session
      */
     public function getOption($key, $default = null)
     {
-        return ($this->_options[$key] ?? $default);
+        return (isset($this->_options[$key]) ? $this->_options[$key] : $default);
     }
 
     /**
@@ -348,7 +348,7 @@ public function get($key, $clear = false)
     foreach ($this->_data as $dataKey => $value) {
         if (strpos($dataKey, $key . '/') === 0) {
             // Normalize multiple slashes to a single slash
-            $subKeyString = preg_replace('#/+#', '/', substr($dataKey, strlen($key . '/')));
+            $subKeyString = preg_replace('#/+#', '/', (string) substr($dataKey, strlen($key . '/')));
             $subKeys = explode('/', $subKeyString);
             // Remove empty segments
             $subKeys = array_filter($subKeys, function($k) { return $k !== ''; });
@@ -764,13 +764,13 @@ public function getData($key = null, $clear = false)
         {
             // [::1]:8080
             $end = strpos($host, ']');
-            $host = ($end === false) ? substr($host, 1) : substr($host, 1, $end - 1);
+            $host = ($end === false) ? (string) substr($host, 1) : (string) substr($host, 1, $end - 1);
         }
         elseif(substr_count($host, ':') === 1)
         {
             // host:port. More than one colon is a bare IPv6 literal, which
             // cannot carry a port without brackets.
-            $host = substr($host, 0, strrpos($host, ':'));
+            $host = (string) substr($host, 0, strrpos($host, ':'));
         }
 
         if($host === 'localhost' || $host === '::1' || $host === '0:0:0:0:0:0:0:1')
@@ -1234,7 +1234,7 @@ public function getData($key = null, $clear = false)
             $sessionData = $this->_data['_session_validate_data'];
             $validateData = $this->getValidateData();
 
-            $details = 'USER INFORMATION: '.($_COOKIE[e_COOKIE] ?? ($_SESSION[e_COOKIE] ?? 'n/a'))."\n";
+            $details = 'USER INFORMATION: '.(isset($_COOKIE[e_COOKIE]) ? $_COOKIE[e_COOKIE] : (isset($_SESSION[e_COOKIE]) ? $_SESSION[e_COOKIE] : 'n/a'))."\n";
             $details .= "HOST: ".$_SERVER['HTTP_HOST']."\n";
             $details .= "REQUEST_URI: ".$_SERVER['REQUEST_URI']."\n";
             $details .= "SESSION OPTIONS: ".print_r($this->_options, true)."\n";
@@ -1680,7 +1680,7 @@ class e_core_session extends e_session
         // A token that does not validate is refused whatever the request was for,
         // including a GET, because e107 has state-changing GETs whose only guard
         // is that they carry a token at all: see the e-token tests in
-        // eadmin/plugin.php, theme.php and language.php, which check for a
+        // e107_admin/plugin.php, theme.php and language.php, which check for a
         // value but leave validating it to this method.
         //
         // The browser can overrule that in a mode which asks it, but only by
@@ -2099,11 +2099,6 @@ class e_session_db implements SessionHandlerInterface
      * @param string $name
      * @return bool
      */
-    // LITE MODIFICATION: #[\ReturnTypeWillChange] on the six
-    // SessionHandlerInterface methods below. Lite targets PHP 7.4 and
-    // cannot adopt upstream's PHP 8 return types; the attribute
-    // silences the PHP 8.x notice and is inert on 7.4. Do not replace
-    // with real return types when syncing — that would break PHP 7.4.
     #[\ReturnTypeWillChange]
     public function open($path, $name)
     {
@@ -2217,7 +2212,7 @@ class e_session_db implements SessionHandlerInterface
     /**
      * Garbage collection
      * @param int $max_lifetime
-     * @return bool
+     * @return int|false
      */
     #[\ReturnTypeWillChange]
     public function gc($max_lifetime)
@@ -2233,7 +2228,7 @@ class e_session_db implements SessionHandlerInterface
      * @param string $id
      * @return string
      */
-    protected function _sanitize(string $id): string
+    protected function _sanitize($id)
     {
         return preg_replace('#[^0-9a-zA-Z,-]#', '', $id);
     }

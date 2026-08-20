@@ -8,7 +8,7 @@
  *
  *
  *
- * $Source: /cvs_backup/e107_0.8/ehandlers/resize_handler.php,v $
+ * $Source: /cvs_backup/e107_0.8/e107_handlers/resize_handler.php,v $
  * $Revision$
  * $Date$
  * $Author$
