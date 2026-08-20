@@ -111,8 +111,7 @@ class news_front
 
 				$itemName = e107::getParser()->toHTML($this->currentRow['news_title'],true, 'TITLE');
 
-				// LITE MODIFICATION (#84): news SEF via e107::url()
-				$breadcrumb[] = array('text'=> $categoryName, 'url'=>e107::url('news', 'category', $this->currentRow));
+				$breadcrumb[] = array('text'=> $categoryName, 'url'=>e107::getUrl()->create('news/list/category', $this->currentRow));
 				$breadcrumb[] = array('text'=> $itemName, 'url'=> null);
 				break;
 
@@ -1199,8 +1198,7 @@ class news_front
 
 		if($this->defaultTemplate != 'list' && ($paginationSC === false))
 		{
-			// LITE MODIFICATION (#84): news SEF via e107::url()
-			$text .= "<div class='center news-list-footer'><a class='btn btn-default' href='".e107::url('news', 'all')."'>".LAN_NEWS_84."</a></div>";
+			$text .= "<div class='center news-list-footer'><a class='btn btn-default' href='".e107::getUrl()->create('news/list/all')."'>".LAN_NEWS_84."</a></div>";
 		}
 
 		$this->caption = $NEWSLISTTITLE;
@@ -1996,8 +1994,7 @@ class news_front
 				// Set the Values for the social shortcode usage.
 				if($socialInstalled == true)
 				{
-					// LITE MODIFICATION (#84): news SEF via e107::url()
-					$socialArray = array('url'=>e107::url('news', 'item', $news, array('mode' => 'full')), 'title'=>$tp->toText($news['news_title']), 'tags'=>$news['news_meta_keywords']);
+					$socialArray = array('url'=>e107::getUrl()->create('news/view/item', $news, 'full=1'), 'title'=>$tp->toText($news['news_title']), 'tags'=>$news['news_meta_keywords']);
 					$socialObj = e107::getScBatch('social');
 
 					if(is_object($socialObj))

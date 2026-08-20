@@ -44,7 +44,7 @@ class news_related // include plugin-folder in the name.
 
 				$items[] = array(
 					'title'			=> varset($row['news_title']),
-					'url'			=> e107::url('news', 'item', $row), // LITE MODIFICATION (#84): news SEF via e107::url()
+					'url'			=> e107::getUrl()->create('news/view/item',$row), // '{e_BASE}news.php?extend.'.$row['news_id'],
 					'summary'		=> varset($row['news_summary']),
 					'image'			=> varset($thumbs[0]),
 					'date'			=> e107::getParser()->toDate(varset($row['news_datestamp']), 'short'),

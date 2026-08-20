@@ -22,7 +22,20 @@ class news_rss // plugin-folder + '_rss'
 	 * Admin RSS Configuration
 	 *
 	 */		
-	function config() 
+	/**
+	 * Numeric feed key this plugin answered to before v0.7.6.
+	 *
+	 * @see rss_addons::legacyKeys()
+	 * @return array old numeric key => canonical text key
+	 */
+	function legacy()
+	{
+		return array(
+			1 => 'news',
+		);
+	}
+
+	function config()
 	{
 		$config = array();
 
@@ -109,8 +122,7 @@ class news_rss // plugin-folder + '_rss'
 		foreach($tmp as $value)
 		{
 			$rss[$i]['title']           = $value['news_title'];
-			// LITE MODIFICATION (#84): news SEF via e107::url()
-			$rss[$i]['link']            = e107::url('news', 'item', $value, array('mode' => 'full'));
+			$rss[$i]['link']            = e107::getUrl()->create('news/view/item', $value, 'full=1');
 			$rss[$i]['author']          = $value['user_name'];
 			$rss[$i]['author_email']    = $value['user_email'];
 			$rss[$i]['category_name']   = $tp->toHTML($value['category_name'],TRUE,'defs');
@@ -121,10 +133,9 @@ class news_rss // plugin-folder + '_rss'
 			}
 			else
 			{
-				// LITE MODIFICATION (#84): news SEF via e107::url() — keys aligned to e_url.php placeholders ({category_id}/{category_sef})
-				$category = array('category_id' => $value['news_category'], 'category_sef' => $value['category_sef']);
-				$opts = array('mode' => 'full');
-				$url = e107::url('news', 'category', $category, $opts);
+				$category = array('id' => $value['news_category'], 'name' => $value['category_sef']);
+				$opts = array('full' => 1);
+				$url = e107::getUrl()->create('news/list/category', $category, $opts);
 			}
 			$rss[$i]['datestamp']         = $value['news_datestamp'];
 			$rss[$i]['description']     = $this->getDescription($value);

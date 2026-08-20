@@ -153,12 +153,10 @@ class news_gsitemap
 	{
 		if($table === 'news_category')
 		{
-			 // LITE MODIFICATION (#84): news SEF via e107::url()
-			 return e107::url('news', 'category', $row, array('mode' => 'full'));
+			 return e107::getUrl()->create('news/list/category', $row, array('full' => 1));
 		}
 
-		// LITE MODIFICATION (#84): news SEF via e107::url()
-		return e107::url('news', 'item', $row, array('mode' => 'full'));
+		return e107::getUrl()->create('news/view/item', $row, array('full' => 1));
 	}
 
 

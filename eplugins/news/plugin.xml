@@ -1,14 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- $Id$ -->
-<e107Plugin name="News" version="2.2.0" date="2026-06-21" compatibility="2.4" installRequired="true" >
-	<author name="Jimako" url="https://www.e107sk.com" />
-		<summary>News plugin for e107sk.com</summary>
-		<description lan="">News plugin for e107sk.com</description>
-	<category>content</category>
-	<siteLinks>
-		<link url="news.php" perm='everyone' sef='index'>LAN_NEWS</link>
-	</siteLinks> 
-	<pluginPrefs>
-		<pref name="news_cache_timeout">10</pref>
-	</pluginPrefs>
+<e107Plugin name="News" version="1.0" date="2012-08-01" compatibility="2.0" installRequired="false" >
+	<category>menu</category>
 </e107Plugin>

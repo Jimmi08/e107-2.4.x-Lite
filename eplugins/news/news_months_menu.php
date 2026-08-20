@@ -107,8 +107,7 @@ if(false === $cached)
 		if ((!isset($month_links[$xmonth]) || !$month_links[$xmonth]))
 		{
 			$xmonth_cnt[$xmonth] = 0;
-			// LITE MODIFICATION (#84): news SEF via e107::url()
-			$month_links[$xmonth] = e107::url('news', 'month', array('id' => newsFormatDate($req_year, $xmonth)));
+			$month_links[$xmonth] = e107::getUrl()->create('news/list/month', 'id='.newsFormatDate($req_year, $xmonth));
 		}
 		$xmonth_cnt[$xmonth]++;
 	}

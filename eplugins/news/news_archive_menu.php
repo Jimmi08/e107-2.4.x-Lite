@@ -85,8 +85,7 @@ foreach($arr as $year=>$val)
 
 			foreach($items as $row)
 			{
-				// LITE MODIFICATION (#84): news SEF via e107::url()
-				$url = e107::url('news', 'item', $row);
+				$url = e107::getUrl()->create('news/view/item', $row, array('allow' => 'news_sef,news_title,news_id,category_sef,category_name,category_id'));
 		        $var = array('ITEM_URL'   => $url,
 		                     'ITEM_TITLE' => $tp->toHTML($row['news_title'],false,'TITLE'),
 		        );

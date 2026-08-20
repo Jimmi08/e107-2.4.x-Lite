@@ -98,7 +98,7 @@ class news_sitelink // include plugin-folder in the name.
 			
 			$sublinks[] = array(
 					'link_name'			=> LAN_MORE,
-					'link_url'			=> e107::url('news', 'all'), // LITE MODIFICATION (#84): news SEF via e107::url()
+					'link_url'			=> e107::getUrl()->create('news/list/all'),  
 					'link_description'	=> '',
 					'link_button'		=> '',
 					'link_category'		=> '',
@@ -134,7 +134,7 @@ class news_sitelink // include plugin-folder in the name.
 			{
 				$sublinks[] = array(
 					'link_name'			=> $row['news_title'],
-					'link_url'			=> e107::url('news', 'item', $row), // LITE MODIFICATION (#84): news SEF via e107::url()
+					'link_url'			=> e107::getUrl()->create('news/view/item', $row, array('allow' => 'news_sef,news_title,news_id')), // 'news.php?extend.'.$row['news_id'],
 					'link_description'	=> $row['news_summary'],
 					'link_button'		=> '',
 					'link_category'		=> '',
@@ -149,7 +149,7 @@ class news_sitelink // include plugin-folder in the name.
 			
 			$sublinks[] = array(
 					'link_name'			=> LAN_MORE,
-					'link_url'			=> e107::url('news', 'all'), // LITE MODIFICATION (#84): news SEF via e107::url()
+					'link_url'			=> e107::getUrl()->create('news/list/all'),  
 					'link_description'	=> '',
 					'link_button'		=> '',
 					'link_category'		=> '',
