@@ -8,7 +8,7 @@
  *
  * File Upload Handler
  *
- * $Source: /cvs_backup/e107_0.8/ehandlers/upload_handler.php,v $
+ * $Source: /cvs_backup/e107_0.8/e107_handlers/upload_handler.php,v $
  * $Revision$
  * $Date$
  * $Author$

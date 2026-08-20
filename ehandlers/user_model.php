@@ -163,7 +163,7 @@ class e_user_model extends e_admin_model
 	/**
 	 * Always return int
 	 *
-	 * @see ehandlers/e_model#getId()
+	 * @see e107_handlers/e_model#getId()
 	 */
 	public function getId()
 	{
@@ -2215,7 +2215,7 @@ class e_user extends e_user_model
 
 		// Only administrator accounts may be emulated for now. To allow any
 		// non-main-admin user instead, remove this check and offer the
-		// 'emulate' option for non-admin rows in eadmin/users.php.
+		// 'emulate' option for non-admin rows in e107_admin/users.php.
 		if(!$target->isAdmin())
 		{
 			return null;

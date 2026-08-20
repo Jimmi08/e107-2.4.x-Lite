@@ -8,7 +8,7 @@
  *
  *
  *
- * $Source: /cvs_backup/e107_0.8/ehandlers/traffic_class_display.php,v $
+ * $Source: /cvs_backup/e107_0.8/e107_handlers/traffic_class_display.php,v $
  * $Revision$
  * $Date$
  * $Author$
