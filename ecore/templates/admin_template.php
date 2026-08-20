@@ -8,7 +8,7 @@
  *
  * Admin template - _blank theme
  *
- * $Source: /cvs_backup/e107_0.8/ethemes/_blank/admin_template.php,v $
+ * $Source: /cvs_backup/e107_0.8/e107_themes/_blank/admin_template.php,v $
  * $Revision$
  * $Date$
  * $Author$
@@ -291,7 +291,7 @@ $ADMIN_TEMPLATE['footer'] = '
 
 
 /* NEW ADMIN MENU TEMPLATE
- * see function e107::getNav()->admin() in eadmin/header.php
+ * see function e107::getNav()->admin() in e107_admin/header.php
  */
 $ADMIN_TEMPLATE['menu']['start'] = '
 <div class="nav-panel-body">

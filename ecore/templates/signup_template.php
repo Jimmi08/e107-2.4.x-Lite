@@ -8,7 +8,7 @@
  *
  *
  *
- * $Source: /cvs_backup/e107_0.8/ethemes/templates/signup_template.php,v $
+ * $Source: /cvs_backup/e107_0.8/e107_themes/templates/signup_template.php,v $
  * $Revision: 12837 $
  * $Date: 2012-06-19 11:08:41 +0200 (di, 19 jun 2012) $
  * $Author: e107coders $
