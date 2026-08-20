@@ -8,7 +8,7 @@
  *
  * Mailout - template-related functions
  *
- * $URL: https://e107.svn.sourceforge.net/svnroot/e107/trunk/e107_0.8/ehandlers/redirection_class.php $
+ * $URL: https://e107.svn.sourceforge.net/svnroot/e107/trunk/e107_0.8/e107_handlers/redirection_class.php $
  * $Id: redirection_class.php 11922 2010-10-27 11:31:18Z secretr $
  * $Revision: 11315 $
  *

@@ -902,7 +902,7 @@ class e107Email extends PHPMailer
 
 
 
-		if(!empty($eml['template'])) // @see ecore/templates/email_template.php
+		if(!empty($eml['template'])) // @see e107_core/templates/email_template.php
 		{
 			e107::includeLan(e_LANGUAGEDIR.e_LANGUAGE."/admin/lan_users.php"); // do not use e107::lan etc.
 

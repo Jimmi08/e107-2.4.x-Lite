@@ -8,7 +8,7 @@
  *
  * Javascript Helper
  *
- * $Source: /cvs_backup/e107_0.8/ehandlers/js_helper.php,v $
+ * $Source: /cvs_backup/e107_0.8/e107_handlers/js_helper.php,v $
  * $Revision$
  * $Date$
  * $Author$
