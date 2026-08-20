@@ -224,7 +224,7 @@ class admin_shortcodes extends e_shortcode
 			$help_text = $ns->tablerender($tmp['caption'],$tmp['text'],'e_help',true);
 		}
 
-		if(e_PAGE === 'menus.php') // quite fix to disable eadmin/menus.php help file in all languages.
+		if(e_PAGE === 'menus.php') // quite fix to disable e107_admin/menus.php help file in all languages.
 		{
 			return $help_text;
 		}
@@ -678,6 +678,7 @@ class admin_shortcodes extends e_shortcode
 			return ADLAN_51.' ...';
 		}
 	}
+
 	/* LITE MODIFICATION for backend admin_template.php */
 	public function sc_admin_logo($parm=null)
 	{
@@ -697,6 +698,7 @@ class admin_shortcodes extends e_shortcode
 		}
 		return $default; 
 	}
+
 	public function sc_admin_menu($parm=null)
 	{
 		if (!ADMIN)
