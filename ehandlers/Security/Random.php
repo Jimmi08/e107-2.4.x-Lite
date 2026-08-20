@@ -30,7 +30,7 @@ use Exception;
  * this class loads on demand when the Composer autoloader has not run yet.
  *
  * Aliased to the v2-style name `e_random` by
- * ehandlers/random_handler.php. The public surface is kept identical to
+ * e107_handlers/random_handler.php. The public surface is kept identical to
  * the `e_random` class shipped on release/v2.3.x, so a fix can be moved
  * between the branches unchanged.
  */

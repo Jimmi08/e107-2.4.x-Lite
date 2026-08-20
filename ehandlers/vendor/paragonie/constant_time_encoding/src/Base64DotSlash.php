@@ -1,6 +1,7 @@
 <?php
-declare(strict_types=1);
 namespace ParagonIE\ConstantTime;
+
+use Override;
 
 /**
  *  Copyright (c) 2016 - 2022 Paragon Initiative Enterprises.
@@ -44,7 +45,8 @@ abstract class Base64DotSlash extends Base64
      * @param int $src
      * @return int
      */
-    protected static function decode6Bits(int $src): int
+    #[Override]
+    protected static function decode6Bits($src)
     {
         $ret = -1;
 
@@ -70,7 +72,8 @@ abstract class Base64DotSlash extends Base64
      * @param int $src
      * @return string
      */
-    protected static function encode6Bits(int $src): string
+    #[Override]
+    protected static function encode6Bits($src)
     {
         $src += 0x2e;
 

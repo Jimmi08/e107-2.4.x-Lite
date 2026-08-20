@@ -17,7 +17,7 @@ use Exception;
  * or when a caller asks {@see Random} for something it cannot produce.
  *
  * Aliased to the v2-style name `e_random_exception` by
- * ehandlers/random_handler.php.
+ * e107_handlers/random_handler.php.
  */
 class RandomException extends Exception
 {
