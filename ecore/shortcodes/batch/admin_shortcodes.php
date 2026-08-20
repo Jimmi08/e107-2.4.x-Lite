@@ -678,25 +678,64 @@ class admin_shortcodes extends e_shortcode
 			return ADLAN_51.' ...';
 		}
 	}
-
-	/* LITE MODIFICATION for backend admin_template.php */
+	/*
+	 * LITE MODIFICATION — whole method. Do not sync-apply upstream hunks here.
+	 * Upstream's sc_admin_logo() ignores $parm: parse_str($parm) is commented
+	 * out and nothing sets $file / $link, so both branches below are dead code
+	 * upstream. Lite parses $parm with the two-argument form — the same shape
+	 * upstream itself uses in sc_admin_language_switcher() and
+	 * sc_admin_navigation() — and fills $file / $link via varset().
+	 * Everything else is byte-identical to upstream. Reported upstream; when a
+	 * fix lands, drop this marker and return to upstream form.
+	 */
 	public function sc_admin_logo($parm=null)
 	{
-		//	this is hardcoded admin navbar logo for e107 2
-		$default = '<img class="admin-logo" src="'.e_THEME_ABS.'bootstrap3/images/logo.webp" alt="e107"  />';
+		$params = array();
 
-		//check if custom core plugin is installed
-		if (e107::isInstalled('SP_Core'))
-		{  
-			$admin_logo = e107::getPlugConfig('SP_Core')->getPref('admin_logo');
-			if($admin_logo) {
-				$admin_logo = e107::getParser()->replaceConstants($admin_logo, 'full') ;
-				$image = '<img class="admin-logo" src="' . $admin_logo .  '" alt="e107"  />';
-				return $image;
-			}
-			
+		if(is_string($parm))
+		{
+			parse_str($parm, $params);
 		}
-		return $default; 
+		elseif(is_array($parm))
+		{
+			$params = $parm;
+		}
+
+		$file = varset($params['file']);
+		$link = varset($params['link']);
+
+		if (isset($file) && $file && is_readable($file))
+		{
+			$logo = $file;
+			$path = $file;
+		}
+		else if (is_readable(THEME.'images/e_adminlogo.png'))
+		{
+			$logo = THEME_ABS.'images/e_adminlogo.png';
+			$path = THEME.'images/e_adminlogo.png';
+		}
+		else
+		{
+			$logo = e_IMAGE_ABS.'adminlogo.png';
+			$path = e_IMAGE.'adminlogo.png';
+		}
+
+		$dimensions = getimagesize($path);
+
+		$image = "<img class='logo admin_logo' src='".$logo."' style='width: ".$dimensions[0]. 'px; height: ' .$dimensions[1]."px' alt='".ADLAN_153."' />\n";
+
+		if (isset($link) && $link)
+		{
+			if ($link === 'index')
+			{
+				$image = "<a href='".e_ADMIN_ABS."index.php'>".$image.'</a>';
+			}
+			else
+			{
+				$image = "<a href='".$link."'>".$image.'</a>';
+			}
+		}
+		return $image;
 	}
 
 	public function sc_admin_menu($parm=null)
