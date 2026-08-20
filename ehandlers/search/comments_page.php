@@ -8,7 +8,7 @@
  *
  *
  *
- * $Source: /cvs_backup/e107_0.8/ehandlers/search/comments_page.php,v $
+ * $Source: /cvs_backup/e107_0.8/e107_handlers/search/comments_page.php,v $
  * $Revision$
  * $Date$
  * $Author$

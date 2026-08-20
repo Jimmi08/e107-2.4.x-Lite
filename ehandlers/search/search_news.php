@@ -45,7 +45,7 @@ $results = $ps['results'];
 
 function search_news($row) {
 	global $con;
-	$res['link'] = e107::url('news', 'item', $row);// LITE MODIFICATION (#84): news SEF via e107::url()
+	$res['link'] = e107::getUrl()->create('news/view/item', $row);//$row['news_allow_comments'] ? "news.php?item.".$row['news_id'] : "comment.php?comment.news.".$row['news_id'];
 	$res['pre_title'] = $row['category_name']." | ";
 	$res['title'] = $row['news_title'];
 	$res['summary'] = $row['news_body'].' '.$row['news_extended'];

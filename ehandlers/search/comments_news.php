@@ -10,7 +10,7 @@
 
 if (!defined('e107_INIT')) { exit; }
 
-//TODO Rework to v2 standards into eplugins/news/e_search.php
+//TODO Rework to v2 standards into e107_plugins/news/e_search.php
 
 $comments_title = defset('ADLAN_0');
 $comments_type_id = 0;

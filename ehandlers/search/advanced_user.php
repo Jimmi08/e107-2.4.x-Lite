@@ -8,7 +8,7 @@
  *
  *
  *
- * $Source: /cvs_backup/e107_0.8/ehandlers/search/advanced_user.php,v $
+ * $Source: /cvs_backup/e107_0.8/e107_handlers/search/advanced_user.php,v $
  * $Revision$
  * $Date$
  * $Author$

@@ -13,7 +13,7 @@ if(!defined('e107_INIT'))
 	exit;
 }
 
-//TODO Rework to v2 standards into eplugins/download/e_search.php
+//TODO Rework to v2 standards into e107_plugins/download/e_search.php
 
 $comments_title = defset('LAN_PLUGIN_DOWNLOAD_NAME');
 $comments_type_id = '2';
