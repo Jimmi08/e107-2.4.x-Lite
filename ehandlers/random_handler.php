@@ -12,7 +12,7 @@
  * v2 compatibility layer for the e107 CSPRNG API.
  *
  * The implementation lives in the namespaced classes under
- * ehandlers/Security/ (the e107\Security tree), which new code should
+ * e107_handlers/Security/ (the e107\Security tree), which new code should
  * reference directly; the e107 namespaced autoloader picks them up with no
  * registration. Loading this file registers the v2-style class names as true
  * aliases, so `e_random::hex()`, `catch (e_random_exception ...)`, type hints

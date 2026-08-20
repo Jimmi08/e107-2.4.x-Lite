@@ -317,7 +317,7 @@ class language{
 		if($iso==false || $lang==false)
 		{
 			$diz = ($lang) ? $lang : $iso;
-			trigger_error("The selected language (".$diz.") is invalid. See ehandlers/language_class.php for a list of valid languages. ", E_USER_ERROR);
+			trigger_error("The selected language (".$diz.") is invalid. See e107_handlers/language_class.php for a list of valid languages. ", E_USER_ERROR);
 			return false;
 		}
 		
@@ -749,18 +749,42 @@ class language{
 	 *
 	 * @param array $bcList legacyLAN => Replacement-LAN
 	 */
-	// LITE MODIFICATION: bcDefs() default array reduced to a single
-	// mapping. Lite drops upstream's ~25-entry v1.x legacy LAN
-	// graveyard per the no-legacy principle. DO NOT port upstream's
-	// fuller list when syncing — Lite intentionally does not support
-	// pre-2.x LAN constant compatibility.
 	public function bcDefs($bcList = null)
 	{
 
 		if(empty($bcList))
 		{
 			$bcList = array(
-				'LAN_180'   => 'LAN_SEARCH'
+				// Search legacy
+				'LAN_180'   => 'LAN_SEARCH',
+				'LAN_199'   => 'LAN_SEARCH',
+				// Generic forms / actions present in English/English.php
+				'LAN_406'   => 'LAN_EDIT',
+				'LAN_419'   => 'LAN_SHOW',
+				'LAN_435'   => 'LAN_DELETE',
+				// Download plugin v1 prefix — all targets in English/English.php
+				'LAN_dl_7'  => 'LAN_DESCRIPTION',
+				'LAN_dl_10' => 'LAN_SIZE',
+				'LAN_dl_11' => 'LAN_IMAGE',
+				'LAN_dl_17' => 'LAN_FILES',
+				'LAN_dl_19' => 'LAN_CATEGORY',
+				'LAN_dl_20' => 'LAN_FILES',
+				'LAN_dl_21' => 'LAN_SIZE',
+				'LAN_dl_22' => 'LAN_DATE',
+				'LAN_dl_23' => 'LAN_FILE',
+				'LAN_dl_24' => 'LAN_AUTHOR',
+				'LAN_dl_25' => 'LAN_ASCENDING',
+				'LAN_dl_26' => 'LAN_DESCENDING',
+				'LAN_dl_27' => 'LAN_GO',
+				'LAN_dl_28' => 'LAN_NAME',
+				'LAN_dl_32' => 'LAN_DOWNLOAD',
+				'LAN_dl_35' => 'LAN_BACK',
+				// Defined-as-empty: dropped with no replacement, kept defined
+				// so legacy templates that reference them render nothing
+				// instead of fatal.
+				'LAN_433'   => '',
+				'LAN_434'   => '',
+				'FORLAN_15' => '',
 			);
 		}
 

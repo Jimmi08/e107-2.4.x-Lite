@@ -409,8 +409,7 @@ class news {
 
 		// Set the Values for the social shortcode usage.
 		$tp = e107::getParser();
-		// LITE MODIFICATION (#84): news SEF via e107::url()
-		$socialArray = array('url'=>e107::url('news', 'item', $news, array('mode' => 'full')), 'title'=>$tp->toText($news['news_title']), 'tags'=>$news['news_meta_keywords']);
+		$socialArray = array('url'=>e107::getUrl()->create('news/view/item', $news, 'full=1'), 'title'=>$tp->toText($news['news_title']), 'tags'=>$news['news_meta_keywords']);
 		$socialObj = e107::getScBatch('social');
 
 		if(is_object($socialObj))
@@ -1018,8 +1017,7 @@ class e_news_category_item extends e_front_model
 	public function sc_news_category_url($parm = '')
 	{
 
-		// LITE MODIFICATION (#84): news SEF via e107::url()
-		$url = e107::url('news', 'category', array($this->getFieldIdName() => $this->getId(), 'category_sef' => $this->cat('sef')));
+		$url = e107::getUrl()->create('news/list/category', array($this->getFieldIdName() => $this->getId(), 'name' => $this->cat('sef')));
 		switch($parm)
 		{
 			case 'link':

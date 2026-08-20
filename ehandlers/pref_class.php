@@ -1320,7 +1320,7 @@ class e_plugin_pref extends e_pref
 
 	/**
 	 * Delete plugin preferences
-	 * @see ehandlers/e_pref#delete()
+	 * @see e107_handlers/e_pref#delete()
 	 * @return boolean
 	 */
 	public function delete($ids, $destroy = true, $session_messages = false)
@@ -1393,7 +1393,7 @@ class e_theme_pref extends e_pref
 
 	/**
 	 * Delete plugin preferences
-	 * @see ehandlers/e_pref#delete()
+	 * @see e107_handlers/e_pref#delete()
 	 * @return boolean
 	 */
 	public function delete($ids, $destroy = true, $session_messages = false)

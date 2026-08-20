@@ -6,7 +6,7 @@ if (!defined('e107_INIT')) { exit; }
  * http://freshmeat.net/projects/emailaddressvalidationcomponent/
  * email_validation.php
  *
- * @(#) $Header: /cvs_backup/e107_0.8/ehandlers/mail_validation_class.php,v 1.1.1.1 2006-12-02 04:33:46 mcfly_e107 Exp $
+ * @(#) $Header: /cvs_backup/e107_0.8/e107_handlers/mail_validation_class.php,v 1.1.1.1 2006-12-02 04:33:46 mcfly_e107 Exp $
  *
  */
 
