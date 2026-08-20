@@ -780,7 +780,7 @@ class eIPHandler
 	 * @param string $fieldName - if non-empty, each array entry is a comparison with this field
 	 * @return array|bool - array of network ban patterns, or false if invalid domain
 	 */
-	function makeDomainQuery($domain, $fieldName = 'banlist_ip') // PHP 7.4: union return type array|bool dropped
+	function makeDomainQuery($domain, $fieldName = 'banlist_ip')
 	{
 
 		$domain = trim($domain);

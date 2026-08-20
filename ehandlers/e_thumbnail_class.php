@@ -595,9 +595,9 @@ class e_thumbnail
 	 * keeps a same-named file in another folder out of it.
 	 *
 	 * Every root this endpoint serves from is a root the library indexes, so
-	 * every root is asked about. ehandlers/plugin_class.php imports
+	 * every root is asked about. e107_handlers/plugin_class.php imports
 	 * {e_PLUGIN} rows on each plugin install, theme_handler.php imports
-	 * {e_THEME} rows on each theme install, and eadmin/update_routines.php
+	 * {e_THEME} rows on each theme install, and e107_admin/update_routines.php
 	 * imports {e_IMAGE} and {e_FILE} rows on an upgrade from 1.x. Their
 	 * media_userclass is edited by the same media manager as any other row's,
 	 * so restricting the query to e_MEDIA would enforce half a column.
@@ -762,7 +762,7 @@ class e_thumbnail
 	 * builds its session name from e_COOKIE.
 	 *
 	 * Each takes the value class2.php gives it, coercion included:
-	 * eadmin/prefs.php stores an empty cookie_name for anyone who clears
+	 * e107_admin/prefs.php stores an empty cookie_name for anyone who clears
 	 * the field, and class2.php does not let that reach e_COOKIE.
 	 *
 	 * @see class2.php

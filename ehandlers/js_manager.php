@@ -336,7 +336,7 @@ class e_jsmanager
 	 * Add Plugin CSS file(s) for inclusion in site header
 	 *
 	 * @param string $plugname
-	 * @param string|array $file_path relative to eplugins/myplug/ folder or array in format 'path - media'
+	 * @param string|array $file_path relative to e107_plugins/myplug/ folder or array in format 'path - media'
 	 * @param string $media any valid media attribute string - http://www.w3schools.com/TAGS/att_link_media.asp
 	 * @return e_jsmanager
 	 */
@@ -363,7 +363,7 @@ class e_jsmanager
 	/**
 	 * Add Theme CSS file(s) for inclusion in site header
 	 *
-	 * @param string|array $file_path relative to ethemes/current_theme/ folder
+	 * @param string|array $file_path relative to e107_themes/current_theme/ folder
 	 * @param string $media any valid media attribute string - http://www.w3schools.com/TAGS/att_link_media.asp
 	 * @return e_jsmanager
 	 */
@@ -430,7 +430,7 @@ class e_jsmanager
 	/**
 	 * Add Core JS library file(s) for inclusion from e_jslib routine
 	 *
-	 * @param string|array $file_path relative to efiles/jslib/ folder or array in format 'path - runtime location'
+	 * @param string|array $file_path relative to e107_files/jslib/ folder or array in format 'path - runtime location'
 	 * @param string $runtime_location  admin|front|all - where should be JS used
 	 * @return e_jsmanager
 	 */
@@ -444,7 +444,7 @@ class e_jsmanager
 	 * Add Plugin JS library file(s) for inclusion from e_jslib routine
 	 *
 	 * @param string $plugname
-	 * @param string|array $file_path relative to eplugins/myplug/ folder or array in format 'path - runtime location'
+	 * @param string|array $file_path relative to e107_plugins/myplug/ folder or array in format 'path - runtime location'
 	 * @param string $runtime_location admin|front|all - where should be JS used
 	 * @return e_jsmanager
 	 */
@@ -465,7 +465,7 @@ class e_jsmanager
 	/**
 	 * Add Theme JS library file(s) for inclusion from e_jslib routine
 	 *
-	 * @param string|array $file_path relative to ethemes/current_theme/ folder or array in format 'path - runtime location'
+	 * @param string|array $file_path relative to e107_themes/current_theme/ folder or array in format 'path - runtime location'
 	 * @param string $runtime_location admin|front|all - where should be JS used
 	 * @return e_jsmanager
 	 */
@@ -480,7 +480,7 @@ class e_jsmanager
 	 * already loaded by e_jslib routine. This should avoid dependency problems.
 	 * Extremely useful for shortcodes and menus.
 	 *
-	 * @param string $file_path relative to efiles/jslib/ folder
+	 * @param string $file_path relative to e107_files/jslib/ folder
 	 * @param int $zone 1-5 (see header.php)
 	 * @return e_jsmanager
 	 */
@@ -503,7 +503,7 @@ class e_jsmanager
 	 * already loaded by e_jslib routine. This should avoid dependency problems.
 	 *
 	 * @param string $plugname
-	 * @param string $file_path relative to eplugins/myplug/ folder
+	 * @param string $file_path relative to e107_plugins/myplug/ folder
 	 * @param int $zone 1-5 (see header.php)
 	 * @return e_jsmanager
 	 */

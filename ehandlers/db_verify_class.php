@@ -8,7 +8,7 @@
  *
  * Administration - DB Verify Class
  *
- * $URL: /cvs_backup/e107_0.8/eadmin/db_verify.php,v $
+ * $URL: /cvs_backup/e107_0.8/e107_admin/db_verify.php,v $
  * $Revision: 12255 $
  * $Id: 2011-06-07 17:16:42 -0700 (Tue, 07 Jun 2011) $
  * $Author: e107coders $

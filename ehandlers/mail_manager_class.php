@@ -8,7 +8,7 @@
  *
  * e107 Mailout - mail database API and utility routines
  *
- * $URL: https://e107.svn.sourceforge.net/svnroot/e107/trunk/e107_0.8/ehandlers/redirection_class.php $
+ * $URL: https://e107.svn.sourceforge.net/svnroot/e107/trunk/e107_0.8/e107_handlers/redirection_class.php $
  * $Id: redirection_class.php 11922 2010-10-27 11:31:18Z secretr $
  * $Revision: 12125 $
 */
@@ -2079,7 +2079,7 @@ class e107MailManager
 	 *
 	 * @return boolean TRUE if either added to queue, or sent, successfully (does NOT indicate receipt). FALSE on any error
 	 *        (Note that with a small number of recipients FALSE indicates that one or more emails weren't sent - some may have been sent successfully)
-	 * @see ethemes/email_template.php
+	 * @see e107_themes/email_template.php
 	 *
 	 *    The template (or other body text) may also contain field names in the form |USER_NAME| (as used in the bulk mailer edit page). These are
 	 *    filled in from $templateData - field name corresponds to the array index name (case-sensitive)

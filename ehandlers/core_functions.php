@@ -8,7 +8,7 @@
  *
  * e107 Core functions
  *
- * $Source: /cvs_backup/e107_0.8/ehandlers/core_functions.php,v $
+ * $Source: /cvs_backup/e107_0.8/e107_handlers/core_functions.php,v $
  * $Revision$
  * $Date$
  * $Author$

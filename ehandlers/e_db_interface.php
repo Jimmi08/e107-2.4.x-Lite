@@ -12,7 +12,7 @@
  * v2 compatibility layer for the e107 SQL API.
  *
  * The implementation lives in the namespaced classes under
- * ehandlers/Database/ (the e107\Database tree), which new code should
+ * e107_handlers/Database/ (the e107\Database tree), which new code should
  * reference directly; the e107 namespaced autoloader picks them up with no
  * registration. Loading this file registers every v2-style class name as a
  * true alias of its namespaced class, so v2-era code keeps working

@@ -9,7 +9,7 @@
 |     Released under the terms and conditions of the
 |     GNU General Public License (http://gnu.org).
 |
-|     $Source: /cvs_backup/e107_0.8/ehandlers/cron_class.php,v $
+|     $Source: /cvs_backup/e107_0.8/e107_handlers/cron_class.php,v $
 |     $Revision$
 |     $Date$
 |     $Author$
@@ -1734,7 +1734,7 @@ class cronScheduler
  * take everything they need as arguments, so a caller can ask what a different
  * server would be told.
  *
- * @see eadmin/cron.php
+ * @see e107_admin/cron.php
  */
 class cronSetup
 {
