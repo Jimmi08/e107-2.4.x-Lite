@@ -163,6 +163,7 @@ class secure_image
 		$this->BASE_DIR           = e_BASE;
 		$CORE_DIRECTORY           = e107::getFolder('CORE');
 		$this->HANDLERS_DIRECTORY = e107::getFolder('HANDLERS');
+		// LITE MODIFICATION: Lite directory name — upstream uses e107_core/
 		$this->FONTS_DIRECTORY    = !empty($CORE_DIRECTORY) ? $CORE_DIRECTORY . "fonts/" : "ecore/fonts/";
 		$this->IMAGES_DIRECTORY   = e107::getFolder('IMAGES');
 	}
