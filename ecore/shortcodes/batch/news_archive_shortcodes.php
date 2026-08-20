@@ -40,13 +40,7 @@ class news_archive_shortcodes extends e_shortcode
 	
 	function sc_archive_link()
 	{
-		// LITE MODIFICATION: news archive link uses e107::url('news','item')
-		// instead of upstream's e107::getUrl()->create('news/view/item').
-		// Lite's news does NOT use the core eRouter, so the upstream call
-		// would break routing. This is a permanent Lite divergence — the
-		// rest of upstream #5785 (a23080bb9: category escaping guard, 'defs'
-		// mode) is kept as-is.
-		$url = e107::url('news', 'item', $this->var);
+		$url = e107::getUrl()->create('news/view/item', $this->var);
 		$title = e107::getParser()->toHTML($this->var['news_title'], TRUE, 'TITLE');
 
 		return "<a href='".$url."'>".$title."</a>";

@@ -195,7 +195,7 @@ class news_shortcodes extends e_shortcode
 			$NEWIMAGE = "";		
 		}
 		
-		return (!$news_item['news_allow_comments'] ? ''.($pref['comments_icon'] ? $NEWIMAGE.' ' : '')."<a title=\"".LAN_COMMENTS."\" href='".e107::url('news', 'item', $news_item)."'>".varset($param['commentlink']).intval($news_item['news_comment_total']).'</a>' : vartrue($param['commentoffstring'],'Disabled') ); // LITE MODIFICATION (#84): news SEF via e107::url()
+		return (!$news_item['news_allow_comments'] ? ''.($pref['comments_icon'] ? $NEWIMAGE.' ' : '')."<a title=\"".LAN_COMMENTS."\" href='".e107::getUrl()->create('news/view/item', $news_item)."'>".varset($param['commentlink']).intval($news_item['news_comment_total']).'</a>' : vartrue($param['commentoffstring'],'Disabled') );
 	}
 
 	function sc_trackback($parm=null)
@@ -241,19 +241,19 @@ class news_shortcodes extends e_shortcode
 
 	public function sc_news_nav_url($parm=null)
 	{
-		$url = e107::url('news', 'items'); // LITE MODIFICATION (#84): news SEF via e107::url()
+		$url = e107::getUrl()->create('news/list/items'); // default for now.
 
 		if(varset($parm['list']) == 'all') // A list of all items - usually headings and thumbnails
 		{
-			$url = e107::url('news', 'all'); // LITE MODIFICATION (#84): news SEF via e107::url()
+			$url = e107::getUrl()->create('news/list/all');
 		}
 		elseif(varset($parm['list']) == 'category')
 		{
-			$url = e107::url('news', 'short', $this->news_item); // LITE MODIFICATION (#84): news SEF via e107::url()
+			$url = e107::getUrl()->create('news/list/short', $this->news_item);  //default for now.
 		}
 		elseif(varset($parm['items']) == 'category')
 		{
-			$url = e107::url('news', 'category', $this->news_item); // LITE MODIFICATION (#84): news SEF via e107::url()
+			$url = e107::getUrl()->create('news/list/category', $this->news_item);
 		}
 
 		return $url;
@@ -315,7 +315,7 @@ class news_shortcodes extends e_shortcode
 
 			case 'url':
 			default:
-				return "<a href='".e107::url('news', 'category', $this->news_item)."'>".$icon."</a>"; // LITE MODIFICATION (#84): news SEF via e107::url()
+				return "<a href='".e107::getUrl()->create('news/list/category', $this->news_item)."'>".$icon."</a>";
 		}
 	}
 
@@ -355,10 +355,9 @@ class news_shortcodes extends e_shortcode
 			return null;
 		}
 
-		// LITE MODIFICATION (#84): keys aligned to e_url.php placeholders ({category_id}/{category_sef})
-		$category = array('category_id' => $this->news_item['category_id'], 'category_sef' => $this->news_item['category_sef']);
+		$category = array('id' => $this->news_item['category_id'], 'name' => $this->news_item['category_sef'] );
 
-		return e107::url('news', 'category', $category); // LITE MODIFICATION (#84): news SEF via e107::url()
+		return e107::getUrl()->create('news/list/category', $category);	
 	}
 
 
@@ -394,8 +393,7 @@ class news_shortcodes extends e_shortcode
 			return null;
 		}
 
-		// LITE MODIFICATION (#84): news SEF via e107::url() — key aligned to {user_name}
-		return e107::url('news', 'author', array('user_name'=>$this->news_item['user_name']));
+		return e107::getUrl()->create('news/list/author',array('author'=>$this->news_item['user_name'])); // e_BASE."news.php?author=".$val
 	}
 
 	/**
@@ -551,7 +549,7 @@ class news_shortcodes extends e_shortcode
 			break;
 
 			case 'url':
-				return "<a href='".e107::url('news', 'item', $this->news_item)."'>".$imgTag."</a>"; // LITE MODIFICATION (#84): news SEF via e107::url()
+				return "<a href='".e107::getUrl()->create('news/view/item', $this->news_item)."'>".$imgTag."</a>";
 			break;
 
 			case 'tag':
@@ -616,11 +614,10 @@ class news_shortcodes extends e_shortcode
 	function sc_newscategory($parm=null)
 	{
 		$category_name = !empty($this->news_item['category_name']) ? e107::getParser()->toHTML($this->news_item['category_name'], FALSE ,'defs') : '';
-		// LITE MODIFICATION (#84): keys aligned to e_url.php placeholders ({category_id}/{category_sef})
-		$category = !empty($this->news_item['category_id']) ? array('category_id' => $this->news_item['category_id'], 'category_sef' => $this->news_item['category_sef']) : array();
+		$category = !empty($this->news_item['category_id']) ? array('id' => $this->news_item['category_id'], 'name' => $this->news_item['category_sef'] ) : array();
 	//	$categoryClass = varset($GLOBALS['NEWS_CSSMODE'],'');
 	    $style = isset($this->param['catlink']) ? "style='".$this->param['catlink']."'" : '';
-		return "<a ".$style." href='".e107::url('news', 'category', $category)."'>".$category_name."</a>"; // LITE MODIFICATION (#84): news SEF via e107::url()
+		return "<a ".$style." href='".e107::getUrl()->create('news/list/category', $category)."'>".$category_name."</a>";
 	}
 
 	private function formatDate($date, $parm)
@@ -710,7 +707,7 @@ class news_shortcodes extends e_shortcode
 		}
 
 		// When news_allow_comments = 1 then it is disabled. Backward, but that's how it is in v1.x
-		$text = ($this->news_item['news_allow_comments'] ? $this->param['commentoffstring'] : "<a title='".$this->sc_newscommentcount()." ".LAN_COMMENTS."' class='e-tip".$class."' href='".e107::url('news', 'item', $this->news_item)."'>".$param['commentlink'].'</a>'); // LITE MODIFICATION (#84): news SEF via e107::url()
+		$text = ($this->news_item['news_allow_comments'] ? $this->param['commentoffstring'] : "<a title='".$this->sc_newscommentcount()." ".LAN_COMMENTS."' class='e-tip".$class."' href='".e107::getUrl()->create('news/view/item', $this->news_item)."'>".$param['commentlink'].'</a>');
 		return $text;
 	}
 
@@ -806,7 +803,7 @@ class news_shortcodes extends e_shortcode
 			}
 			else
 			{
-				return $es1."<a {$class} href='".e107::url('news', 'item', $this->news_item)."'>".$es."</a>".$es2; // LITE MODIFICATION (#84): news SEF via e107::url()
+				return $es1."<a {$class} href='".e107::getUrl()->create('news/view/item', $this->news_item)."'>".$es."</a>".$es2;
 			}
 		}
 		return '';
@@ -815,15 +812,13 @@ class news_shortcodes extends e_shortcode
 	function sc_captionclass()
 	{
 		$news_title = e107::getParser()->toHTML($this->news_item['news_title'], TRUE,'TITLE');
-		// LITE MODIFICATION (#84): news SEF via e107::url()
-		return "<div class='category".$this->news_item['news_category']."'>".($this->news_item['news_render_type'] == 1 ? "<a href='".e107::url('news', 'item', $this->news_item)."'>".$news_title."</a>" : $news_title)."</div>";
+		return "<div class='category".$this->news_item['news_category']."'>".($this->news_item['news_render_type'] == 1 ? "<a href='".e107::getUrl()->create('news/view/item', $this->news_item)."'>".$news_title."</a>" : $news_title)."</div>";
 	}
 
 	function sc_admincaption()
 	{
 		$news_title = e107::getParser()->toHTML($this->news_item['news_title'], TRUE,'TITLE');
-		// LITE MODIFICATION (#84): news SEF via e107::url()
-		return "<div class='".(defined('ADMINNAME') ? ADMINNAME : "null")."'>".($this->news_item['news_render_type'] == 1 ? "<a href='".e107::url('news', 'item', $this->news_item)."'>".$news_title."</a>" : $news_title)."</div>";
+		return "<div class='".(defined('ADMINNAME') ? ADMINNAME : "null")."'>".($this->news_item['news_render_type'] == 1 ? "<a href='".e107::getUrl()->create('news/view/item', $this->news_item)."'>".$news_title."</a>" : $news_title)."</div>";
 	}
 
 	function sc_adminbody($parm=null)
@@ -982,8 +977,7 @@ class news_shortcodes extends e_shortcode
 			break;
 
 			default:
-				// LITE MODIFICATION (#84): news SEF via e107::url()
-				return "<a href='".e107::url('news', 'item', $this->news_item)."'><img class='news_image img-responsive img-fluid img-rounded rounded ".$class."' src='".$src."' alt='' style='".$style."' {$dimensions} {$srcset} /></a>";
+				return "<a href='".e107::getUrl()->create('news/view/item', $this->news_item)."'><img class='news_image img-responsive img-fluid img-rounded rounded ".$class."' src='".$src."' alt='' style='".$style."' {$dimensions} {$srcset} /></a>";
 			break;
 		}
 	}
@@ -1119,8 +1113,7 @@ class news_shortcodes extends e_shortcode
 			$parms = $parm;
 		}
 
-		// LITE MODIFICATION (#84): news SEF via e107::url()
-		$url = e107::url('news', 'item', $this->news_item);
+		$url = e107::getUrl()->create('news/view/item', $this->news_item);
 
 		if(isset($parms['href']))
 		{
@@ -1141,8 +1134,7 @@ class news_shortcodes extends e_shortcode
 	{
 		$options = (!empty($parm) && is_array($parm)) ? $parm : array();
 
-		// LITE MODIFICATION (#84): news SEF via e107::url() — $options passed through as e107::url() options
-		return e107::url('news', 'item', $this->news_item, $options);
+		return e107::getUrl()->create('news/view/item', $this->news_item, $options);
 	}
 
 
@@ -1215,7 +1207,7 @@ class news_shortcodes extends e_shortcode
 			{
 				//$url = e107::getUrl()->create('news/list/tag',array('tag'=>rawurlencode($val))); // e_BASE."news.php?tag=".$val
 				// will be encoded during create()
-				$url = e107::url('news', 'tag', array('tag'=> str_replace(' ','-',$val))); // LITE MODIFICATION (#84): news SEF via e107::url()
+				$url = e107::getUrl()->create('news/list/tag',array('tag'=> str_replace(' ','-',$val))); // e_BASE."news.php?tag=".$val
 				$words[] = "<a class='".$class."' href='".$url."'>".$start.$val.$end."</a>";
 			}
 		}
