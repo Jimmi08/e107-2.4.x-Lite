@@ -8,7 +8,7 @@
  *
  *
  *
- * $Source: /cvs_backup/e107_0.8/ethemes/templates/user_template.php,v $
+ * $Source: /cvs_backup/e107_0.8/e107_themes/templates/user_template.php,v $
  * $Revision$
  * $Date$
  * $Author$

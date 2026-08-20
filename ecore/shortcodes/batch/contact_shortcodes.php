@@ -8,7 +8,7 @@
  *
  *
  *
- * $Source: /cvs_backup/e107_0.8/efiles/shortcode/batch/contact_shortcodes.php,v $
+ * $Source: /cvs_backup/e107_0.8/e107_files/shortcode/batch/contact_shortcodes.php,v $
  * $Revision$
  * $Date$
  * $Author$
