@@ -61,7 +61,24 @@ class login_menu_class
 
     function get_coreplugs($active=true) 
 	{
-        $list = array('forum', 'chatbox_menu');
+        // LITE MODIFICATION: upstream hardcodes array('forum', 'chatbox_menu') here.
+        // Those two predate the e_loginbox.php addon and the file header still carries
+        // "@todo delete references to forum and chatbox plugins". Lite empties the list:
+        // any plugin that wants a login menu entry ships its own e_loginbox.php.
+        //
+        // Emptying it also disables get_forum_stats() and get_chatbox_menu_stats(), which
+        // are left in place but are now dead code. Before restoring the upstream list,
+        // fix all three of the following - they are broken in upstream as shipped:
+        //   1. parse_external_list() calls these methods via
+        //      call_user_func(array('login_menu_class', ...)), a static call to a
+        //      non-static method, which PHP 8 rejects.
+        //   2. Both methods write the count to $lbox_stats['forum'][0] /
+        //      $lbox_stats['chatbox_menu'][0] while the renderer reads $lbox_stats[0],
+        //      so the count never reaches the rendered item.
+        //   3. get_forum_stats() calls e107forum::visibleForumIds(), which does not exist
+        //      in forum plugin versions older than 2.3.x, and both methods read USERLV,
+        //      which is undefined for guests and fatal on PHP 8.
+        $list = array();
         $ret = array();
         
         foreach ($list as $value) 
@@ -116,7 +133,13 @@ class login_menu_class
 
     function parse_external_list($active=false, $order=true)
 	{
-        //prevent more than 1 call
+        // Prevent more than 1 call.
+        // LITE MODIFICATION: upstream compares the return value against FALSE, but
+        // getRegistry() yields its $default (null) for a missing key. The original guard
+        // therefore returned null on the very first call and the scan below never ran,
+        // leaving external links and stats permanently empty. The sentinel is passed in
+        // as $default instead, so an empty array stays a valid cached result.
+        // Pending upstream report - revert once fixed there.
        	$tmp = e107::getRegistry('loginbox_elist', false);
 		if($tmp !== false) { return $tmp; }
         
@@ -345,6 +368,8 @@ class login_menu_class
 	 */
     function get_plugin_data($plugid) 
 	{
+        // LITE MODIFICATION: same upstream bug as in parse_external_list() - getRegistry()
+        // yields null, not FALSE, for a missing key. Pending upstream report.
         $tmp = e107::getRegistry('loginbox_eplug_data_'.$plugid, false);
 		if($tmp !== false) { return $tmp; }
 
