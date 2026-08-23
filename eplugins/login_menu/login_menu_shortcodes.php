@@ -329,7 +329,7 @@ e107::getLanguage()->bcDefs($bcDefs);
 
 				global $LOGIN_MENU_EXTERNAL_LINK;
 				$menu_pref = e107::getConfig('menu')->getPref();
-
+ 
 				$tp = e107::getParser();
 				require_once(e_PLUGIN."login_menu/login_menu_class.php");
 				$lmc = new login_menu_class;
@@ -407,14 +407,19 @@ e107::getLanguage()->bcDefs($bcDefs);
 				$data = e107::getRegistry('login_menu_data');
 				if(!isset($data['new_news'])) return '';
 				$tmp = array();
+				// LITE MODIFICATION: upstream renders "no <plural>" for a zero count, which
+				// cannot be translated into languages with more than two plural forms. Lite
+				// prints "<label>: <count>" instead, so the number is never grammatically
+				// bound to the noun. The zero branch therefore emits the plural label and 0
+				// rather than LM_STAT_EMPTY, which is no longer used by the template.
 				if($data['new_news']){
 					$tmp['LM_STAT_NEW']   = $data['new_news'];
 					$tmp['LM_STAT_LABEL'] = $data['new_news'] == 1 ? LAN_LOGINMENU_14 : LAN_LOGINMENU_15;
 					$tmp['LM_STAT_EMPTY'] = '';
 				} else {
-					$tmp['LM_STAT_NEW'] = '';
-					$tmp['LM_STAT_LABEL'] = '';
-					$tmp['LM_STAT_EMPTY'] = LAN_LOGINMENU_26." ".LAN_LOGINMENU_15;
+					$tmp['LM_STAT_NEW']   = 0;
+					$tmp['LM_STAT_LABEL'] = LAN_LOGINMENU_15;
+					$tmp['LM_STAT_EMPTY'] = '';
 				}
 				return $tp -> parseTemplate($LOGIN_MENU_STATITEM, false, $tmp);
 			}
@@ -425,14 +430,19 @@ e107::getLanguage()->bcDefs($bcDefs);
 				$data = e107::getRegistry('login_menu_data');
 				if(!isset($data['new_comments'])) return '';
 				$tmp = array();
+				// LITE MODIFICATION: upstream renders "no <plural>" for a zero count, which
+				// cannot be translated into languages with more than two plural forms. Lite
+				// prints "<label>: <count>" instead, so the number is never grammatically
+				// bound to the noun. The zero branch therefore emits the plural label and 0
+				// rather than LM_STAT_EMPTY, which is no longer used by the template.
 				if($data['new_comments']){
 					$tmp['LM_STAT_NEW']   = $data['new_comments'];
 					$tmp['LM_STAT_LABEL'] = $data['new_comments'] == 1 ? LAN_LOGINMENU_18 : LAN_LOGINMENU_19;
 					$tmp['LM_STAT_EMPTY'] = '';
 				} else {
-					$tmp['LM_STAT_NEW']   = '';
-					$tmp['LM_STAT_LABEL'] = '';
-					$tmp['LM_STAT_EMPTY'] = LAN_LOGINMENU_26." ".LAN_LOGINMENU_19;
+					$tmp['LM_STAT_NEW']   = 0;
+					$tmp['LM_STAT_LABEL'] = LAN_LOGINMENU_19;
+					$tmp['LM_STAT_EMPTY'] = '';
 				}
 				return $tp -> parseTemplate($LOGIN_MENU_STATITEM, false, $tmp);
 			}
@@ -443,14 +453,19 @@ e107::getLanguage()->bcDefs($bcDefs);
 				$data = e107::getRegistry('login_menu_data');
 				if(!isset($data['new_users'])) return '';
 				$tmp = array();
+				// LITE MODIFICATION: upstream renders "no <plural>" for a zero count, which
+				// cannot be translated into languages with more than two plural forms. Lite
+				// prints "<label>: <count>" instead, so the number is never grammatically
+				// bound to the noun. The zero branch therefore emits the plural label and 0
+				// rather than LM_STAT_EMPTY, which is no longer used by the template.
 				if($data['new_users']){
 					$tmp['LM_STAT_NEW']   = $data['new_users'];
 					$tmp['LM_STAT_LABEL'] = $data['new_users'] == 1 ? LAN_LOGINMENU_22 : LAN_LOGINMENU_23;
 					$tmp['LM_STAT_EMPTY'] = '';
 				} else {
-					$tmp['LM_STAT_NEW']   = '';
-					$tmp['LM_STAT_LABEL'] = '';
-					$tmp['LM_STAT_EMPTY'] = LAN_LOGINMENU_26." ".LAN_LOGINMENU_23;
+					$tmp['LM_STAT_NEW']   = 0;
+					$tmp['LM_STAT_LABEL'] = LAN_LOGINMENU_23;
+					$tmp['LM_STAT_EMPTY'] = '';
 				}
 				return $tp -> parseTemplate($LOGIN_MENU_STATITEM, false, $tmp);
 			}
@@ -489,10 +504,13 @@ e107::getLanguage()->bcDefs($bcDefs);
 				        }
 				        else
 				        {
-				            //if(empty($lbox_item['stat_nonew'])) continue;
-				            $tmp['LM_STAT_NEW'] = '';
-				            $tmp['LM_STAT_LABEL'] = '';
-				            $tmp['LM_STAT_EMPTY'] = $lbox_item['stat_nonew'];
+				            // LITE MODIFICATION: see sc_lm_new_news(). The zero branch emits the
+				            // plural label and 0 instead of the plugin's 'stat_nonew' string,
+				            // which is no longer used anywhere in Lite. Plugins may keep sending
+				            // it in their e_loginbox.php; it is simply ignored.
+				            $tmp['LM_STAT_NEW'] = 0;
+				            $tmp['LM_STAT_LABEL'] = varset($lbox_item['stat_items'], '');
+				            $tmp['LM_STAT_EMPTY'] = '';
 				        }
 
 				        $ret[] = $tp->parseTemplate($LOGIN_MENU_STATITEM, false, $tmp);

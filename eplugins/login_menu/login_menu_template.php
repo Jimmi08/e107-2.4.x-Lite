@@ -245,7 +245,11 @@ $LM_STATITEM_SEPARATOR = '<br />';
 if (!isset($LOGIN_MENU_STATITEM))
 {
 
+	// LITE MODIFICATION: upstream renders '{LM_STAT_NEW} {LM_STAT_LABEL}{LM_STAT_EMPTY}',
+	// which needs a separate noun form per count and cannot be translated into languages
+	// with more than two plural forms. Detaching the number from the noun removes the
+	// agreement problem entirely. LM_STAT_EMPTY is no longer emitted by any shortcode.
 	$LOGIN_MENU_STATITEM = '
-        {LM_STAT_NEW} {LM_STAT_LABEL}{LM_STAT_EMPTY}
+        {LM_STAT_LABEL}: {LM_STAT_NEW}
     ';
 }
