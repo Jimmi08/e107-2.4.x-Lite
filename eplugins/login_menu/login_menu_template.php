@@ -178,7 +178,11 @@ if ( ! isset($LOGIN_MENU_LOGGED))
     $sc_style['LM_EXTERNAL_LINKS']['pre'] = '<li class="list-group-item login-menu-external">';
 	$sc_style['LM_EXTERNAL_LINKS']['post'] = '</li>';
 
-    $sc_style['LM_STATS']['pre'] = '<li class="list-group-item nav-header login-menu-stats smalltext">'.LAN_LOGINMENU_25.':</li><li>';
+    // LITE MODIFICATION: upstream closes the caption's <li> and opens a second, bare
+    // one for the figures, so the caption gets list-group styling and the figures get
+    // none - two boxes where the menu has one row everywhere else. Caption and figures
+    // now share a single list-group-item, with the caption as a span above them.
+    $sc_style['LM_STATS']['pre'] = '<li class="list-group-item login-menu-stats"><span class="login-menu-stats-caption smalltext">'.LAN_LOGINMENU_25.':</span><br />';
 	$sc_style['LM_STATS']['post'] = '</li>';
 
     $sc_style['LM_LISTNEW_LINK']['pre'] = '<li class="list-group-item login-menu-listnew">';
