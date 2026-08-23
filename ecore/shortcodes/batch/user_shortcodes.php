@@ -568,9 +568,23 @@ class user_shortcodes extends e_shortcode
 		{
 			return e107::getUrl()->create('user/myprofile/edit');
 		}
-		else if(ADMIN && getperms("4") && !$this->var['user_admin'])
+
+		// LITE MODIFICATION: frontend admin-edit of another account.
+		// Upstream hardcodes an e_ADMIN_ABS link to users.php here, bypassing
+		// the URL system entirely. Lite routes through the standalone
+		// 'usersettings' URL module (ecore/override/url/usersettings/), so the
+		// admin edits the same form the user sees.
+		// The permission test MUST stay identical to the four gates in
+		// usersettings.php — see the marker at usersettings.php:399:
+		//   editing an admin account requires getperms('0');
+		//   editing any other account requires getperms('0') or getperms('4').
+		// A mismatch here only hides or shows a button, but a hidden button
+		// over a reachable URL is how the two halves drift apart.
+		$targetIsAdmin = !empty($this->var['user_admin']);
+
+		if (ADMIN && ($targetIsAdmin ? getperms('0') : (getperms('0') || getperms('4'))))
 		{
-			return e_ADMIN_ABS."users.php?mode=main&action=edit&id=".$this->var['user_id'];
+			return e107::getUrl()->create('usersettings/edit/user', array('id' => (int) $this->var['user_id']));
 		}
 	}
 

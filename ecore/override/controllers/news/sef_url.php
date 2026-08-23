@@ -1,7 +1,5 @@
 <?php
 /**
- * DRAFT - NOT TO BE COMMITTED
- *
  * Target path (upstream e107inc/e107 master):
  *   e107_core/override/url/news/sef_url.php
  *

@@ -40,7 +40,9 @@ $bcList = array(
 );
 
 e107::getLanguage()->bcDefs($bcList);
- 
+
+
+
 if(e_AJAX_REQUEST)
 {
 	if(vartrue($_POST['q']))
@@ -112,7 +114,9 @@ if(THEME_LEGACY === true) // v1.x BC Fix for loading old templates.
 {
     $sc_style = array();
 	e107::getMessage()->addDebug( "Loading v1.x user template");
-	include(e107::coreTemplatePath('user')); //correct way to load a core template. (don't use 'include_once' in case it has already been loaded).
+	$_userTmpl = e107::coreTemplatePath('user');
+	e107::predefineLegacyLans($_userTmpl); // #5653: pre-define any missing legacy LAN_* before include.
+	include($_userTmpl); //correct way to load a core template. (don't use 'include_once' in case it has already been loaded).
     e107::scStyle($sc_style);
 }
 else // v2.x
@@ -131,8 +135,7 @@ $USER_FULL_TEMPLATE = str_replace('{USER_EMBED_USERPROFILE}','{USER_ADDONS}', $U
 $user_shortcodes = e107::getScBatch('user');
 $user_shortcodes->wrapper('user/view');
 
-e107::meta('robots', 'noindex');
- 
+
 $user_frm = new form;
 require_once(HEADERF);
 
@@ -144,13 +147,19 @@ if (!$full_perms && !$self_page)
 	exit;
 }
 
-if (isset($_REQUEST['records']))
+// LITE MODIFICATION: member list paging accepts named parameters
+if (isset($_GET['from']) || isset($_GET['records']) || isset($_GET['order']))
 {
-	$records = intval($_REQUEST['records']);
-	$order = ($_REQUEST['order'] == 'ASC' ? 'ASC' : 'DESC');
-	$from = intval($_REQUEST['from']);
+	$from    = isset($_GET['from']) ? intval($_GET['from']) : 0;
+	$records = isset($_GET['records']) ? intval($_GET['records']) : 20;
+	$order   = (isset($_GET['order']) && $_GET['order'] === 'ASC') ? 'ASC' : 'DESC';
 }
- 
+else if (isset($_POST['records']))
+{
+	$records = intval($_POST['records']);
+	$order = ($_POST['order'] == 'ASC' ? 'ASC' : 'DESC');
+	$from = 0;
+}
 else if(!e_QUERY)
 {
 	$records = 20;
@@ -171,22 +180,26 @@ else
 		}
 		else
 		{
+			// LITE MODIFICATION: positional paging tolerates missing segments
 			$qs = explode(".", e_QUERY);
-			$from = intval($qs[0]);
-			$records = intval($qs[1]);
-			$order = ($qs[2] == 'ASC' ? 'ASC' : 'DESC');
+			$from = intval(varset($qs[0], 0));
+			$records = intval(varset($qs[1], 0));
+			$order = (varset($qs[2]) === 'ASC' ? 'ASC' : 'DESC');
 		}
 	}
 }
- 
 
-if (vartrue($records) > 50)
+// LITE MODIFICATION: clamp the page size instead of trusting the request
+if (!isset($id))
 {
-	$records = 50;
-}
-if (vartrue($records) < 5)
-{
-	$records = 5;
+	if (!vartrue($records) || $records < 5)
+	{
+		$records = 20;
+	}
+	elseif ($records > 50)
+	{
+		$records = 50;
+	}
 }
 
 if (isset($id))
@@ -213,7 +226,18 @@ if (isset($id))
 		require_once(FOOTERF);
 		exit;
 	}
- 
+
+	if(vartrue($pref['profile_comments']))
+	{
+		require_once(e_HANDLER."comment_class.php");
+		$comment_edit_query = 'comment.user.'.$id;
+	}
+
+	if (isset($_POST['commentsubmit']) && $pref['profile_comments'])
+	{
+		$cobj = new comment;
+		$cobj->enter_comment($_POST['author_name'], $_POST['comment'], 'profile', $id, null, $_POST['subject']);
+	}
 
 	if($text = renderuser($id))
 	{
@@ -274,9 +298,8 @@ if (isset($id))
 
 	$ns->tablerender(LAN_USER_52, $text, 'user-list');
 
-	$parms = $users_total.",".$records.",".$from.",".e_SELF.'?from=[FROM]&records='.$records."&order=".$order;
-   	//$parms = $users_total.",".$records.",".$from.",".e_SELF.'?[FROM].'.$records.".".$order;
-    
+	// LITE MODIFICATION: paging links use named parameters
+	$parms = $users_total.",".$records.",".$from.",".e_SELF.'?from=[FROM]&records='.$records.'&order='.$order;
 	echo "<div class='nextprev form-inline'>&nbsp;".$tp->parseTemplate("{NEXTPREV={$parms}}")."</div>";
 
 

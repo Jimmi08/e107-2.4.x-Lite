@@ -25,11 +25,11 @@ Admin log events:
 USET_01 - admin changed user data
 */
 
-require_once('class2.php');
+require_once ('class2.php');
 
 // TODO - Remove all the adminEdit stuff. 
 
-define("US_DEBUG", FALSE);
+define("US_DEBUG",FALSE);
 //define('US_DEBUG', false);
 
 
@@ -41,18 +41,18 @@ if (!USER)
 
 if ((!ADMIN || !getperms("4")) && e_QUERY && e_QUERY != "update" && substr(e_QUERY, 0, 4) !== 'del=')
 {
-	header('location:' . e_BASE . 'usersettings.php');
+	header('location:'.e_BASE.'usersettings.php');
 	exit();
 }
 
-e107::includeLan(e_LANGUAGEDIR . e_LANGUAGE . '/lan_user.php');		// Generic user-related language defines
-e107::includeLan(e_LANGUAGEDIR . e_LANGUAGE . '/lan_usersettings.php');
+e107::includeLan(e_LANGUAGEDIR.e_LANGUAGE.'/lan_user.php');		// Generic user-related language defines
+e107::includeLan(e_LANGUAGEDIR.e_LANGUAGE.'/lan_usersettings.php');
 
 $ue = e107::getUserExt(); // needed by shortcodes for now.
 
-require_once(e_HANDLER . 'ren_help.php');
+require_once (e_HANDLER.'ren_help.php');
 // require_once (e_HANDLER.'user_handler.php');
-require_once(e_HANDLER . 'validator_class.php');
+require_once(e_HANDLER.'validator_class.php');
 
 
 
@@ -69,10 +69,9 @@ class usersettings_front // Begin Usersettings rewrite.
 	function __construct()
 	{
 
-		if (deftrue('BOOTSTRAP'))
+		if(deftrue('BOOTSTRAP'))
 		{
-
-			$template = e107::getCoreTemplate('usersettings', '', true, true); // always merge
+			$template = e107::getCoreTemplate('usersettings','', true, true); // always merge
 
 			$USERSETTINGS_MESSAGE 				= "{MESSAGE}";
 			$USERSETTINGS_MESSAGE_CAPTION 		= LAN_OK;
@@ -82,7 +81,7 @@ class usersettings_front // Begin Usersettings rewrite.
 
 			$usersettings_shortcodes->wrapper('usersettings/edit');
 
-			/*	e107::css('inline', "
+		/*	e107::css('inline', "
 
 				.usersettings-form .col-sm-9 .checkboxes { margin-left:20px }
 			");*/
@@ -134,6 +133,7 @@ class usersettings_front // Begin Usersettings rewrite.
 			$USERSETTINGS_EDIT_CAPTION 			= '';
 			$USERSETTINGS_EDIT					= '';
 			$coreTemplatePath                   = e107::coreTemplatePath('usersettings');
+			e107::predefineLegacyLans($coreTemplatePath); // #5653: pre-define any missing legacy LAN_* before include.
 			include_once($coreTemplatePath); //correct way to load a core template.
 			e107::scStyle($sc_style);
 			$usersettings_shortcodes = e107::getScBatch('usersettings');
@@ -141,8 +141,9 @@ class usersettings_front // Begin Usersettings rewrite.
 			$usersettings_shortcodes->legacyTemplate = array(
 				'USER_EXTENDED_CAT' => $USER_EXTENDED_CAT,
 				'USEREXTENDED_FIELD' => $USEREXTENDED_FIELD,
-				'REQUIRED_FIELD' => $REQUIRED_FIELD
+					'REQUIRED_FIELD' => $REQUIRED_FIELD
 			);
+
 		}
 
 		$this->sc = $usersettings_shortcodes;
@@ -157,12 +158,13 @@ class usersettings_front // Begin Usersettings rewrite.
 
 
 
-		e107::js('footer-inline', "
+		e107::js('footer-inline',"
 			function addtext_us(sc)
 			{
 				document.getElementById('dataform').image.value = sc;
 			}
 		");
+
 	}
 
 	/**
@@ -173,9 +175,9 @@ class usersettings_front // Begin Usersettings rewrite.
 	{
 		return $this->template[$id];
 	}
-
-
-
+	
+	
+	
 	private function sendDeleteConfirmationEmail()
 	{
 		$tp = e107::getParser();
@@ -186,11 +188,11 @@ class usersettings_front // Begin Usersettings rewrite.
 
 		$hash = e107::getUserSession()->generateRandomString("#**************************************************************************#");
 
-		$link = SITEURL . "usersettings.php?del=" . $hash; // Security measure - user must be logged in to utilize the link.
+		$link = SITEURL."usersettings.php?del=".$hash; // Security measure - user must be logged in to utilize the link.
 
 		$text = LAN_USET_55; // "Please click the following link to complete the deletion of your account.";
 		$text .= "<br /><br />";
-		$text .= "<a href='" . $link . "' target='_blank'>" . $link . "</a>";
+		$text .= "<a href='".$link."' target='_blank'>".$link."</a>";
 
 
 		$eml = array(
@@ -201,7 +203,7 @@ class usersettings_front // Begin Usersettings rewrite.
 			'body'			=> $text,
 		);
 
-		if (e107::getEmail()->sendEmail(USEREMAIL, USERNAME, $eml))
+		if(e107::getEmail()->sendEmail(USEREMAIL,USERNAME, $eml))
 		{
 			e107::getDb()->createQueryBuilder()->update('user')
 				->set('user_sess', $hash)
@@ -210,13 +212,17 @@ class usersettings_front // Begin Usersettings rewrite.
 
 			$alert = $tp->lanVars($message, USEREMAIL);
 			return e107::getMessage()->setTitle($caption, E_MESSAGE_INFO)->addInfo($alert)->render();
+
 		}
 
 		//todo Email Failure message.
 		return null;
+
+
+
 	}
 
-	/*
+/*
 	private function processUserDeleteFields($vars)
 	{
 		$qry = array();
@@ -234,7 +240,7 @@ class usersettings_front // Begin Usersettings rewrite.
 
 	private function processUserDelete($hash)
 	{
-		if(!e107::getDb()->select('user', '*',"user_id = ".USERID." AND user_sess='".e107::getDb()->escape($hash)."' LIMIT 1")) // user must be logged in AND have correct hash.
+		if(!e107::getDb()->createQueryBuilder()->select('*')->from('user')->where('user_id', USERID)->where('user_sess', $hash)->limit(1)->execute()) // user must be logged in AND have correct hash.
 		{
 			return false;
 		}
@@ -243,9 +249,9 @@ class usersettings_front // Begin Usersettings rewrite.
 
 		$sql = e107::getDb();
 
-		foreach ($arr as $plugin)
+		foreach($arr as $plugin)
 		{
-			foreach ($plugin as $table => $query)
+			foreach($plugin as $table => $query)
 			{
 				$mode = $query['MODE'];
 				unset($query['MODE']);
@@ -286,7 +292,7 @@ class usersettings_front // Begin Usersettings rewrite.
 						$sql->update($table, $query); // BC: legacy raw update. todo check query ran successfully.
 					}
 				}
-				elseif ($mode === 'delete')
+				elseif($mode === 'delete')
 				{
 					if($whereIsStructured)
 					{
@@ -300,12 +306,16 @@ class usersettings_front // Begin Usersettings rewrite.
 						$sql->delete($table, $where); // BC: legacy raw delete. todo check query ran successfully.
 					}
 				}
+
 			}
+
+
 		}
 
 		$alert = defset('LAN_USET_56', "Your account has been successfully deleted.");
 
 		return e107::getMessage()->addSuccess($alert)->render();
+
 	}
 
 	/**
@@ -364,7 +374,7 @@ class usersettings_front // Begin Usersettings rewrite.
 
 		$photo_to_delete    = '';
 		$avatar_to_delete   = '';
-		//	$ue_fields          = '';
+	//	$ue_fields          = '';
 		$caption            = '';
 		$promptPassword     = false;
 		$error              = FALSE;
@@ -379,15 +389,15 @@ class usersettings_front // Begin Usersettings rewrite.
 
 		$inp                = USERID;			// Initially assume that user is modifying their own data.
 		$_uid               = false;			// FALSE if user modifying their own data; otherwise ID of data being modified
-		$adminEdit          = false; 			// @deprecated		// FALSE if editing own data. TRUE if admin edit
+		$adminEdit          = false; // @deprecated		// FALSE if editing own data. TRUE if admin edit
 
 
-		if (!empty($_POST['delete_account'])) // button clicked.
+		if(!empty($_POST['delete_account'])) // button clicked.
 		{
 			echo $this->sendDeleteConfirmationEmail();
 		}
 
-		if (!empty($_GET['del'])) // delete account via confirmation email link.
+		if(!empty($_GET['del'])) // delete account via confirmation email link.
 		{
 
 			echo $this->processUserDelete($_GET['del']);
@@ -396,72 +406,24 @@ class usersettings_front // Begin Usersettings rewrite.
 			return null;
 		}
 
-		// LITE MODIFICATION: frontend admin-edit of any user by ID.
-		// Lite accepts the target user ID from both e_QUERY and $_GET['id'];
-		// upstream only honours e_QUERY and has that block tagged
-		// "todo subject of removal" — its renderForm() no longer does
-		// admin-edit at all. Lite keeps this capability deliberately
-		// (admin users.php only offers backend editing).
-		// All four gates (save: e_QUERY + $_GET['id']; renderForm: same two)
-		// MUST use the identical permission rule:
-		//   editing another account requires getperms('0') or getperms('4');
-		//   editing an admin account requires getperms('0').
-		// Do not adopt upstream's removal of this feature.
-		$inp_tmp = intval(e_QUERY);
-		if (is_numeric(e_QUERY) && $inp_tmp != USERID)
-		{
-			if (ADMIN)
-			{
+		// LITE MODIFICATION: frontend admin-edit - save target
+		$targetId = $this->resolveEditTarget();
 
-				$inp = intval(e_QUERY);
-				$_uid = $inp;
-				$info = e107::user($inp);
-				//Only site admin is able to change setting for other admins
-				if (!is_array($info) || ($info['user_admin'] == 1 && !getperms('0')) || (!getperms('0') && !getperms('4')))
-				{
-					e107::redirect();
-					exit();
-				}
-				$adminEdit = TRUE;		// Flag to indicate admin edit
-			}
-			else
-			{
-				//Non admin attempting to edit another user's ID
-				e107::redirect();
-				exit();
-			}
-		}
-		$inp_tmp = intval($_GET['id']);
-		if (is_numeric($_GET['id']) && $inp_tmp != USERID)
+		if($targetId > 0)
 		{
-			if (ADMIN)
-			{
-
-				$inp = intval($_GET['id']);
-				$_uid = $inp;
-				$info = e107::user($inp);
-				//Only site admin is able to change setting for other admins
-				if (!is_array($info) || ($info['user_admin'] == 1 && !getperms('0')) || (!getperms('0') && !getperms('4')))
-				{
-					e107::redirect();
-					exit();
-				}
-				$adminEdit = TRUE;		// Flag to indicate admin edit
-			}
-			else
-			{
-				//Non admin attempting to edit another user's ID
-				e107::redirect();
-				exit();
-			}
+			$inp       = $targetId;		// record being validated (duplicate checks must skip it)
+			$_uid      = $targetId;
+			$adminEdit = TRUE;		// Flag to indicate admin edit
 		}
+
+
 
 		// Save user settings (changes only)
 		//-----------------------------------
- 
+
 		if (isset($_POST['updatesettings']) || isset($_POST['SaveValidatedInfo']))
 		{
-			//	$udata = e107::user($inp);	//@deprecated			// Get all the existing user data, including any extended fields
+		//	$udata = e107::user($inp);	//@deprecated			// Get all the existing user data, including any extended fields
 
 			$udata = e107::user($inp); // Get all the existing user data, including any extended fields
 			$udata['user_classlist'] = $userMethods->addCommonClasses($udata, FALSE);
@@ -474,14 +436,14 @@ class usersettings_front // Begin Usersettings rewrite.
 			$ueVals   	= $_POST['ue'];
 			$passtemp1 	= $_POST['password1'];
 			$passtemp2  = $_POST['password2'];
-
+			
 			// Filter the others
 			$_POST = e107::getParser()->filter($_POST);
-
+			
 			// Pass the original values back (restoring)
 			$_POST['ue'] 		= $ueVals;
 			$_POST['password1']	= $passtemp1;
-			$_POST['password2']	= $passtemp2;
+			$_POST['password2']	= $passtemp2; 
 
 			// Unset temporary vars
 			unset($ueVals);
@@ -499,43 +461,46 @@ class usersettings_front // Begin Usersettings rewrite.
 				$_POST['password2'] = '';
 			}
 
-			e107::getMessage()->addDebug("_FILES" . print_a($_FILES, true));
+			e107::getMessage()->addDebug("_FILES".print_a($_FILES,true));
 			// Uploaded avatar and/or photo
 			if (varset($_FILES['file_userfile']['error']['avatar'], false) === UPLOAD_ERR_OK || varset($_FILES['file_userfile']['error']['photo'], false) == UPLOAD_ERR_OK)
 			{
 				e107::getMessage()->addDebug("Uploaded File Detected");
-				require_once(e_HANDLER . 'resize_handler.php');
+				require_once (e_HANDLER.'resize_handler.php');
 
-				$opts = array('overwrite' => TRUE, 'file_mask' => 'jpg,png,gif,jpeg', 'max_file_count' => 2);
+				$opts = array('overwrite' => TRUE, 'file_mask'=>'jpg,png,gif,jpeg', 'max_file_count' => 2);
 
-				if ($uploaded = e107::getFile()->getUploaded(e_AVATAR_UPLOAD, 'prefix+ap_' . $tp->leadingZeros($udata['user_id'], 7) . '_', $opts))
+				if ($uploaded = e107::getFile()->getUploaded(e_AVATAR_UPLOAD, 'prefix+ap_'.$tp->leadingZeros($udata['user_id'],7).'_', $opts))
 				{
 
-					e107::getMessage()->addDebug("Uploaded: " . print_a($uploaded, true));
+					e107::getMessage()->addDebug("Uploaded: ".print_a($uploaded,true));
 					foreach ($uploaded as $upload)
 					{
 						if ($upload['name'] && ($upload['index'] == 'avatar') && $pref['avatar_upload'])
 						{
 							// avatar uploaded - give it a reference which identifies it as server-stored
 							// Vetting routines will do resizing and so on
-							$_POST['image'] = '-upload-' . $upload['name'];
+							$_POST['image'] = '-upload-'.$upload['name'];
 						}
 						elseif ($upload['name'] && ($upload['index'] == 'photo') && $pref['photo_upload'])
 						{
 							// photograph uploaded
-							$_POST['user_sess'] = '-upload-' . $upload['name'];
+							$_POST['user_sess'] = '-upload-'.$upload['name'];
 						}
 						elseif (isset($upload['error']) && isset($upload['message']))
 						{
 							$extraErrors[] = $upload['message'];
 						}
+
 					}
 				}
+
+
 			}
 
 
 			// Now validate everything - just check everything that's been entered
-			$allData = validatorClass::validateFields($_POST, $userMethods->userVettingInfo, TRUE);		// Do basic validation
+			$allData = validatorClass::validateFields($_POST,$userMethods->userVettingInfo, TRUE);		// Do basic validation
 			validatorClass::dbValidateArray($allData, $userMethods->userVettingInfo, 'user', $inp);		// Do basic DB-related checks
 			$userMethods->userValidation($allData);														// Do user-specific DB checks
 
@@ -558,13 +523,13 @@ class usersettings_front // Begin Usersettings rewrite.
 			unset($_POST['password2']);
 
 
-			$changedUserData = validatorClass::findChanges($allData['data'], $udata, FALSE);
+			$changedUserData = validatorClass::findChanges($allData['data'], $udata,FALSE);
 
 
-			e107::getMessage()->addDebug("<h5>Existing User Info</h5>" . print_a($udata, true));
-			e107::getMessage()->addDebug('<h5>$allData</h5>' . print_a($allData['data'], true));
+			e107::getMessage()->addDebug("<h5>Existing User Info</h5>".print_a($udata,true));
+			e107::getMessage()->addDebug('<h5>$allData</h5>'.print_a($allData['data'],true));
 
-			e107::getMessage()->addDebug("<h5>Posted Changes</h5>" . print_a($changedUserData, true));
+			e107::getMessage()->addDebug("<h5>Posted Changes</h5>".print_a($changedUserData,true));
 
 			// Login Name checks - only admin can change login name
 			if (isset($changedUserData['user_loginname']))
@@ -600,19 +565,21 @@ class usersettings_front // Begin Usersettings rewrite.
 				$avatar_to_delete = str_replace('-upload-', '', $udata['user_image']);
 			}
 
-			// Validate Extended User Fields.
+		    // Validate Extended User Fields.
 
 
 
 			if (isset($_POST['ue']))
 			{
 				$eufVals = $ue->sanitizeAll($_POST['ue']);
-				$eufVals = $ue->userExtendedValidateAll($eufVals, varset($_POST['hide'], TRUE));		// Validate the extended user fields
-				$changedEUFData['data'] = validatorClass::findChanges($eufVals['data'], $udata, FALSE);
+				$eufVals = $ue->userExtendedValidateAll($eufVals, varset($_POST['hide'],TRUE));		// Validate the extended user fields
+				$changedEUFData['data'] = validatorClass::findChanges($eufVals['data'], $udata,FALSE);
 			}
 
-			e107::getMessage()->addDebug("<h4>Extended Data - post validation</h4>" . print_a($changedEUFData['data'], true));
- 
+			e107::getMessage()->addDebug("<h4>Extended Data - post validation</h4>".print_a($changedEUFData['data'],true));
+
+
+
 			// Determine whether we have an error
 			$error = ((isset($allData['errors']) && count($allData['errors'])) || (isset($eufVals['errors']) && count($eufVals['errors'])) || count($extraErrors));
 
@@ -625,18 +592,18 @@ class usersettings_front // Begin Usersettings rewrite.
 				{
 
 					$e_userclass = e107::getUserClass();
-					$ucList = $e_userclass->get_editable_classes(USERCLASS_LIST, TRUE);	 // List of classes which this user can edit
+					$ucList = $e_userclass->get_editable_classes(USERCLASS_LIST,TRUE);	 // List of classes which this user can edit
 					if (count($ucList))
 					{
 						$nid = $e_userclass->mergeClassLists($udata['user_class'], $ucList, $allData['data']['user_class'], TRUE);
 						$nid = $e_userclass->stripFixedClasses($nid);
-						$nid = implode(',', $nid);
+						$nid = implode(',',$nid);
 						//	echo "Userclass data - new: {$nid}, old: {$udata['user_baseclasslist']}, editable: ".implode(',',$ucList).", entered: {$allData['data']['user_class']}<br />";
 						if ($nid != $udata['user_baseclasslist'])
 						{
 							if (US_DEBUG)
 							{
-								e107::getLog()->addEvent(10, debug_backtrace(), "DEBUG", "Usersettings test", "Write back classes; old list: {$udata['user_class']}; new list: " . $nid, false, LOG_TO_ROLLING);
+								e107::getLog()->addEvent(10, debug_backtrace(), "DEBUG", "Usersettings test", "Write back classes; old list: {$udata['user_class']}; new list: ".$nid, false, LOG_TO_ROLLING);
 							}
 							$changedUserData['user_class'] = $nid;
 						}
@@ -646,25 +613,21 @@ class usersettings_front // Begin Usersettings rewrite.
 
 
 
-			e107::getMessage()->addDebug("<h4>Processed Posted Changes</h4>" . print_a($changedUserData, true));
+			e107::getMessage()->addDebug("<h4>Processed Posted Changes</h4>".print_a($changedUserData,true));
 
 			// All key fields validated here
 			// -----------------------------
 			// $inp - UID of user whose data is being changed (may not be the currently logged in user)
 			$inp = intval($inp);
-			$dataToSave = !$error && (isset($changedUserData) && count($changedUserData)) || (isset($changedEUFData['data']) && count($changedEUFData['data']));
-
-			if ($dataToSave)
-			//if (!$error && (count($changedUserData) || count($changedEUFData['data'])))
+			if (!$error && count($changedUserData) || count($changedEUFData))
 			{
-				$_POST['user_id'] = $inp;   
-				
-				$ret = e107::getEvent()->trigger('preuserset', $_POST);
+				$_POST['user_id'] = $inp;
+				$ret =e107::getEvent()->trigger('preuserset', $_POST);
 
 				if ($ret == '')
 				{
 
-					// Only admins can update login name - do this just in case one of the event triggers has mucked it about
+				// Only admins can update login name - do this just in case one of the event triggers has mucked it about
 					if (!(ADMIN && getperms('4')))
 					{
 						unset($changedUserData['user_loginname']);
@@ -672,75 +635,74 @@ class usersettings_front // Begin Usersettings rewrite.
 				}
 				else
 				{	// Invalid data - from hooked in trigger event
-					$message = "<div style='text-align:center'>" . $ret . "</div>";
+					$message = "<div style='text-align:center'>".$ret."</div>";
 					$caption = LAN_OK;
 					$error = true;
 				}
 			}
 		}  // End - update setttings
-		elseif (isset($_POST['SaveValidatedInfo'])) // Next bit only valid if user editing their own data
+		elseif(isset($_POST['SaveValidatedInfo'])) // Next bit only valid if user editing their own data
 		{
-			/*			if(!empty($_POST['updated_data']) && !empty($_POST['currentpassword']) && !empty($_POST['updated_key']))
+/*			if(!empty($_POST['updated_data']) && !empty($_POST['currentpassword']) && !empty($_POST['updated_key']))
 			{	// Got some data confirmed with password entry*/
-			$new_data = base64_decode($_POST['updated_data']);
+				$new_data = base64_decode($_POST['updated_data']);
 
-			// Should only happen if someone's fooling around
-			if ($this->getValidationKey($new_data) !== $_POST['updated_key'] || ($userMethods->hasReadonlyField($new_data) !== false))
-			{
-				echo LAN_USET_42 . '<br />';
-				return false;
-			}
-
-			if (isset($_POST['updated_extended']))
-			{
-				$new_extended = base64_decode($_POST['updated_extended']);
-
-				if ($this->getValidationKey($new_extended) !== $_POST['extended_key'])
-				{  // Should only happen if someone's fooling around
-					echo LAN_USET_42 . '<br />';
+				 // Should only happen if someone's fooling around
+				if ($this->getValidationKey($new_data) !== $_POST['updated_key'] || ($userMethods->hasReadonlyField($new_data) !==false))
+				{
+					echo LAN_USET_42.'<br />';
 					return false;
 				}
-			}
 
-			if ($userMethods->CheckPassword($_POST['currentpassword'], $udata['user_loginname'], $udata['user_password']) === false) // Use old data to validate
-			{  // Invalid password
+				if (isset($_POST['updated_extended']))
+				{
+					$new_extended = base64_decode($_POST['updated_extended']);
 
-				$mes->addError("<p>" . LAN_INCORRECT_PASSWORD . "</p>");
-				$mes->addError("<a class='btn btn-danger' href='" . e107::getUrl()->create('user/myprofile/edit') . "'>" . LAN_BACK . "</a>");
+					if ($this->getValidationKey($new_extended) !== $_POST['extended_key'])
+					{  // Should only happen if someone's fooling around
+						echo LAN_USET_42.'<br />';
+						return false;
+					}
+				}
 
-				echo $mes->render();
-				return false;
-			}
+				if ($userMethods->CheckPassword($_POST['currentpassword'], $udata['user_loginname'], $udata['user_password']) === false) // Use old data to validate
+				{  // Invalid password
+
+					$mes->addError("<p>".LAN_INCORRECT_PASSWORD."</p>");
+					$mes->addError("<a class='btn btn-danger' href='".e107::getUrl()->create('user/myprofile/edit')."'>".LAN_BACK."</a>");
+
+					echo $mes->render();
+					return false;
+				}
 
 
-			$changedUserData = e107::unserialize($new_data);
-			$changedUserData = e107::getParser()->filter($changedUserData, 'str');
+				$changedUserData = e107::unserialize($new_data);
+				$changedUserData = e107::getParser()->filter($changedUserData, 'str');
 
-			$savePassword = $_POST['currentpassword'];
+				$savePassword = $_POST['currentpassword'];
 
-			if (!empty($new_extended))
-			{
-				$changedEUFData = e107::unserialize($new_extended);
-				$changedEUFData = e107::getParser()->filter($changedEUFData, 'str');
-			}
+				if(!empty($new_extended))
+				{
+					$changedEUFData = e107::unserialize($new_extended);
+					$changedEUFData = e107::getParser()->filter($changedEUFData, 'str');
+				}
 
-			unset($new_data);
-			unset($new_extended);
+				unset($new_data);
+				unset($new_extended);
 
-			if (isset($changedUserData['user_sess']))
-			{
-				$photo_to_delete = $udata['user_sess'];
-			}
-			if (isset($changedUserData['user_image']))
-			{
-				$avatar_to_delete = $udata['user_image'];
-			}
-			//	}
+				if (isset($changedUserData['user_sess']))
+				{
+					$photo_to_delete = $udata['user_sess'];
+				}
+				if (isset($changedUserData['user_image']))
+				{
+					$avatar_to_delete = $udata['user_image'];
+				}
+		//	}
 		}
-
 		unset($_POST['updatesettings']);
 		unset($_POST['SaveValidatedInfo']);
-  
+
 
 		// At this point we know the error status.
 		// $changedUserData has an array of core changed data, except password, which is in $savePassword if changed (or entered as confirmation).
@@ -767,8 +729,7 @@ class usersettings_front // Begin Usersettings rewrite.
 			else
 			{
 				if ((isset($changedUserData['user_loginname']) && $userMethods->isPasswordRequired('user_loginname'))
-					|| (isset($changedUserData['user_email']) && $userMethods->isPasswordRequired('user_email'))
-				)
+					|| (isset($changedUserData['user_email']) && $userMethods->isPasswordRequired('user_email')))
 				{
 					if ($_uid && ADMIN)
 					{	// Admin is changing it
@@ -788,15 +749,12 @@ class usersettings_front // Begin Usersettings rewrite.
 
 
 			// We can update the basic user record now - can just update fields from $changedUserData
-			if (US_DEBUG)
-			{
-				e107::getLog()->addEvent(10, debug_backtrace(), "DEBUG", "Usersettings test", "Changed data:<br /> " . var_export($changedUserData, true), false, LOG_TO_ROLLING);
-			}
+			if (US_DEBUG) { e107::getLog()->addEvent(10, debug_backtrace(), "DEBUG", "Usersettings test", "Changed data:<br /> ".var_export($changedUserData, true), false, LOG_TO_ROLLING); }
 			if (isset($changedUserData) && count($changedUserData))
 			{
 				$changedData['data'] = $changedUserData;
-				$changedData['WHERE'] = 'user_id=' . $inp;
-				validatorClass::addFieldTypes($userMethods->userVettingInfo, $changedData);
+				$changedData['WHERE'] = 'user_id='.$inp;
+				validatorClass::addFieldTypes($userMethods->userVettingInfo,$changedData);
 
 				// Field-typed array update: valuesTyped() applies the same per-column storage
 				// coercion as the legacy array-form update (the _FIELD_TYPES envelope from
@@ -816,7 +774,7 @@ class usersettings_front // Begin Usersettings rewrite.
 					if (isset($changedUserData['user_password']) && !$adminEdit)
 					{
 						//	echo "Make new cookie<br />";
-						$userMethods->makeUserCookie(array('user_id' => $udata['user_id'], 'user_password' => $changedUserData['user_password']), FALSE);		// Can't handle autologin ATM
+						$userMethods->makeUserCookie(array('user_id' => $udata['user_id'],'user_password' => $changedUserData['user_password']), FALSE);		// Can't handle autologin ATM
 					}
 				}
 			}
@@ -841,6 +799,7 @@ class usersettings_front // Begin Usersettings rewrite.
 				{
 					$message .= '<br />Error updating EUF';
 				}
+				
 			}
 
 			// Now see if we need to log anything. First check the options and class membership
@@ -852,17 +811,11 @@ class usersettings_front // Begin Usersettings rewrite.
 			{		// Its an admin changing someone elses data - make an admin log entry here
 				e107::getLog()->add('USET_01', "UID: {$udata['user_id']}. UName: {$udata['user_name']}", E_LOG_INFORMATIVE);
 				// Check against the class of the target user, not the admin!
-				if (!check_class(varset($pref['user_audit_class'], ''), $udata['user_class']))
-				{
-					$user_logging_opts = array();
-				}
+				if (!check_class(varset($pref['user_audit_class'], ''), $udata['user_class'])) { $user_logging_opts = array(); }
 			}
 			else
 			{
-				if (!check_class(varset($pref['user_audit_class'], '')))
-				{
-					$user_logging_opts = array();
-				}
+				if (!check_class(varset($pref['user_audit_class'], ''))) { $user_logging_opts = array(); }
 			}
 
 			$triggerData = array();
@@ -872,10 +825,11 @@ class usersettings_front // Begin Usersettings rewrite.
 				$triggerData['user_id'] = $udata['user_id'];
 				$triggerData['_CHANGED_BY_UID'] = USERID;		// May be admin changing data
 				$triggerData['_CHANGED_BY_UNAME'] = USERNAME;
-				if (!isset($triggerData['user_name']))
-				{
-					$triggerData['user_name'] = $udata['user_name'];
-				}
+				if (!isset($triggerData['user_name'])) { $triggerData['user_name'] = $udata['user_name']; }
+			}
+
+			if(count($changedEUFData)) {
+				$triggerData['ue'] = $changedEUFData['data'];
 			}
 
 			// Now log changes if required
@@ -929,10 +883,7 @@ class usersettings_front // Begin Usersettings rewrite.
 					}
 					else
 					{
-						if (count($do_log) > 1)
-						{
-							$log_action = USER_AUDIT_NEW_SET;
-						} // Log multiple entries to one record
+						if (count($do_log) > 1) { $log_action = USER_AUDIT_NEW_SET; } // Log multiple entries to one record
 						e107::getLog()->user_audit($log_action, $do_log);
 					}
 				}
@@ -949,7 +900,7 @@ class usersettings_front // Begin Usersettings rewrite.
 				$this->deleteFile($avatar_to_delete);
 			}
 
-			// If user has changed display name, update the record in the online table
+				// If user has changed display name, update the record in the online table
 			if (isset($changedUserData['user_name']) && !$_uid)
 			{
 				e107::getDb()->createQueryBuilder()->update('online')
@@ -973,37 +924,39 @@ class usersettings_front // Begin Usersettings rewrite.
 				e107::redirect();
 			}
 
-			if ($adminEdit && $message)
+			if($adminEdit && $message)
 			{
 				$mes->addSuccess($message);
 			}
 
 
-			$USERSETTINGS_MESSAGE = $this->getTemplate('message');
+			$USERSETTINGS_MESSAGE =$this->getTemplate('message');
 			$USERSETTINGS_MESSAGE_CAPTION = $this->getTemplate('message_caption');
 
-			if (isset($USERSETTINGS_MESSAGE))
+			if(isset($USERSETTINGS_MESSAGE))
 			{
-				$message = str_replace("{MESSAGE}", $message, $USERSETTINGS_MESSAGE);
+				$message = str_replace("{MESSAGE}",$message,$USERSETTINGS_MESSAGE);
 			}
-			elseif (!deftrue('BOOTSTRAP')) // backwards compatible
+			elseif(!deftrue('BOOTSTRAP')) // backwards compatible
 			{
-				$message = "<div style='text-align:center'>" . $message . '</div>';
+				$message = "<div style='text-align:center'>".$message.'</div>';
+
 			}
 
 			$caption = (isset($USERSETTINGS_MESSAGE_CAPTION)) ? $USERSETTINGS_MESSAGE_CAPTION : LAN_OK;
+
 		}	// End - if (!$error)...
 
 
 		if (!$error && !$promptPassword)
 		{
-			if (isset($_POST) && vartrue($changedUserData['user_name']))
+			if(isset($_POST) && vartrue($changedUserData['user_name']))
 			{
 				$redirect = e107::getRedirect();
 				$url = e107::getUrl();
-				$to = $_uid ? $url->create('user/profile/edit', array('id' => $_uid, 'name' => $changedUserData['user_name'])) : $url->create('user/myprofile/edit');
-				if ($message) e107::getMessage()->addSuccess($message, 'default', true);
-				
+				// LITE MODIFICATION: frontend admin-edit - redirect target
+				$to = $_uid ? $url->create('usersettings/edit/user', array('id' => (int) $_uid)) : $url->create('user/myprofile/edit');
+				if($message) e107::getMessage()->addSuccess($message, 'default', true);
 				$redirect->redirect($to);
 			}
 			unset($_POST);
@@ -1012,18 +965,19 @@ class usersettings_front // Begin Usersettings rewrite.
 
 		if ($promptPassword) // User has to enter password to validate data
 		{
-			$this->renderPasswordForm($changedUserData, $changedEUFData);
+			$this->renderPasswordForm($changedUserData,$changedEUFData);
 			return false;
 		}
- 
+
+
 
 		if ($error)
 		{
 			$message = $this->compileErrors($extraErrors, $allData, $eufVals);
 
-			//	if(!empty($message))
+		//	if(!empty($message))
 			{
-				if (deftrue('BOOTSTRAP'))
+				if(deftrue('BOOTSTRAP'))
 				{
 					echo e107::getMessage()->addError($message)->render();
 				}
@@ -1033,19 +987,19 @@ class usersettings_front // Begin Usersettings rewrite.
 				}
 			}
 		}
-		elseif ($dataToSave === true) // --- User data has been updated here if appropriate ---
+		elseif($dataToSave === true) // --- User data has been updated here if appropriate ---
 		{
 
 			$testSessionMessage = e107::getMessage()->get(E_MESSAGE_SUCCESS, 'default', true); // only success in the session
 
-			if ($testSessionMessage) $message = implode('<br />', $testSessionMessage); // we got raw message - array
+			if($testSessionMessage) $message = implode('<br />', $testSessionMessage); // we got raw message - array
 
-			if (empty($message))
+			if(empty($message))
 			{
 				$message = LAN_USET_41; // probably only extended fields updated.
 			}
 
-			if (deftrue('BOOTSTRAP'))
+ 			if(deftrue('BOOTSTRAP'))
 			{
 				echo e107::getMessage()->addSuccess($message)->render();
 			}
@@ -1053,10 +1007,7 @@ class usersettings_front // Begin Usersettings rewrite.
 			{
 				$ns->tablerender($caption, $message);
 			}
-		}
-		elseif($dataToSave === false)
-		{
-			
+
 		}
 
 
@@ -1085,15 +1036,17 @@ class usersettings_front // Begin Usersettings rewrite.
 
 		if (count($allData['errors']))
 		{
-			$temp[] = validatorClass::makeErrorList($allData, 'USER_ERR_', '%n - %x - %t: %v', '<br />', $userMethods->userVettingInfo);
+			$temp[] = validatorClass::makeErrorList($allData,'USER_ERR_','%n - %x - %t: %v', '<br />', $userMethods->userVettingInfo);
 		}
 
 		if (vartrue($eufVals['errors']))
 		{
-			$temp[] = '<br />' . validatorClass::makeErrorList($eufVals, 'USER_ERR_', '%n - %x - %t: %v', '<br />', NULL);
+			$temp[] = '<br />'.validatorClass::makeErrorList($eufVals,'USER_ERR_','%n - %x - %t: %v', '<br />', NULL);
 		}
 
 		return implode('<br />', $temp);
+
+
 	}
 
 
@@ -1111,10 +1064,10 @@ class usersettings_front // Begin Usersettings rewrite.
 	 * @param $changedUserData
 	 * @param $changedEUFData
 	 */
-	private function renderPasswordForm($changedUserData, $changedEUFData)
+	private function renderPasswordForm($changedUserData, $changedEUFData )
 	{
 		$ns                 = e107::getRender();
-		$updated_data       = e107::serialize($changedUserData, 'json');
+		$updated_data       = e107::serialize($changedUserData,'json');
 		$validation_key     = $this->getValidationKey($updated_data);
 		$updated_data       = base64_encode($updated_data);
 		$updated_extended   = e107::serialize($changedEUFData, 'json');
@@ -1123,40 +1076,40 @@ class usersettings_front // Begin Usersettings rewrite.
 
 		$formTarget = e107::getUrl()->create('user/myprofile/edit');
 
-		$text = "<form method='post' action='" . $formTarget . "'>
+		$text = "<form method='post' action='".$formTarget."'>
 			<table><tr><td>";
 
-		foreach ($_POST as $k => $v)
-		{
-			if (is_array($v))
-			{
-				foreach ($v as $sk => $sv)
+				foreach ($_POST as $k => $v)
 				{
-					$text .= "<input type='hidden' name='{$k}[{$sk}]' value='{$sv}' />\n";
+					if (is_array($v))
+					{
+						foreach ($v as $sk => $sv)
+						{
+							$text .= "<input type='hidden' name='{$k}[{$sk}]' value='{$sv}' />\n";
+						}
+					}
+					else
+					{
+						$text .= "<input type='hidden' name='{$k}' value='{$v}' />\n";
+					}
 				}
-			}
-			else
-			{
-				$text .= "<input type='hidden' name='{$k}' value='{$v}' />\n";
-			}
-		}
 
-		$text .= LAN_USET_21 . "</td></tr>
+				$text .= LAN_USET_21."</td></tr>
 				<tr><td>&nbsp;</td></tr>
 				<tr><td>
 
 				<input type='password' class='form-control' name='currentpassword' value='' size='30' />";
 
-		$text .= "
+				$text .= "
 				<input type='hidden' name='updated_data' value='{$updated_data}' />
 				<input type='hidden' name='updated_key' value='{$validation_key}' />
 				<input type='hidden' name='updated_extended' value='{$updated_extended}' />
 				<input type='hidden' name='extended_key' value='{$extended_key}' />
-				<input type='hidden' name='e-token' value='" . defset('e_TOKEN') . "' />
+				<input type='hidden' name='e-token' value='".defset('e_TOKEN')."' />
 				</td></tr>
 				<tr><td>&nbsp;</td></tr>
 				<tr><td style='text-align:center'>
-				" . e107::getForm()->button('SaveValidatedInfo', 1, 'submit', LAN_ENTER) . "
+				".e107::getForm()->button('SaveValidatedInfo',1, 'submit', LAN_ENTER)."
 				</td></tr>
 			</table>
 			</form>";
@@ -1164,7 +1117,49 @@ class usersettings_front // Begin Usersettings rewrite.
 
 
 
-		$ns->tablerender(LAN_USET_39, $text);
+			$ns->tablerender(LAN_USET_39, $text);
+
+	}
+
+
+	// LITE MODIFICATION: frontend admin-edit - shared target resolver
+	private function resolveEditTarget()
+	{
+		$targetId = 0;
+
+		if(isset($_GET['id']) && is_numeric($_GET['id']))
+		{
+			$targetId = (int) $_GET['id'];
+		}
+		elseif(is_numeric(e_QUERY))
+		{
+			$targetId = (int) e_QUERY;
+		}
+
+		if($targetId < 1)
+		{
+			return 0;					// self-edit
+		}
+
+		if(!ADMIN)
+		{
+			// Non admin attempting to edit another user's ID
+			e107::redirect();
+			exit();
+		}
+
+		$info = e107::user($targetId);
+
+		// Only site admin is able to change settings for other admins.
+		// Upstream expression, copied verbatim: getperms() returns true for every
+		// argument when ADMINPERMS === '0', so a getperms('0') rewrite is NOT equivalent.
+		if(!is_array($info) || ($info['user_admin'] == 1 && (!defined('ADMINPERMS') || ADMINPERMS !== '0')) || ((!defined('ADMINPERMS') || ADMINPERMS !== '0') && !getperms('4')))
+		{
+			e107::redirect();
+			exit();
+		}
+
+		return $targetId;
 	}
 
 
@@ -1177,50 +1172,10 @@ class usersettings_front // Begin Usersettings rewrite.
 		$ns = e107::getRender();
 		$tp = e107::getParser();
 		$userMethods = e107::getUserSession();
-		// LITE MODIFICATION: admin-edit render path — see the marker in the
-		// save path (~line 403). Gate must stay identical to the save gate.
-		//$uuid = USERID;
-		if (is_numeric(e_QUERY))
-		{
-			if (ADMIN)
-			{
-				$inp = intval(e_QUERY);
-				$info = e107::user($inp);
-				if (!is_array($info) || ($info['user_admin'] == 1 && !getperms('0')) || (!getperms('0') && !getperms('4')))
-				{
-					e107::redirect();
-					exit();
-				}
-				$adminEdit = TRUE;		// Flag to indicate admin edit
-				$uuid = $inp;
-			}
-		}
-		else
-		{
-			$uuid = USERID;
-		}
 
-		//$uuid = USERID;
-		if (is_numeric($_GET['id']))
-		{
-			if (ADMIN)
-			{
-				$inp = intval($_GET['id']);
-				$info = e107::user($inp);
-				if (!is_array($info) || ($info['user_admin'] == 1 && !getperms('0')) || (!getperms('0') && !getperms('4')))
-				{
-					e107::redirect();
-					exit();
-				}
-				$adminEdit = TRUE;		// Flag to indicate admin edit
-				$uuid = $inp;
-			}
-		}
-		else
-		{
-			$uuid = USERID;
-		}
-
+		// LITE MODIFICATION: frontend admin-edit - render target
+		$targetId = $this->resolveEditTarget();
+		$uuid     = $targetId > 0 ? $targetId : USERID;
 
 		// Re-read the user data into curVal (ready for display)
 		$qb = e107::getDb()->createQueryBuilder();
@@ -1232,15 +1187,12 @@ class usersettings_front // Begin Usersettings rewrite.
 		$curVal['user_class'] = varset($changedUserData['user_class'], $curVal['user_class']);
 		$curVal['userclass_list'] = $userMethods->addCommonClasses($curVal, FALSE);
 
-		if (!empty($_POST))
+		if(!empty($_POST))
 		{     // Fix for all the values being lost when there was an error in a field - restore from the latest $_POST values
-			// (Password fields have intentionally been cleared). If no error, there's an unset($_POST) to disable this block
+			  // (Password fields have intentionally been cleared). If no error, there's an unset($_POST) to disable this block
 			foreach ($_POST as $key => $val)
 			{
-				if ($key != 'class')
-				{
-					$curVal['user_' . $key] = $tp->post_toForm($val);
-				}
+				if ($key != 'class') { $curVal['user_'.$key] = $tp->post_toForm($val); }
 			}
 			foreach ($_POST['ue'] as $key => $val)
 			{
@@ -1248,19 +1200,21 @@ class usersettings_front // Begin Usersettings rewrite.
 			}
 		}
 
- 		if (e_QUERY == "update") {
-			$target = e_REQUEST_URL;
+		// LITE MODIFICATION: frontend admin-edit - form action must carry the target id
+		if($targetId > 0)
+		{
+			$target = e107::getUrl()->create('usersettings/edit/user', array('id' => $targetId));
 		}
-		else {
-			$target = e107::getUrl()->create('user/myprofile/edit', array('id' => $uuid));
+		else
+		{
+			$target = e107::getUrl()->create('user/myprofile/edit');
 		}
 
-
-		$text = '<form method="post" action="' . $target . '" id="dataform" class="usersettings-form form-horizontal"  enctype="multipart/form-data" autocomplete="off">';
+		$text = '<form method="post" action="'.$target.'" id="dataform" class="usersettings-form form-horizontal"  enctype="multipart/form-data" autocomplete="off">';
 
 		if (e_QUERY == "update")
 		{
-			$text .= "<div class='fborder' style='text-align:center'><br />" . str_replace("*", "<span class='required'></span>", LAN_USET_9) . "<br />" . LAN_USET_10 . "<br /><br /></div>";
+			$text .= "<div class='fborder' style='text-align:center'><br />".str_replace("*", "<span class='required'>*</span>", LAN_USET_9)."<br />".LAN_USET_10."<br /><br /></div>";
 		}
 
 		// e107::scStyle($sc_style);
@@ -1273,13 +1227,15 @@ class usersettings_front // Begin Usersettings rewrite.
 
 
 		$text .= "<div><input type='hidden' name='_uid' value='{$uuid}' /></div>
-				<input type='hidden' name='e-token' value='" . defset('e_TOKEN') . "' />
+				<input type='hidden' name='e-token' value='".defset('e_TOKEN')."' />
 		</form>
 		";
 
 		$caption = (isset($USERSETTINGS_EDIT_CAPTION)) ? $USERSETTINGS_EDIT_CAPTION : LAN_USET_39; // 'Update User Settings'
 
 		$ns->tablerender($caption, $text);
+
+
 	}
 
 
@@ -1315,12 +1271,13 @@ class usersettings_front // Begin Usersettings rewrite.
 		return false;
 		*/
 	}
+
 }
 
 $us = new usersettings_front;
 require_once(HEADERF);
 $us->init();
-require_once(FOOTERF);
+require_once (FOOTERF);
 
 
 
@@ -1334,3 +1291,6 @@ function req($field)
 	}
 	return $ret;
 }
+
+
+
