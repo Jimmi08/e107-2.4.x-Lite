@@ -33,7 +33,7 @@ $adminTheme = $core->get('admintheme');
 if($adminTheme !== 'backend' /*&& $adminTheme !== 'bootstrap5'*/)
 {
 	$core->update('admintheme','backend');
-	$core->update('adminstyle','idashboard');
+	$core->update('adminstyle','dashboard');
 	$core->update('admincss','css/admin-exas-core.css');
 	$core->set('e_jslib_core',array('prototype' => 'none', 'jquery'=> 'auto'));
 	$core->save();	
