@@ -413,23 +413,6 @@ class e_plugin
 
 
 	/**
-	 * LITE FEATURE: admin-menu sort order from the primary adminLinks
-	 * <link order="N"> attribute. Upstream gives a plugin no way to influence
-	 * its admin-menu position; Lite adds it. Do not remove when syncing.
-	 * Lower = earlier. Missing/invalid => 999 (sorts after explicitly-ordered
-	 * plugins, preserving legacy alphabetical behaviour). See issue #92.
-	 *
-	 * @return int
-	 */
-	public function getOrder()
-	{
-		$att = varset($this->_data[$this->_plugdir]['adminLinks']['link'][0]['@attributes']);
-
-		return isset($att['order']) ? (int) $att['order'] : 999;
-	}
-
-
-	/**
 	 * @return false|string
 	 */
 	public function getAdminUrl()
@@ -695,7 +678,7 @@ class e_plugin
 		}
 
 
-        if(e_PAGE == 'e107_update.php')
+        if(defset('e_PAGE') == 'e107_update.php')
         {
             return null;
         }
@@ -1912,19 +1895,6 @@ class e107plugin
 			{ // In table, not on server - delete it
 				$sql->createQueryBuilder()->delete('plugin')->where('plugin_id', (int) $plug_info['plugin_id'])->execute();
 				//			echo "Deleted: ".$plug_path."<br />";
-
-				// LITE MODIFICATION: plug_installed orphan cleanup.
-				// Lite externalises plugins to separate repositories, so plugins
-				// genuinely disappear from disk. When a plugin row is deleted
-				// because the folder is gone, Lite also unsets the matching
-				// plug_installed pref entry, and a follow-up loop removes any
-				// pref entry whose folder no longer exists. Stale-pref hygiene
-				// not needed in upstream's bundled-plugins model.
-				if (isset($p_installed[$plug_path]))
-				{
-					unset($p_installed[$plug_path]);
-					$sp = TRUE; // triggers pref save + rebuildUrlConfig + cache clear
-				}
 				}
 			if ($plug_info['status'] == 'update')
 			{
@@ -1939,20 +1909,6 @@ class e107plugin
 				//			echo "Updated: ".$plug_path."<br />";
 				}
 		}
-
-		// LITE MODIFICATION (cont. of plug_installed orphan cleanup): remove any
-		// plug_installed pref entry whose plugin folder no longer exists on disk
-		// (Lite externalises plugins to separate repos). Not needed upstream.
-		foreach ($p_installed as $plug_path => $version)
-		{
-			if (!is_dir(e_PLUGIN . $plug_path))
-			{
-				unset($p_installed[$plug_path]);
-				$sp = TRUE;
-				$mes->addDebug('Removed orphaned plug_installed entry: ' . $plug_path);
-			}
-		}
-
 		if ($sp/* && vartrue($p_installed)*/)
 		{
 			e107::getConfig('core')->setPref('plug_installed', $p_installed);
@@ -3660,16 +3616,15 @@ class e107plugin
 
 						if(!$sql->db_Query($query))
 						{
-							$errno = (string) $sql->getLastErrorNumber();
+							$errno = $sql->getLastErrorNumber();
 							$error = $sql->getLastErrorText();
 
 							// "Table already exists" is normal rather than a
 							// failure: uninstalling a plugin leaves its tables in
 							// place unless delete_tables was asked for, so every
 							// reinstall meets them again, and the table being
-							// there is all this step wanted. PDO reports it as
-							// SQLSTATE 42S01 and mysqli as 1050, so take either.
-							if(in_array($errno, array('42S01', '1050'), true))
+							// there is all this step wanted.
+							if((int) $errno === 1050)
 							{
 								$txt = "Table {$v} already present.";
 								$status = E_MESSAGE_INFO;

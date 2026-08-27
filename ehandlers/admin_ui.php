@@ -1846,11 +1846,10 @@ class e_admin_dispatcher
 			{
 				$item['link'] = '#';
 				$item['link_caret'] = true;
-				$item['link_data'] = [
-					'data-toggle' => 'collapse',
-					'data-target' => '#sub-' . $item['link_id'],
-					'role'        => 'button'
-				];
+				$item['link_data'] = array_merge($tp->bootstrapData([
+					'toggle' => 'collapse',
+					'target' => '#sub-' . $item['link_id'],
+				]), ['role' => 'button']);
 				$item['sub_class'] = 'collapse';
 				$item['caret'] = true;
 
@@ -1860,7 +1859,7 @@ class e_admin_dispatcher
 					{
 						$parent = $subItem['group'];
 						$var[$parent]['link_data']['aria-expanded'] = 'true';
-						$item['sub_class'] = 'collapse in';
+						$item['sub_class'] = 'collapse ' . $tp->bootstrapShowClass();
 					}
 				}
 			}
@@ -4347,16 +4346,23 @@ class e_admin_controller_ui extends e_admin_controller
 			// handleListCopyBatch etc.
 			default:
 				$field = $trigger[0];
-				$value = $trigger[1];
+				$value = varset($trigger[1]);
 
 				//something like handleListUrlTypeBatch(); for custom handling of 'url_type' field name
 				$method = 'handle'.$actionName.$this->getRequest()->camelize($field).'Batch';
 
-				e107::getMessage()->addDebug('Searching for custom batch method: ' .$method. '(' .$selected. ',' .$value. ')');
+				e107::getMessage()->addDebug('Searching for custom batch method: ' .$method. '(' .implode(',', $selected). ',' .$value. ')');
 
 				if(method_exists($this, $method)) // callback handling
 				{
 					$this->$method($selected, $value);
+					break;
+				}
+
+				$declaredFields = $this->getFields();
+				if(empty($declaredFields[$field]['batch']))
+				{
+					e107::getMessage()->addDebug('Unhandled batch field: ' .$field);
 					break;
 				}
 

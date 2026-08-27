@@ -147,14 +147,7 @@ if (!$full_perms && !$self_page)
 	exit;
 }
 
-// LITE MODIFICATION: member list paging accepts named parameters
-if (isset($_GET['from']) || isset($_GET['records']) || isset($_GET['order']))
-{
-	$from    = isset($_GET['from']) ? intval($_GET['from']) : 0;
-	$records = isset($_GET['records']) ? intval($_GET['records']) : 20;
-	$order   = (isset($_GET['order']) && $_GET['order'] === 'ASC') ? 'ASC' : 'DESC';
-}
-else if (isset($_POST['records']))
+if (isset($_POST['records']))
 {
 	$records = intval($_POST['records']);
 	$order = ($_POST['order'] == 'ASC' ? 'ASC' : 'DESC');
@@ -180,26 +173,21 @@ else
 		}
 		else
 		{
-			// LITE MODIFICATION: positional paging tolerates missing segments
-			$qs = explode(".", e_QUERY);
-			$from = intval(varset($qs[0], 0));
-			$records = intval(varset($qs[1], 0));
+			$from = intval($qs[0]);
+			$records = isset($qs[1]) ? intval($qs[1]) : 0;
 			$order = (varset($qs[2]) === 'ASC' ? 'ASC' : 'DESC');
 		}
 	}
 }
+$records = (int) vartrue($records, 20);
 
-// LITE MODIFICATION: clamp the page size instead of trusting the request
-if (!isset($id))
+if ($records < 1)
 {
-	if (!vartrue($records) || $records < 5)
-	{
-		$records = 20;
-	}
-	elseif ($records > 50)
-	{
-		$records = 50;
-	}
+	$records = 20;
+}
+elseif ($records > 50)
+{
+	$records = 50;
 }
 
 if (isset($id))
@@ -298,8 +286,8 @@ if (isset($id))
 
 	$ns->tablerender(LAN_USER_52, $text, 'user-list');
 
-	// LITE MODIFICATION: paging links use named parameters
-	$parms = $users_total.",".$records.",".$from.",".e_SELF.'?from=[FROM]&records='.$records.'&order='.$order;
+	$listUrl = e107::getUrl()->create('user/profile/list', array('page' => '--FROM--', 'records' => $records, 'order' => $order), array('full' => 1));
+	$parms = $users_total.",".$records.",".$from.",".str_replace('--FROM--', '[FROM]', $listUrl);
 	echo "<div class='nextprev form-inline'>&nbsp;".$tp->parseTemplate("{NEXTPREV={$parms}}")."</div>";
 
 

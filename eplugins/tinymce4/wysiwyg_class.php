@@ -13,10 +13,10 @@ class wysiwyg
 	 *
 	 * post_html is the preference that governs who may write HTML, and so who the
 	 * editor is offered to. getperms('P') additionally covers the plugin manager
-	 * reaching eplugins/tinymce4/admin_config.php, which loads the editor to
+	 * reaching e107_plugins/tinymce4/admin_config.php, which loads the editor to
 	 * preview it no matter what post_html says.
 	 *
-	 * @see eplugins/tinymce4/admin_config.php the 'P' perm on its menu entries
+	 * @see e107_plugins/tinymce4/admin_config.php the 'P' perm on its menu entries
 	 * @return bool
 	 */
 	public static function isAllowed()

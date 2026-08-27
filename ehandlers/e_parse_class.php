@@ -2238,8 +2238,8 @@ class e_parse
 	 * Build a series of HTML attributes from the provided array
 	 *
 	 * Because of legacy loose typing client code usages, values that are {@see empty()} will not be added to the
-	 * concatenated HTML attribute string except when the key is `value`, the key begins with `data-`, or the value is
-	 * a number.
+	 * concatenated HTML attribute string except when the key is `alt` or `value`, the key begins with `data-`, or the
+	 * value is a number.
 	 *
 	 * @param array $attributes Key-value pairs of HTML attributes. The value must not be HTML-encoded. If the value is
 	 *                          boolean true, the value will be set to the key (e.g. `['required' => true]` becomes
@@ -2258,13 +2258,52 @@ class e_parse
 			{
 				$value = $key;
 			}
-			if (!empty($value) || is_numeric($value) || $key === "value" || strpos($key, 'data-') === 0)
+			if (!empty($value) || is_numeric($value) || in_array($key, array('alt', 'value'), true) || strpos($key, 'data-') === 0)
 			{
 				$stringifiedAttributes[] = $key . "='" . $this->toAttribute($value, $pure) . "'";
 			}
 		}
 
 		return count($stringifiedAttributes) > 0 ? " " . implode(" ", $stringifiedAttributes) : "";
+	}
+
+	/**
+	 * Spell a Bootstrap JavaScript behaviour's data attributes for Bootstrap 3, 4 and 5 at once.
+	 *
+	 * Pass the behaviour, not the prefix: `data-` and `data-bs-` both come back. State classes cannot be doubled up
+	 * like this; use {@see e_parse::bootstrapShowClass()}.
+	 *
+	 * @param array $attributes Behaviour attributes without their prefix, e.g. `['toggle' => 'collapse', 'target' => '#sub-1']`
+	 * @return array Attribute name-value pairs, ready for {@see e_parse::toAttributes()}
+	 * @deprecated v2.3.12 Stopgap while core markup is still framework-coupled. Framework spellings belong in template
+	 *             packs (issue #5909); reach for a template override before calling this from new code.
+	 */
+	public function bootstrapData($attributes)
+	{
+		$prefixed = [];
+
+		foreach ($attributes as $key => $value)
+		{
+			$prefixed['data-' . $key] = $value;
+			$prefixed['data-bs-' . $key] = $value;
+		}
+
+		return $prefixed;
+	}
+
+	/**
+	 * The class Bootstrap puts on a shown `.collapse` or a faded-in `.fade` element: `in` on Bootstrap 3, `show` from
+	 * Bootstrap 4 on.
+	 *
+	 * Emit one or the other, never both: Bootstrap 3 also ships `.show` as a `display: block !important` utility.
+	 *
+	 * @return string
+	 * @deprecated v2.3.12 Stopgap while core markup is still framework-coupled. Framework spellings belong in template
+	 *             packs (issue #5909); reach for a template override before calling this from new code.
+	 */
+	public function bootstrapShowClass()
+	{
+		return $this->bootstrap > 3 ? 'show' : 'in';
 	}
 
 	/**
@@ -3397,9 +3436,9 @@ class e_parse
 	 * TODO - runtime cache of search/replace arrays (object property) when $mode !== ''
 	 *
 	 * @param string $text
-	 * @param string $mode                [optional]    abs|full "full" = produce absolute URL path, e.g. http://sitename.com/eplugins/etc
+	 * @param string $mode                [optional]    abs|full "full" = produce absolute URL path, e.g. http://sitename.com/e107_plugins/etc
 	 *                                    'abs' = produce truncated URL path, e.g. e107plugins/etc
-	 *                                    "" (default) = URL's get relative path e.g. ../eplugins/etc
+	 *                                    "" (default) = URL's get relative path e.g. ../e107_plugins/etc
 	 * @param mixed  $all                 [optional]    if TRUE, then when $mode is "full" or TRUE, USERID is also replaced...
 	 *                                    when $mode is "" (default), ALL other e107 constants are replaced
 	 * @return string|array
@@ -3740,7 +3779,7 @@ class e_parse
 				);
 				break;
 
-			case 3: // full path (e.g http://domain.com/eimages/)
+			case 3: // full path (e.g http://domain.com/e107_images/)
 				$tmp = array(
 					'{e_MEDIA_FILE}'  => SITEURLBASE . e_MEDIA_FILE_ABS,
 					'{e_MEDIA_VIDEO}' => SITEURLBASE . e_MEDIA_VIDEO_ABS,
@@ -3919,12 +3958,6 @@ class e_parse
 	{
 
 		$ret = '';
-		// LITE MODIFICATION: early-return empty string to avoid an issue with
-		// empty contact prefs (date 20260318 fix). Without this, downstream
-		// processing on an empty $text produced incorrect output. Revert
-		// condition: upstream adds an equivalent guard in obfuscate().
-		if($text == "") return '';
-
 		foreach (str_split($text) as $letter)
 		{
 			switch (mt_rand(1, 3))
@@ -4199,6 +4232,16 @@ class e_parse
 	public function setBootstrap($version)
 	{
 		$this->bootstrap = (int) $version;
+	}
+
+	/**
+	 * The major Bootstrap version the active theme declared, or null when it declared none.
+	 *
+	 * @return int|null
+	 */
+	public function getBootstrap()
+	{
+		return $this->bootstrap;
 	}
 
 	public function setmodRewriteMedia($bool)
@@ -4676,6 +4719,7 @@ class e_parse
 		$linkEnd = '';
 		$full = !empty($options['base64']) ? true : false;
 		$file = '';
+		$remote = false;
 
 		if (!empty($options['mode']) && $options['mode'] === 'full')
 		{
@@ -4715,6 +4759,7 @@ class e_parse
 			if (strpos($image, '://') !== false) // Remote Image
 			{
 				$url = $image;
+				$remote = true;
 			}
 			elseif (strpos($image, '-upload-') === 0)
 			{
@@ -4784,7 +4829,7 @@ class e_parse
 			$linkEnd = '</a>';
 		}
 
-		$title = (ADMIN) ? $image : $tp->toAttribute($userData['user_name']);
+		$title = (ADMIN) ? $image : $userData['user_name'];
 		$shape = (!empty($options['shape'])) ? 'img-' . $options['shape'] : 'img-rounded rounded';
 
 		if ($shape === 'img-circle')
@@ -4799,20 +4844,31 @@ class e_parse
 
 		if (!empty($options['alt']))
 		{
-			$title = $tp->toAttribute($options['alt']);
+			$title = $options['alt'];
 		}
-
-		$heightInsert = empty($height) ? '' : "height='" . $height . "'";
-		$id = (!empty($options['id'])) ? "id='" . $options['id'] . "' " : '';
 
 		$classOnline = (!empty($userData['user_currentvisit']) && intval($userData['user_currentvisit']) > (time() - 300)) ? ' user-avatar-online' : '';
 
 		$class = !empty($options['class']) ? $options['class'] : $shape . ' user-avatar';
-		$style = !empty($options['style']) ? " style='" . $options['style'] . "'" : '';
-		$loading = !empty($options['loading']) ? " loading='" . $options['loading'] . "'" : " loading='lazy'"; // default to lazy.
+
+		$attributes = array(
+			'id'      => !empty($options['id']) ? $options['id'] : null,
+			'class'   => $class . $classOnline,
+			'alt'     => $title,
+			'src'     => html_entity_decode($url, ENT_QUOTES, 'UTF-8'),
+			'width'   => $width,
+			'height'  => empty($height) ? null : $height,
+			'style'   => !empty($options['style']) ? $options['style'] : null,
+			'loading' => !empty($options['loading']) ? $options['loading'] : 'lazy',
+		);
+
+		if ($remote && strpos($url, 'data:') !== 0)
+		{
+			$attributes['onerror'] = "this.onerror=null;this.src='" . html_entity_decode($genericImg, ENT_QUOTES, 'UTF-8') . "';";
+		}
 
 		$text = $linkStart;
-		$text .= '<img ' . $id . "class='" . $class . $classOnline . "' alt=\"" . $title . "\" src='" . $url . "'  width='" . $width . "' " . $heightInsert . $style . $loading . ' />';
+		$text .= '<img' . $tp->toAttributes($attributes, true) . ' />';
 		$text .= $linkEnd;
 
 		//	return $url;

@@ -8,7 +8,7 @@
  *
  * Admin Footer
  *
- * $Source: /cvs_backup/e107_0.8/eadmin/footer.php,v $
+ * $Source: /cvs_backup/e107_0.8/e107_admin/footer.php,v $
  * $Revision$
  * $Date$
  * $Author$

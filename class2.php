@@ -157,11 +157,13 @@ if(!empty($CLASS2_INCLUDE))
 
 if(empty($HANDLERS_DIRECTORY))
 {
+	//LITE MODIFICATION - custom folders
 	$HANDLERS_DIRECTORY = !empty($config['paths']['handlers']) ? $config['paths']['handlers'] :  'ehandlers/';
 }
 
 if(empty($PLUGINS_DIRECTORY))
 {
+	//LITE MODIFICATION - custom folders
 	$PLUGINS_DIRECTORY = !empty($config['paths']['plugins']) ? $config['paths']['plugins'] : 'eplugins/';
 }
 
@@ -1325,7 +1327,7 @@ function check_class($var, $userclass = null, $uid = 0)
  * @param string|null     $path The path to the file requesting the permission check.
  *                              This is only used when checking plugin admin permissions.
  *                              Exclude or use {@link null} to use the current page, which auto-detects the plugin path.
- *                              Example: `http://localhost/e107v2/eplugins/gallery/admin_config.php` along with the
+ *                              Example: `http://localhost/e107v2/e107_plugins/gallery/admin_config.php` along with the
  *                              first argument set to `P` will check the plugin admin permissions for plugin `gallery`.
  * @return bool true if the user has the requested admin permissions, false otherwise.
  * @see class2Test::testGetPerms() for examples.
@@ -2079,7 +2081,7 @@ class error_handler
 
 		if(!empty($_E107['cli']))
 		{
-			error_reporting(E_ALL & ~E_STRICT & ~E_NOTICE);
+			error_reporting(E_ALL & ~E_NOTICE);
 			return;
 		}
 
@@ -2129,6 +2131,48 @@ class error_handler
 
 
 	/**
+	 * Whether the debug level asks for this diagnostic even when the caller silenced it.
+	 *
+	 * @param int $type
+	 * @return bool
+	 */
+	private function debugWants($type)
+	{
+		if($type === E_USER_DEPRECATED)
+		{
+			return $this->deftrue('E107_DBG_DEPRECATED');
+		}
+
+		return $this->deftrue('E107_DBG_ALLERRORS');
+	}
+
+
+	/**
+	 * Whether the @ operator was holding error reporting down when this diagnostic was raised.
+	 *
+	 * PHP 7 and earlier drop the level to zero. PHP 8 masks it down to the error
+	 * classes @ cannot silence, so a level already inside that set comes back
+	 * unchanged and the operator leaves nothing to read.
+	 *
+	 * @param int $type
+	 * @return bool
+	 */
+	private function isSilenced($type)
+	{
+		$level = error_reporting();
+
+		if($level === 0)
+		{
+			return true;
+		}
+
+		$unsilenceable = E_ERROR | E_CORE_ERROR | E_COMPILE_ERROR | E_USER_ERROR | E_RECOVERABLE_ERROR | E_PARSE;
+
+		return $level === $unsilenceable && !($level & $type);
+	}
+
+
+	/**
 	 * @param $type
 	 * @param $message
 	 * @param $file
@@ -2138,6 +2182,11 @@ class error_handler
 	 */
 	function handle_error($type, $message, $file, $line, $context = null) {
 		$startup_error = (!defined('E107_DEBUG_LEVEL')); // Error before debug system initialized
+
+		if(!$startup_error && $this->isSilenced($type) && !$this->debugWants($type))
+		{
+			return;
+		}
 
 		switch($type)
 		{

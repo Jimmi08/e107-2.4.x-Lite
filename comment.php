@@ -292,8 +292,7 @@ if ($redirectFlag)
 	switch ($table)
 	{
 		case "news" :
-			// LITE MODIFICATION (#84): news SEF via e107::url()
-			header('Location: '.e107::url('news', 'item', array('news_id' => $redirectFlag)));
+			header('Location: '.e107::getUrl()->create('news/view/item', 'id='.$redirectFlag));
 			exit;
 		case "poll" :
 			echo "<script>document.location.href='".e_HTTP."comment.php?comment.{$table}.{$redirectFlag}'</script>\n";

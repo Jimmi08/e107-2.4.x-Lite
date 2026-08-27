@@ -1706,19 +1706,12 @@ class comment
 								->fetchRow();
 							if ($row2)
 							{
-								// LITE MODIFICATION
-								// WHAT: news_class.php require is kept commented out (Lite diverges from upstream here).
-								// WHY:  the code immediately after this point resolves the news comment title/URL
-								//       directly from the query row ($row2 -> news_title + e107::getUrl()->create(
-								//       'news/view/item', $row2)), so news_class does not need to be loaded here.
-								//       Upstream itself marks the equivalent require "// FIXME shouldn't be here." in comment.php.
-								// REVERT WHEN: news-type comment rendering breaks without it, or upstream removes the require.
-								//require_once(e_HANDLER.'news_class.php');
+								require_once(e_HANDLER.'news_class.php');
 								$ret['comment_type'] = COMLAN_TYPE_1;
 								$ret['comment_title'] = $tp->toHTML($row2['news_title'], true, 'emotes_off, no_make_clickable');
-								$ret['comment_url'] = e107::url('news', 'item', $row2);// LITE MODIFICATION (#84): news SEF via e107::url()
+								$ret['comment_url'] = e107::getUrl()->create('news/view/item', $row2);//e_HTTP."comment.php?comment.news.".$row['comment_item_id'];
 								$ret['comment_category_heading'] = COMLAN_TYPE_1;
-								$ret['comment_category_url'] = e107::url('news', 'index');// LITE MODIFICATION (#84): news SEF via e107::url()
+								$ret['comment_category_url'] = e107::getUrl()->create('news');//e_HTTP."news.php";
 							}
 							break;
 						case '1': //	article, review or content page - defunct category, but filter them out

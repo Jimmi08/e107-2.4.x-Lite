@@ -41,7 +41,7 @@
  *
  * A site that only ever calls this from the command line can keep it off the
  * web at the web server: Apache `RewriteRule ^cron\.php$ - [F,L]` in .htaccess
- * (not a <Files> block, which also matches eadmin/cron.php and logs every
+ * (not a <Files> block, which also matches e107_admin/cron.php and logs every
  * hit at error level), nginx `location = /cron.php { deny all; }`.
  */
 

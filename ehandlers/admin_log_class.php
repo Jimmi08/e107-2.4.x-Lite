@@ -368,6 +368,7 @@ class e_admin_log
 		//---------------------------------------
 		if(($target_logs & LOG_TO_ROLLING) && $this->_roll_log_active)
 		{ //	Rolling log
+			//LITE MODIFICATION custom folder
 			if(getperms('0') && e_REQUEST_HTTP === '/eadmin/admin_log.php') // Don't log while looking at the log.
 			{
 				return;

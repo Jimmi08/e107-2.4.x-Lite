@@ -8,7 +8,7 @@
  *
  * e107 blank Plugin
  *
- * $Source: /cvs_backup/e107_0.8/eplugins/blank/admin_config.php,v $
+ * $Source: /cvs_backup/e107_0.8/e107_plugins/blank/admin_config.php,v $
  * $Revision$
  * $Date$
  * $Author$

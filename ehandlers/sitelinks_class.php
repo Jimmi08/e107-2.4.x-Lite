@@ -24,6 +24,9 @@ class sitelinks
 	var $eSubLinkLevel = 0;
 	var $sefList = array();
 
+	/** @var array keys of the submenus {@see sitelinks::subLink()} is inside right now */
+	private $openSubLinks = array();
+
 	const LINK_DISPLAY_FLAT     = 1;
 	const LINK_DISPLAY_MENU     = 2;
 	const LINK_DISPLAY_OTHER    = 3;
@@ -326,37 +329,60 @@ class sitelinks
 			return null;
 		}
 
-		$sub['link_expand'] = ((isset($pref['sitelinks_expandsub']) && $pref['sitelinks_expandsub']) && empty($style['linkmainonly']) && !defined("LINKSRENDERONLYMAIN") && isset($this->eLinkList[$main_linkid]) && is_array($this->eLinkList[$main_linkid]));
-						
-		foreach($this->eLinkList[$main_linkid] as $val) // check that something in the submenu is actually selected.
- 		{
-			if($this->hilite($val['link_url'],TRUE)== TRUE || $sub['link_expand'] == FALSE)
-         	{
-         		$substyle = "block"; // previously (non-W3C compliant): compact
-          		break;
-        	}
-			else
-			{
-				$substyle = "none";
-			}
-		}
+		$openBelow = $this->openSubLinks;
+		$this->openSubLinks[] = $main_linkid;
+		// getlinks() builds these keys as 'sub_'.<id>; a different shape there reads as parent 0 here.
+		$parent_id = (int) substr($main_linkid, strlen('sub_'));
 
-		$text = "";
-		$text .= "\n\n<div id='{$main_linkid}' style='display:$substyle' class='d_sublink'>\n";
-
-		foreach ($this->eLinkList[$main_linkid] as $sub)
+		try
 		{
-			$id = (!empty($sub['link_id'])) ? "sub_".$sub['link_id'] : 'sub_0';
-			$sub['link_expand'] = ((isset($pref['sitelinks_expandsub']) && $pref['sitelinks_expandsub']) && empty($style['linkmainonly']) && !defined("LINKSRENDERONLYMAIN") && isset($this->eLinkList[$id]) && is_array($this->eLinkList[$id]));
-			$class = "sublink-level-".($level+1);
-			$class .= ($css_class) ? " ".$css_class : "";
-			$class .= ($aSubStyle['sublinkclass']) ? " ".$aSubStyle['sublinkclass'] : ""; // backwards compatible
-			$text .= $this->makeLink($sub, TRUE, $aSubStyle,$class );
-			$text .= $this->subLink($id,$aSubStyle,$css_class,($level+1));				
-		}
+			$sub['link_expand'] = ((isset($pref['sitelinks_expandsub']) && $pref['sitelinks_expandsub']) && empty($style['linkmainonly']) && !defined("LINKSRENDERONLYMAIN") && isset($this->eLinkList[$main_linkid]) && is_array($this->eLinkList[$main_linkid]));
+						
+			foreach($this->eLinkList[$main_linkid] as $val) // check that something in the submenu is actually selected.
+	 		{
+				if($this->hilite($val['link_url'],TRUE)== TRUE || $sub['link_expand'] == FALSE)
+	         	{
+	         		$substyle = "block"; // previously (non-W3C compliant): compact
+	          		break;
+	        	}
+				else
+				{
+					$substyle = "none";
+				}
+			}
 
-		$text .= "\n</div>\n\n";
-		return $text;	
+			$text = "";
+			$text .= "\n\n<div id='{$main_linkid}' style='display:$substyle' class='d_sublink'>\n";
+
+			foreach ($this->eLinkList[$main_linkid] as $sub)
+			{
+				$id = (!empty($sub['link_id'])) ? "sub_".$sub['link_id'] : 'sub_0';
+				// Inferred, not recorded: a plugin bucket whose rows carry a parent id equal to this sitelink's own id still reads as one of ours.
+				$from_links_table = isset($sub['link_parent']) && (int) $sub['link_parent'] === $parent_id;
+				$has_children = $from_links_table
+					&& !in_array($id, $this->openSubLinks, true)
+					&& isset($this->eLinkList[$id])
+					&& is_array($this->eLinkList[$id]);
+				$sub['link_expand'] = ((isset($pref['sitelinks_expandsub']) && $pref['sitelinks_expandsub']) && empty($style['linkmainonly']) && !defined("LINKSRENDERONLYMAIN") && $has_children);
+				$class = "sublink-level-".($level+1);
+				$class .= ($css_class) ? " ".$css_class : "";
+				$class .= ($aSubStyle['sublinkclass']) ? " ".$aSubStyle['sublinkclass'] : ""; // backwards compatible
+				$text .= $this->makeLink($sub, TRUE, $aSubStyle,$class );
+
+				if($has_children)
+				{
+					$text .= $this->subLink($id,$aSubStyle,$css_class,($level+1));
+				}
+			}
+
+			$text .= "\n</div>\n\n";
+
+			return $text;
+		}
+		finally
+		{
+			$this->openSubLinks = $openBelow;
+		}
 	}
 
 
@@ -1065,13 +1091,9 @@ i.e-cat_users-32{ background-position: -555px 0; width: 32px; height: 32px; }
 				 *
 				 */
 				$array_sub_functions = array();
-				// LITE MODIFICATION: news/docs admin links removed.
-				// News migrates to a separate plugin repo (#31); docs section
-				// dropped. DO NOT restore these links when syncing — Lite
-				// intentionally does not surface them in core admin.
-				//	$array_sub_functions[17][] = array(e_ADMIN.'newspost.php', LAN_MANAGE, ADLAN_3, 'H', 3, defset('E_16_MANAGE'), defset('E_32_MANAGE'));
-				//	$array_sub_functions[17][] = array(e_ADMIN.'newspost.php?create', LAN_CREATE, ADLAN_2, 'H', 3, defset('E_16_CREATE'), defset('E_32_CREATE'));
-				//	$array_sub_functions[17][] = array(e_ADMIN.'newspost.php?pref', LAN_PREFS, LAN_PREFS, 'H', 3, defset('E_16_SETTINGS'), defset('E_32_SETTINGS'));
+				$array_sub_functions[17][] = array(e_ADMIN.'newspost.php', LAN_MANAGE, ADLAN_3, 'H', 3, defset('E_16_MANAGE'), defset('E_32_MANAGE'));
+				$array_sub_functions[17][] = array(e_ADMIN.'newspost.php?create', LAN_CREATE, ADLAN_2, 'H', 3, defset('E_16_CREATE'), defset('E_32_CREATE'));
+				$array_sub_functions[17][] = array(e_ADMIN.'newspost.php?pref', LAN_PREFS, LAN_PREFS, 'H', 3, defset('E_16_SETTINGS'), defset('E_32_SETTINGS'));
 
 				return $array_sub_functions;
 		}
@@ -1100,18 +1122,8 @@ i.e-cat_users-32{ background-position: -555px 0; width: 32px; height: 32px; }
         }
 
         $merged = array_merge($array_functions_assoc, $this->pluginLinks($E_16_PLUGMANAGER, "array"));
-		// LITE FEATURE (#92): admin-menu order. Sort by 'sort' asc (plugin
-		// getOrder(), default 999) then strnatcmp on 'title' so the unordered
-		// block keeps the legacy natsort order. Replaces upstream
-		// multiarray_sort($merged,'title'). Do not revert on sync.
-		usort($merged, static function($a, $b) {
-			$oa = isset($a['sort']) ? (int) $a['sort'] : 999;
-			$ob = isset($b['sort']) ? (int) $b['sort'] : 999;
-
-			return ($oa !== $ob) ? ($oa <=> $ob) : strnatcmp((string) $a['title'], (string) $b['title']);
-		});
-		$sorted = $merged;
-        return $this->restoreKeys($sorted); // we restore the keys with this.
+        $sorted = multiarray_sort($merged,'title'); // this deleted the e-xxxx and p-xxxxx keys. 
+        return $this->restoreKeys($sorted); // we restore the keys with this. 
         
 	}
 
@@ -1288,7 +1300,7 @@ i.e-cat_users-32{ background-position: -555px 0; width: 32px; height: 32px; }
 				'image_large'   => $plug->getIcon(32),
 				'category'      => $cat,
 				'perm'           => "P".$plug->getId(),
-				'sort'          => $plug->getOrder(), // LITE FEATURE (#92): admin-menu order. Was hardcoded 2.
+				'sort'          => 2,
 				'sub_class'     => null,
 
 
@@ -1365,7 +1377,9 @@ i.e-cat_users-32{ background-position: -555px 0; width: 32px; height: 32px; }
 			// override the admin-menu template. Lite uses its own `backend`
 			// admin theme. Revert to false only if Lite stops shipping its
 			// own admin theme.
+			//$tmpl = e107::getCoreTemplate('admin', 'menu', false);
 			$tmpl = e107::getCoreTemplate('admin', 'menu', true);
+
 		}
 	
 		/*
@@ -1389,25 +1403,10 @@ i.e-cat_users-32{ background-position: -555px 0; width: 32px; height: 32px; }
 		 */
 		if ($sortlist == TRUE)
 		{
-			// LITE FEATURE (#92): admin-menu sort-order — lets plugins define
-			// their display order in the admin menu (numeric 'sort' from
-			// getOrder(), default 999; ties broken by strcoll on 'text').
-			// This controls ORDER only; it does NOT deduplicate. Upstream's
-			// #5786 display-name deduplication fix (a37902b5e) is a separate
-			// mechanism, applied as its own cherry-pick commit and merged into
-			// this block: eShims::usort (stable sort on PHP < 8.0) with
-			// varset() guarding missing 'text'.
-			//
-			// 'sort' name collision: the ENTRY-level 'sort' is the getOrder()
-			// integer; the CATEGORY-level 'sort' that enabled this block is a
-			// boolean. is_numeric() makes that boolean (and any core entry with
-			// no 'sort') fall back to 999. Do not revert on sync.
 			$e107_vars = array_values($e107_vars);
-			eShims::usort($e107_vars, static function($a, $b) {
-				$oa = (isset($a['sort']) && is_numeric($a['sort'])) ? (int) $a['sort'] : 999;
-				$ob = (isset($b['sort']) && is_numeric($b['sort'])) ? (int) $b['sort'] : 999;
-
-				return ($oa !== $ob) ? ($oa <=> $ob) : strcoll((string) varset($a['text']), (string) varset($b['text']));
+			eShims::usort($e107_vars, function ($a, $b)
+			{
+				return strcoll((string) varset($a['text']), (string) varset($b['text']));
 			});
 		}
 	
