@@ -1031,7 +1031,7 @@ class eMessage
 	 * @return int|bool db::db_Query result
 	 */
 	 // TODO - This function often needs to be available BEFORE header.php is loaded. 
-	 // It has been copied from admin_update() in eadmin/header.php
+	 // It has been copied from admin_update() in e107_admin/header.php
 	 
 	public function addAuto($update, $type = 'update', $success = false, $failed = false, $output = false)
 	{
@@ -1095,7 +1095,7 @@ class eMessage
 function show_emessage($mode, $message, $line = 0, $file = "") {
 	global $tp;
 
-	// For critical errors where no theme is available.
+	// For critical errors where no theme is available.  LITE MODIFICATION
 	$errorHead = '
 			<!doctype html>
 		<html lang="en">
@@ -1123,7 +1123,7 @@ function show_emessage($mode, $message, $line = 0, $file = "") {
 
 		if(!defined('e_LANGUAGEDIR'))
 		{
-			define('e_LANGUAGEDIR','elanguages/');
+			define('e_LANGUAGEDIR','elanguages/');  //LITE MODIFICATION
 		}
 
 		$path = e_LANGUAGEDIR.e_LANGUAGE."/lan_error.php";
@@ -1160,15 +1160,15 @@ function show_emessage($mode, $message, $line = 0, $file = "") {
 		$emessage[7] = "<b>".$tp->lanVars(LAN_ERROR_31, $mySQLdefaultdb)."</b>";
 		/*$emessage[8] = "
 			<div style='text-align:center; font: 12px Verdana, Tahoma'><b>".LAN_ERROR_32." </b><br /><br />
-			".chr(36)."ADMIN_DIRECTORY = \"eadmin/\";<br />
-			".chr(36)."FILES_DIRECTORY = \"efiles/\";<br />
-			".chr(36)."IMAGES_DIRECTORY = \"eimages/\"; <br />
-			".chr(36)."THEMES_DIRECTORY = \"ethemes/\"; <br />
-			".chr(36)."PLUGINS_DIRECTORY = \"eplugins/\"; <br />
-			".chr(36)."HANDLERS_DIRECTORY = \"ehandlers/\"; <br />
-			".chr(36)."LANGUAGES_DIRECTORY = \"elanguages/\"; <br />
-			".chr(36)."HELP_DIRECTORY = \"edocs/help/\";  <br />
-			".chr(36)."DOWNLOADS_DIRECTORY =  \"efiles/downloads/\";\n
+			".chr(36)."ADMIN_DIRECTORY = \"e107_admin/\";<br />
+			".chr(36)."FILES_DIRECTORY = \"e107_files/\";<br />
+			".chr(36)."IMAGES_DIRECTORY = \"e107_images/\"; <br />
+			".chr(36)."THEMES_DIRECTORY = \"e107_themes/\"; <br />
+			".chr(36)."PLUGINS_DIRECTORY = \"e107_plugins/\"; <br />
+			".chr(36)."HANDLERS_DIRECTORY = \"e107_handlers/\"; <br />
+			".chr(36)."LANGUAGES_DIRECTORY = \"e107_languages/\"; <br />
+			".chr(36)."HELP_DIRECTORY = \"e107_docs/help/\";  <br />
+			".chr(36)."DOWNLOADS_DIRECTORY =  \"e107_files/downloads/\";\n
 			</div>";*/
 			//v2.x
 		$emessage[8] = '<b>'.LAN_ERROR_32.' </b><br /><br /><pre>

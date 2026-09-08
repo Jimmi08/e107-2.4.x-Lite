@@ -203,6 +203,7 @@ class e107
 		'e_emote'                        => '{e_HANDLER}e_emote_class.php',
 		'e_file'                         => '{e_HANDLER}file_class.php',
 		'e_file_inspector_json_phar'     => '{e_HANDLER}e_file_inspector_json_phar.php',
+		'e_file_inspector_progress'      => '{e_HANDLER}e_file_inspector.php',
 		'e_form'                         => '{e_HANDLER}form_handler.php',
 		'e_jshelper'                     => '{e_HANDLER}js_helper.php',
 		'e_media'                        => '{e_HANDLER}media_class.php',
@@ -427,7 +428,7 @@ class e107
 	}
 
 	/**
-	 * Returns the frontpage setting (ie. selected in eadmin/frontpage.php) for the current user.
+	 * Returns the frontpage setting (ie. selected in e107_admin/frontpage.php) for the current user.
 	 * @return string
 	 */
 	public static function getFrontpage()
@@ -537,15 +538,7 @@ class e107
 	 */
 	public function initCore($e107_paths, $e107_root_path, $e107_config_mysql_info=array(), $e107_config_override = array())
 	{
-		if(!empty($e107_paths['admin'])) //v2.4
-		{
-			foreach($e107_paths as $dir => $path)
-			{
-				$newKey = strtoupper($dir).'_DIRECTORY';
-				$e107_paths[$newKey] = $path;
-				unset($e107_paths[$dir]);
-			}
-		}
+		$e107_paths = self::expandShortPathKeys($e107_paths);
 
 		if(!empty($e107_config_mysql_info['db']))
 		{
@@ -553,6 +546,29 @@ class e107
 		}
 
 		return $this->_init($e107_paths, $e107_root_path, $e107_config_mysql_info, $e107_config_override);
+	}
+
+	/**
+	 * Key a folder override array by the names {@see e107::setDirs()} reads, dropping the entries that name no folder.
+	 *
+	 * @param array $e107_paths
+	 * @return array
+	 */
+	private static function expandShortPathKeys($e107_paths)
+	{
+		$expanded = array();
+
+		foreach((array) $e107_paths as $folder => $path)
+		{
+			if(!is_string($path) || $path === '')
+			{
+				continue;
+			}
+
+			$expanded[self::dirName($folder)] = $path;
+		}
+
+		return $expanded;
 	}
 
 	/**
@@ -812,6 +828,20 @@ class e107
 	}
 
 	/**
+	 * The {@see e107::overridableDirs()} name a folder goes by, from either the v2.4 short key ('admin') or the name itself ('ADMIN_DIRECTORY').
+	 *
+	 * @param string $folder
+	 * @return string
+	 */
+	private static function dirName($folder)
+	{
+		$suffix = '_DIRECTORY';
+		$name = strtoupper($folder);
+
+		return substr($name, -strlen($suffix)) === $suffix ? $name : $name.$suffix;
+	}
+
+	/**
 	 * Get default e107 folders, root folders can be overridden by passed override array
 	 *
 	 * @param array $override_root
@@ -986,7 +1016,7 @@ class e107
 	 */
 	public static function getFolder($for)
 	{
-		$key = strtoupper($for).'_DIRECTORY';
+		$key = self::dirName($for);
 		$self = self::getInstance();
 		return (isset($self->e107_dirs[$key]) ? $self->e107_dirs[$key] : '');
 	}
@@ -1378,10 +1408,10 @@ class e107
 	 * Class overload is supported.
 	 * Examples:
 	 * - <code>e107::getPluginConfig('myplug');</code>
-	 * 	 will search for eplugins/myplug/e_pref/myplug_pref.php which
+	 * 	 will search for e107_plugins/myplug/e_pref/myplug_pref.php which
 	 * 	 should contain class 'e_plugin_myplug_pref' class (child of e_plugin_pref)
 	 * - <code>e107::getPluginConfig('myplug', 'row2');</code>
-	 * 	 will search for eplugins/myplug/e_pref/myplug_row2_pref.php which
+	 * 	 will search for e107_plugins/myplug/e_pref/myplug_row2_pref.php which
 	 * 	 should contain class 'e_plugin_myplug_row2_pref' class (child of e_plugin_pref)
 	 *
 	 * @param string $plug_name
@@ -1472,10 +1502,10 @@ class e107
 	 * Class overload is supported.
 	 * Examples:
 	 * - <code>e107::getTHemeConfig('mytheme');</code>
-	 * 	 will search for eplugins/myplug/e_pref/myplug_pref.php which
+	 * 	 will search for e107_plugins/myplug/e_pref/myplug_pref.php which
 	 * 	 should contain class 'e_plugin_myplug_pref' class (child of e_plugin_pref)
 	 * - <code>e107::getPluginConfig('myplug', 'row2');</code>
-	 * 	 will search for eplugins/myplug/e_pref/myplug_row2_pref.php which
+	 * 	 will search for e107_plugins/myplug/e_pref/myplug_row2_pref.php which
 	 * 	 should contain class 'e_plugin_myplug_row2_pref' class (child of e_plugin_pref)
 	 *
 	 * @param string $theme_name
@@ -3697,9 +3727,9 @@ class e107
 	 * <code>
 	 * echo e107::templatePath(plug_name, 'my');
 	 * // result is something like:
-	 * // ethemes/current_theme/templates/plug_name/my_template.php
+	 * // e107_themes/current_theme/templates/plug_name/my_template.php
 	 * // or if not found
-	 * // eplugins/plug_name/templates/my_template.php
+	 * // e107_plugins/plug_name/templates/my_template.php
 	 * </code>
 	 *
 	 * @see getThemeInfo()
@@ -3731,8 +3761,8 @@ class e107
 	 *
 	 * Example usage: <code>e107::getCoreTemplate('user', 'short_start');</code>
 	 * Will search for:
-	 * - ethemes/current_frontend_theme/templates/user_template.php (if $override is true)
-	 * - ethemes/templates/user_template.php (if override not found or $override is false)
+	 * - e107_themes/current_frontend_theme/templates/user_template.php (if $override is true)
+	 * - e107_themes/templates/user_template.php (if override not found or $override is false)
 	 * - $USER_TEMPLATE array which contains all user templates
 	 * - $USER_TEMPLATE['short_start'] (if key is null, $USER_TEMPLATE will be returned)
 	 *
@@ -3769,7 +3799,12 @@ class e107
         // Introducing noWrapper when merging
 		$ret_core = self::_getTemplate($id, $key, $reg_path, $path, $info, true);
 
-		return (is_array($ret_core) ? array_merge($ret_core, $ret) : $ret);
+		if($ret === false && is_array($ret_core))
+		{
+			return $ret_core;
+		}
+
+		return (is_array($ret_core) && is_array($ret) ? array_merge($ret_core, $ret) : $ret);
 	}
 
 	/**
@@ -3785,8 +3820,8 @@ class e107
 	 *
 	 * Example usage: <code>e107::getTemplate('user', 'short_start');</code>
 	 * Will search for:
-	 * - ethemes/{current_frontend_theme}/templates/user_template.php (if $override is true) - this is the default.
-	 * - ecore/templates/user_template.php (if override not found or $override is false)
+	 * - e107_themes/{current_frontend_theme}/templates/user_template.php (if $override is true) - this is the default.
+	 * - e107_core/templates/user_template.php (if override not found or $override is false)
 	 * - $USER_TEMPLATE array which contains all user templates
 	 * - $USER_TEMPLATE['short_start'] (if key is null, $USER_TEMPLATE will be returned)
 	 *
@@ -4061,14 +4096,30 @@ class e107
 
 			if($source === null)
 			{
+				if(strpos($path, e_CORE) !== 0)
+				{
+					self::predefineLegacyLans($path);
+				}
+
+				global $pref;
+
 				(deftrue('E107_DEBUG_LEVEL') ? include_once($path) : @include_once($path));
+
+				$definedByTheIncludedFile = get_defined_vars();
+				$v1Shaped = !isset($$var);
+
 				$source = array(
-					'template' => (isset($$var) ? $$var : array()),
+					'template' => ($v1Shaped ? self::v1TemplateVars($definedByTheIncludedFile, array($var, $var_info, $wrapper, 'SC_WRAPPER')) : $$var),
 					'info'     => (isset($$var_info) && is_array($$var_info) ? $$var_info : array()),
-					'sc_style' => (isset($SC_WRAPPER) ? $SC_WRAPPER : null),
+					'sc_style' => (isset($SC_WRAPPER) ? $SC_WRAPPER : ($v1Shaped && isset($sc_style) ? $sc_style : null)),
 					'wrapper'  => (isset($$wrapper) && !empty($$wrapper) && is_array($$wrapper) ? $$wrapper : null),
 				);
 				self::setRegistry($sourceRegPath, $source);
+
+				if(deftrue('E107_DBG_INCLUDES'))
+				{
+					self::getMessage()->addDebug("Loaded Template File: ".$path);
+				}
 			}
 
 			self::setRegistry($regPath, $source['template']);
@@ -4114,6 +4165,30 @@ class e107
 		return ($ret && is_array($ret) && isset($ret[$key])) ? $ret[$key] : false;
 	}
 
+	/**
+	 * The uppercase variables a v1-shaped template file left behind, as the template array {@see e107::_getTemplate()} returns.
+	 *
+	 * @param array $defined the included file's scope, taken with get_defined_vars()
+	 * @param array $reserved the names the loader reads for itself
+	 * @return array
+	 */
+	private static function v1TemplateVars($defined, $reserved)
+	{
+		$ret = array();
+
+		foreach($defined as $name => $value)
+		{
+			if(in_array($name, $reserved, true) || !preg_match('/^[A-Z][A-Z0-9_]*$/', $name))
+			{
+				continue;
+			}
+
+			$ret[$name] = $value;
+		}
+
+		return $ret;
+	}
+
 
 	/**
 	 * Load a language file, serving as a replacement for the legacy include_lan() function.
@@ -4125,7 +4200,7 @@ class e107
 	 * For modern language loading, consider using e107::lan(), e107::coreLan(), e107::plugLan(), or e107::themeLan()
 	 * as they provide more structured and maintainable options.
 	 *
-	 * @param string $path  The full path to the language file (e.g., 'elanguages/English/lan_admin.php' or 'folder/Spanish/Spanish_global.php').
+	 * @param string $path  The full path to the language file (e.g., 'e107_languages/English/lan_admin.php' or 'folder/Spanish/Spanish_global.php').
 	 * @param bool   $force [optional] If true, forces inclusion with include() instead of include_once(). Defaults to false.
 	 * @param string $lang  [optional] The language of the file (e.g., 'English', 'Spanish'). If empty, uses e_LANGUAGE or defaults to 'English'.
 	 * @return bool|int|string Returns:
@@ -4275,10 +4350,10 @@ class e107
 	 *
 	 * Examples:
 	 * <code><?php
-	 * 	// import defeinitions from /elanguages/[CurrentLanguage]/lan_comment.php</code>
+	 * 	// import defeinitions from /e107_languages/[CurrentLanguage]/lan_comment.php</code>
 	 * 	e107::coreLan('comment');
 	 *
-	 * 	// import defeinitions from /elanguages/[CurrentLanguage]/admin/lan_banlist.php
+	 * 	// import defeinitions from /e107_languages/[CurrentLanguage]/admin/lan_banlist.php
 	 * 	self::coreLan('banlist', true);
 	 * </code>
 	 *
@@ -4325,26 +4400,26 @@ class e107
 	 * Examples:
 	 * @example
 	 * <code><?php
-	 * 	// import defeinitions from /eplugins/forum/languages/[CurrentLanguage]/lan_forum.php
+	 * 	// import defeinitions from /e107_plugins/forum/languages/[CurrentLanguage]/lan_forum.php
 	 * 	e107::plugLan('forum', 'lan_forum');
 	 *
-	 * 	// import defeinitions from /eplugins/featurebox/languages/[CurrentLanguage]_admin_featurebox.php
-	 *  // OR /eplugins/featurebox/languages/[CurrentLanguage]/[CurrentLanguage]_admin_featurebox.php (auto-detected)
+	 * 	// import defeinitions from /e107_plugins/featurebox/languages/[CurrentLanguage]_admin_featurebox.php
+	 *  // OR /e107_plugins/featurebox/languages/[CurrentLanguage]/[CurrentLanguage]_admin_featurebox.php (auto-detected)
 	 * 	e107::plugLan('featurebox', 'admin_featurebox', true);
 	 *
-	 * 	// import defeinitions from /eplugins/myplug/languages/[CurrentLanguage]_front.php
+	 * 	// import defeinitions from /e107_plugins/myplug/languages/[CurrentLanguage]_front.php
 	 * 	e107::plugLan('myplug');
 	 *
-	 * 	// import defeinitions from /eplugins/myplug/languages/[CurrentLanguage]_admin.php
+	 * 	// import defeinitions from /e107_plugins/myplug/languages/[CurrentLanguage]_admin.php
 	 * 	e107::plugLan('myplug', true);
 	 *
-	 * // import defeinitions from /eplugins/myplug/languages/[CurrentLanguage].php // FOR BC only.
+	 * // import defeinitions from /e107_plugins/myplug/languages/[CurrentLanguage].php // FOR BC only.
 	 * 	e107::plugLan('myplug', null);
 	 *
-	 * 	// import defeinitions from /eplugins/myplug/languages/[CurrentLanguage]/[CurrentLanguage]_front.php
+	 * 	// import defeinitions from /e107_plugins/myplug/languages/[CurrentLanguage]/[CurrentLanguage]_front.php
 	 * 	e107::plugLan('myplug', 'front', true);
 	 *
-	 * 	// import defeinitions from /eplugins/myplug/languages/[CurrentLanguage]/admin/common.php
+	 * 	// import defeinitions from /e107_plugins/myplug/languages/[CurrentLanguage]/admin/common.php
 	 * 	e107::plugLan('myplug', 'admin/common');
 	 * </code>
 	 *
@@ -4440,19 +4515,19 @@ class e107
 	 *
 	 * Examples:
 	 * <code><?php
-	 * 	// import defeinitions from /ethemes/[CurrentTheme]/languages/[CurrentLanguage]/lan.php
+	 * 	// import defeinitions from /e107_themes/[CurrentTheme]/languages/[CurrentLanguage]/lan.php
 	 * 	e107::themeLan('lan');
 	 *
-	 * 	// import defeinitions from /ethemes/[currentTheme]/languages/[CurrentLanguage].php
+	 * 	// import defeinitions from /e107_themes/[currentTheme]/languages/[CurrentLanguage].php
 	 * 	e107::themeLan();
 	 *
-	 * 	// import defeinitions from /ethemes/[currentTheme]/languages/[CurrentLanguage]_lan.php
+	 * 	// import defeinitions from /e107_themes/[currentTheme]/languages/[CurrentLanguage]_lan.php
 	 * 	e107::themeLan('lan', null, true);
 	 *
-	 * 	// import defeinitions from /ethemes/[currentTheme]/languages/[CurrentLanguage]/admin/lan.php
+	 * 	// import defeinitions from /e107_themes/[currentTheme]/languages/[CurrentLanguage]/admin/lan.php
 	 * 	e107::themeLan('admin/lan');
 	 *
-	 * 	// import defeinitions from /ethemes/some_theme/languages/[CurrentLanguage].php
+	 * 	// import defeinitions from /e107_themes/some_theme/languages/[CurrentLanguage].php
 	 * 	e107::themeLan('', 'some_theme');
 	 * </code>
 	 *
@@ -4842,7 +4917,7 @@ class e107
 
 		if (!empty($plugin) && empty($tmp[$plugin][$key]['sef']))
 		{
-			self::getMessage()->addDebug("e_url.php in <b>" . e_PLUGIN . $plugin . "</b> is missing the key: <b>" . $key . "</b>. Or, you may need to <a href='" . e_ADMIN . "db.php?mode=plugin_scan'>scan your plugin directories</a> to register e_url.php");
+			self::getMessage()->addDebug("e_url.php in <b>" . e_PLUGIN . $plugin . "</b> is missing the key: <b>" . $key . "</b>. Or, you may need to <a href='" . e_ADMIN . "db.php?mode=plugin_scan&amp;e-token=" . defset('e_TOKEN') . "'>scan your plugin directories</a> to register e_url.php");
 			return false;
 		}
 
@@ -6097,7 +6172,6 @@ class e107
 	public function set_urls_deferred()
 	{
 		$siteurl = self::getPref('siteurl');
-		$configured_host = parse_url($siteurl, PHP_URL_HOST);
 		$http_host = isset($_SERVER['HTTP_HOST']) ? $_SERVER['HTTP_HOST'] : '';
 
 		$allowed_hosts = $this->getAllowedHosts();
@@ -6107,7 +6181,7 @@ class e107
 			define('SITEURL', $siteurl);
 			define('SITEURLBASE', rtrim(SITEURL,'/'));
 		}
-		elseif(!empty($configured_host) && strpos($siteurl,'http')!== false && !$this->isAllowedHost($allowed_hosts, $http_host))
+		elseif(!empty($allowed_hosts) && !$this->isAllowedHost($allowed_hosts, $http_host))
 		{
 			error_log('e107 host check: HTTP_HOST '.var_export($http_host, true).' is not allowed by the configured siteurl preference '.var_export($siteurl, true).' or any of the configured `trusted_hosts` pref entries');
 			$this->renderConfigurationIssue();
@@ -6134,28 +6208,32 @@ class e107
 	 * The list of hostnames this installation answers to: the host from the
 	 * `siteurl` pref plus any `trusted_hosts` pref entries.
 	 *
-	 * Shared by the boot-time host check in `set_urls_deferred()` and by the
-	 * public `isTrustedHost()` so both reason about the same allow-list.
+	 * Shared by the boot-time host check in {@see e107::set_urls_deferred()} and
+	 * by the public {@see e107::isTrustedHost()} so both reason about the same
+	 * allow-list.
 	 *
-	 * @return string[]
+	 * The `trusted_hosts` pref is read through
+	 * {@see e107::normaliseTrustedHostList()}, so a value holding a multi-line
+	 * string or a whole URL names the hostnames it says rather than one entry
+	 * that can never match. Entries that reduce to nothing are dropped, so an
+	 * empty return means "this installation has been told no hostname of its
+	 * own" rather than "it was told one that can never match". The boot-time
+	 * check arms itself on that emptiness, and a site whose whole configuration
+	 * is a blank `trusted_hosts` line must not be locked out by it.
+	 *
+	 * @return string[] normalised hostnames, in no particular order
 	 */
 	private function getAllowedHosts()
 	{
 		$allowed_hosts = array();
 
-		$configured_host = parse_url(self::getPref('siteurl'), PHP_URL_HOST);
-		if(!empty($configured_host))
+		$configured_host = self::normaliseHost(parse_url(self::getPref('siteurl'), PHP_URL_HOST));
+		if($configured_host !== '')
 		{
 			$allowed_hosts[] = $configured_host;
 		}
 
-		$trusted_hosts_pref = self::getPref('trusted_hosts');
-		if(!empty($trusted_hosts_pref))
-		{
-			$allowed_hosts = array_merge($allowed_hosts, (array) $trusted_hosts_pref);
-		}
-
-		return $allowed_hosts;
+		return array_merge($allowed_hosts, self::normaliseTrustedHostList(self::getPref('trusted_hosts')));
 	}
 
 	/**
@@ -6217,7 +6295,7 @@ class e107
 	}
 
 	/**
-	 * Normalise a hostname for comparison: lowercase, strip a trailing
+	 * Normalise a hostname for comparison: trim, lowercase, strip a trailing
 	 * `:port`, strip a leading `www.`.
 	 *
 	 * Both sides of the host check run through this so the configured
@@ -6226,6 +6304,11 @@ class e107
 	 * port) since `parse_url(PHP_URL_HOST)` already drops the port from
 	 * `siteurl`; applying it symmetrically keeps any manually-entered
 	 * `trusted_hosts` entries that include a port from silently never matching.
+	 * The trim reaches a configured value and, through the public
+	 * {@see e107::isTrustedHost()}, a host a caller parsed out of a URL of its
+	 * own, such as the redirect destination {@see redirection::leavesThisSite()}
+	 * hands over; widening a value there can only move a match towards this
+	 * site's own hostnames.
 	 *
 	 * @param string $host
 	 *
@@ -6233,7 +6316,7 @@ class e107
 	 */
 	private static function normaliseHost($host)
 	{
-		$host = strtolower((string) $host);
+		$host = strtolower(trim((string) $host));
 		$host = preg_replace('/:\d+$/', '', $host);
 		$host = preg_replace('/^www\./', '', $host);
 		return $host;
@@ -6266,7 +6349,7 @@ class e107
 
 		// A bare hostname / IPv4, or a bracketed IPv6 literal, with an optional
 		// numeric port: what a browser puts in the `Host` header.
-		$shaped = '/^(?:[A-Za-z0-9._-]+|\[[0-9A-Fa-f:]+\])(?::\d{1,5})?$/';
+		$shaped = '/^(?:[A-Za-z0-9._-]+|\[[0-9A-Fa-f:]+\])(?::\d{1,5})?$/D';
 
 		if($httpHost !== '' && preg_match($shaped, $httpHost))
 		{
@@ -6953,18 +7036,11 @@ class e107
 	 */
 	public static function coreUpdateAvailable()
 	{
-
-		// LITE MODIFICATION: no phone-home. Lite does not poll
-		// e107.org/releases.php for core updates (Lite tracks upstream via
-		// git sync, not the e107.org release feed). Returning false here
-		// neutralises all consumers at once: the cron update email
-		// (checkCoreUpdate), the dashboard notice (sc_admin_coreupdate),
-		// and the Development Preview update-channel selector.
-		// Revert condition: Lite opts into e107.org update notifications.
+		// LITE MODIFICATION: no phone-home. 
 		return false;
 
-	    // Get site version
-	    $e107info= array();
+		// Get site version
+		$e107info= array();
 
 	    if(is_readable(e_ADMIN."ver.php"))
 	    {

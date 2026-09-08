@@ -1846,11 +1846,10 @@ class e_admin_dispatcher
 			{
 				$item['link'] = '#';
 				$item['link_caret'] = true;
-				$item['link_data'] = [
-					'data-toggle' => 'collapse',
-					'data-target' => '#sub-' . $item['link_id'],
-					'role'        => 'button'
-				];
+				$item['link_data'] = array_merge($tp->bootstrapData([
+					'toggle' => 'collapse',
+					'target' => '#sub-' . $item['link_id'],
+				]), ['role' => 'button']);
 				$item['sub_class'] = 'collapse';
 				$item['caret'] = true;
 
@@ -1860,7 +1859,7 @@ class e_admin_dispatcher
 					{
 						$parent = $subItem['group'];
 						$var[$parent]['link_data']['aria-expanded'] = 'true';
-						$item['sub_class'] = 'collapse in';
+						$item['sub_class'] = 'collapse ' . $tp->bootstrapShowClass();
 					}
 				}
 			}
@@ -4113,6 +4112,55 @@ class e_admin_controller_ui extends e_admin_controller
 
 
 	/**
+	 * Whether a posted batch trigger carries its target field in its second segment, as
+	 * {@see e_admin_controller_ui::_handleListBatch()} dispatches it.
+	 *
+	 * @param string $type leading segment of the posted batch trigger
+	 * @return bool
+	 */
+	protected function isTypedBatchTrigger($type)
+	{
+		return in_array($type, array('sefgen', 'bool', 'boolreverse', 'attach', 'deattach',
+			'addAll', 'clearAll', 'ucadd', 'ucremove', 'ucaddall', 'ucdelall'), true);
+	}
+
+	/**
+	 * Whether a posted batch trigger may address the named field: it must carry the 'batch' flag
+	 * {@see e_admin_form_ui::renderBatchFilter()} builds the menu from, and must not be declared
+	 * 'data' => false, the declaration {@see e_admin_ui::_setModel()} keeps out of dataFields.
+	 * An omitted or null 'data' is the common case on a real column and stays permitted.
+	 *
+	 * @param string $field field segment of the posted batch trigger
+	 * @return bool
+	 */
+	protected function isBatchField($field)
+	{
+		if(!is_string($field) || !$this->getFieldAttr($field, 'batch', false)
+			|| $this->getFieldAttr($field, 'data', null) === false)
+		{
+			e107::getMessage()->addDebug('Unhandled batch field: ' .var_export($field, true));
+
+			return false;
+		}
+
+		return true;
+	}
+
+	/**
+	 * Whether the caller may put a record in or out of a user class, which its userclass_editclass declares.
+	 *
+	 * @param int|string $class user class id
+	 * @return bool
+	 */
+	private function canManageUserclass($class)
+	{
+		$tree = e107::getUserClass()->class_tree;
+
+		return isset($tree[$class]['userclass_editclass'])
+			&& e107::getUser()->checkClass($tree[$class]['userclass_editclass']);
+	}
+
+	/**
 	 * Handle posted batch options routine
 	 * @param string $batch_trigger
 	 * @return e_admin_controller_ui
@@ -4156,19 +4204,36 @@ class e_admin_controller_ui extends e_admin_controller
 			$actionName = 'List';
 		}
 
+		if($this->isTypedBatchTrigger($trigger[0]) && !$this->isBatchField(varset($trigger[1], '')))
+		{
+			return $this;
+		}
 
 		switch($trigger[0])
 		{
 
 			case 'sefgen':
 				$field = $trigger[1];
-				$value = $trigger[2];
+				$value = varset($trigger[2]);
 
 				//handleListBatch(); for custom handling of all field names
 				if(empty($selected))
 				{
 					return $this;
 				}
+
+				$parms = $this->getFieldAttr($field, 'writeParms', array());
+				if(!is_array($parms))
+				{
+					parse_str($parms, $parms);
+				}
+
+				if(empty($parms['sef']) || (string) $parms['sef'] !== (string) $value)
+				{
+					e107::getMessage()->addDebug('Unhandled batch sef source: ' .var_export($value, true));
+					break;
+				}
+
 				$method = 'handle'.$actionName.'SefgenBatch';
 				if(method_exists($this, $method)) // callback handling
 				{
@@ -4197,7 +4262,7 @@ class e_admin_controller_ui extends e_admin_controller
 
 				if(empty($selected) && !$this->getPosted('etrigger_delete_confirm')) // it's a delete batch, confirm screen
 				{
-					$params = $this->getFieldAttr($trigger[1], 'writeParms', array());
+					$params = $this->getFieldAttr(varset($trigger[1], ''), 'writeParms', array());
 					if(!is_array($params))
 					{
 						parse_str($params, $params);
@@ -4290,11 +4355,8 @@ class e_admin_controller_ui extends e_admin_controller
 				}
 				$field = $trigger[1];
 				$class = $trigger[2];
-				$user = e107::getUser();
-				$e_userclass = e107::getUserClass(); 
 
-				// check userclass manager class
-				if (!isset($e_userclass->class_tree[$class]) || !$user->checkClass($e_userclass->class_tree[$class]))
+				if(!$this->canManageUserclass($class))
 				{
 					return $this;
 				}
@@ -4315,8 +4377,6 @@ class e_admin_controller_ui extends e_admin_controller
 					return $this;
 				}
 				$field = $trigger[1];
-				$user = e107::getUser();
-				$e_userclass = e107::getUserClass(); 
 				$parms = $this->getFieldAttr($field, 'writeParms', array());
 				if(!is_array($parms))
 				{
@@ -4327,16 +4387,20 @@ class e_admin_controller_ui extends e_admin_controller
 					return $this;
 				}
 
-				$classes = $e_userclass->uc_required_class_list($parms['classlist']);
+				$classes = e107::getUserClass()->uc_required_class_list($parms['classlist']);
 				foreach ($classes as $id => $label) 
 				{
-					// check userclass manager class
-					if (!isset($e_userclass->class_tree[$id]) || !$user->checkClass($e_userclass->class_tree[$id]))
+					if(!$this->canManageUserclass($id))
 					{
 						$msg = $tp->lanVars(LAN_NO_ADMIN_PERMISSION,$label);
 						$this->getTreeModel()->addMessageWarning($msg);
 						unset($classes[$id],$msg);
 					}
+				}
+				if(empty($classes))
+				{
+					$this->getTreeModel()->setMessages();
+					return $this;
 				}
 				if(method_exists($this, 'handleCommaBatch'))
 				{
@@ -4347,16 +4411,21 @@ class e_admin_controller_ui extends e_admin_controller
 			// handleListCopyBatch etc.
 			default:
 				$field = $trigger[0];
-				$value = $trigger[1];
+				$value = varset($trigger[1]);
 
 				//something like handleListUrlTypeBatch(); for custom handling of 'url_type' field name
 				$method = 'handle'.$actionName.$this->getRequest()->camelize($field).'Batch';
 
-				e107::getMessage()->addDebug('Searching for custom batch method: ' .$method. '(' .$selected. ',' .$value. ')');
+				e107::getMessage()->addDebug('Searching for custom batch method: ' .$method. '(' .implode(',', $selected). ',' .$value. ')');
 
 				if(method_exists($this, $method)) // callback handling
 				{
 					$this->$method($selected, $value);
+					break;
+				}
+
+				if(!$this->isBatchField($field))
+				{
 					break;
 				}
 
@@ -5026,7 +5095,7 @@ class e_admin_controller_ui extends e_admin_controller
 	 * @param int    $id     The ID of the specific record being backed up.
 	 * @param string $action The action performed on the record (e.g., 'update' or 'delete').
 	 * @param array  $data   An associative array of field data to be included in the history record.
-	 * @param bool  $posted Whether the data has been posted and requires additional filter based on current $fields values or not.
+	 * @param bool  $posted True when $data came from the request, so only fields carrying a 'data' attribute are kept; false when $data is a stored row, which is already whole.
 	 * @return bool True on successful creation of the backup record, false on failure.
 	 */
 	protected function backupToHistory($table, $pid, $id, $action, $data, $posted = true)
@@ -5042,12 +5111,20 @@ class e_admin_controller_ui extends e_admin_controller
 			}
 		}
 
+		$json = json_encode($data, JSON_PRETTY_PRINT);
+
+		if($json === false)
+		{
+			e107::getMessage()->addError("Failed to encode history for table '{$table}', record ID {$id}: ".json_last_error_msg());
+			return false;
+		}
+
 		$historyData = [
 			'history_table'     => $table,
 			'history_pid'       => $pid,
 			'history_record_id' => $id,
 			'history_action'    => $action, // 'update' or 'delete'
-			'history_data'      => json_encode($data, JSON_PRETTY_PRINT),
+			'history_data'      => $json,
 			'history_user_id'   => USERID,
 			'history_datestamp' => time(),
 		];
@@ -5064,6 +5141,24 @@ class e_admin_controller_ui extends e_admin_controller
 		// Optional: Add debug logs for successful history creation
 		e107::getMessage()->addDebug("History saved for table '{$table}', record ID {$id}");
 		return true;
+	}
+
+	/**
+	 * The row as the table holds it, for {@see e_admin_controller_ui::backupToHistory()} to record.
+	 *
+	 * @param string     $table The name of the table where the record resides.
+	 * @param string     $pid   The primary ID field of the record.
+	 * @param int|string $id    The ID of the specific record; bound as given, as the model layer leaves it.
+	 * @return array The stored row, or an empty array when there is no such row.
+	 */
+	protected function historySnapshot($table, $pid, $id)
+	{
+		$row = e107::getDb()->createQueryBuilder()
+			->select('*')->from($table)
+			->where($pid, $id)
+			->fetchRow();
+
+		return is_array($row) ? $row : array();
 	}
 
 
@@ -5144,6 +5239,7 @@ class e_admin_controller_ui extends e_admin_controller
 		}
 
 		$id = $model->getId();
+		$stored = $id ? $this->historySnapshot($this->table, $this->getPrimaryName(), $id) : array();
 
 		// Trigger Plugin Admin-ui event.  'pre'
 		if($triggerName = $this->getEventTriggerName($this->getEventName(), $_posted['etrigger_submit'])) // 'create' or 'update';
@@ -5164,10 +5260,10 @@ class e_admin_controller_ui extends e_admin_controller
 	    {
 	        $new_data = $model->getData();
 
-	        if($changes = array_diff_assoc($new_data, $old_data))
+	        if($changes = array_diff_assoc($new_data, $stored))
 	        {
-	            $old_changed_data = array_intersect_key($old_data, $changes);
-				$this->backupToHistory($this->table, $this->getPrimaryName(), $id, 'update', $old_changed_data);
+	            $old_changed_data = array_intersect_key($stored, $changes);
+				$this->backupToHistory($this->table, $this->getPrimaryName(), $id, 'update', $old_changed_data, false);
 	        }
 
 	    }
@@ -6196,9 +6292,9 @@ class e_admin_ui extends e_admin_controller_ui
 			{
 				$data = $model->getData();
 
-				if($this->table !== 'admin_history')
+				if($this->table !== 'admin_history' && ($stored = $this->historySnapshot($this->table, $this->pid, $id)))
 				{
-					$this->backupToHistory($this->table, $this->pid, $id, 'delete', $data);
+					$this->backupToHistory($this->table, $this->pid, $id, 'delete', $stored, false);
 				}
 
 				if($this->beforeDelete($data, $id))
@@ -6880,14 +6976,15 @@ class e_admin_ui extends e_admin_controller_ui
 		$this->setTriggersEnabled(false);
 		$data = array();
 		$model = $this->getTreeModel()->getNode($id); //FIXME - this has issues with being on a page other than the 1st. 
+
+		if($this->table !== 'admin_history' && ($stored = $this->historySnapshot($this->table, $this->pid, $id)))
+		{
+			$this->backupToHistory($this->table, $this->pid, $id, 'delete', $stored, false);
+		}
+
 		if($model)
 		{
 			$data = $model->getData();
-
-			if($this->table !== 'admin_history')
-			{
-				$this->backupToHistory($this->table, $this->pid, $id,'delete',$data);
-			}
 
 			if($this->beforeDelete($data, $id))
 			{

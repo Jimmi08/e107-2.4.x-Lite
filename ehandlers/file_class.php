@@ -87,7 +87,6 @@ class e_file
 	 */
 	const CURL_MAX_REDIRECTS = 5;
 
-
 	/**
 	 * Array of directory names to ignore (in addition to any set by caller)
 	 *
@@ -551,7 +550,8 @@ class e_file
 
 
 	/**
-	 * Reject URLs that point at private/reserved IP ranges or non-HTTP(S) protocols.
+	 * Reject URLs whose host does not resolve or resolves into private/reserved
+	 * IP ranges, and URLs on non-HTTP(S) protocols.
 	 * Define `e_REMOTE_FILE_ALLOW_PRIVATE` to bypass for legitimate intranet use.
 	 *
 	 * @param string $url
@@ -664,12 +664,31 @@ class e_file
 
 
 	/**
-	 * Every A and AAAA address $host has.
+	 * Every A and AAAA address $host has, from either resolver this machine has.
 	 *
 	 * @param string $host
 	 * @return string[] empty when the name does not resolve
 	 */
 	protected function resolveHostname($host)
+	{
+		$addresses = $this->dnsRecordAddresses($host);
+
+		if(empty($addresses))
+		{
+			$addresses = $this->systemResolverAddresses($host);
+		}
+
+		return $addresses;
+	}
+
+
+	/**
+	 * The A and AAAA addresses PHP's own resolver has for $host.
+	 *
+	 * @param string $host
+	 * @return string[] empty when this resolver has no answer
+	 */
+	protected function dnsRecordAddresses($host)
 	{
 		$records = @dns_get_record($host, DNS_A | DNS_AAAA);
 		if(!is_array($records))
@@ -685,6 +704,60 @@ class e_file
 		}
 
 		return $addresses;
+	}
+
+
+	/**
+	 * The addresses the operating system's resolver has for $host, IPv4 only.
+	 *
+	 * Names only: the C library answers a host that spells an address in
+	 * decimal, octal or hex without asking any name service, and those
+	 * spellings are refused here.
+	 *
+	 * @param string $host
+	 * @return string[] empty when this resolver has no answer
+	 */
+	protected function systemResolverAddresses($host)
+	{
+		if(!function_exists('gethostbynamel') || !$this->isHostname($host))
+		{
+			return array();
+		}
+
+		$resolved = @gethostbynamel($host);
+
+		if(!is_array($resolved))
+		{
+			return array();
+		}
+
+		$addresses = array();
+		foreach($resolved as $ip)
+		{
+			if(filter_var($ip, FILTER_VALIDATE_IP))
+			{
+				$addresses[] = $ip;
+			}
+		}
+
+		return $addresses;
+	}
+
+
+	/**
+	 * Whether $host is a name to look up rather than an address in disguise.
+	 *
+	 * @param string $host
+	 * @return bool
+	 */
+	private function isHostname($host)
+	{
+		if(stripos($host, '0x') === 0)
+		{
+			return false;
+		}
+
+		return (bool) preg_match('/[a-zA-Z]/', $host);
 	}
 
 
@@ -969,71 +1042,62 @@ class e_file
 	 * @param string $type       media, temp, or import
 	 * @return boolean TRUE on success, FALSE on failure (which includes absence of CURL functions)
 	 */
-	// LITE MODIFICATION: getRemoteFile() robustness rewrite.
-	// Lite uses a more defensive remote-fetch implementation than
-	// upstream. SSRF protections (isUrlSafe/canonicalizeIp/CURLOPT_PROTOCOLS
-	// from upstream commit 60c85ba) are layered on top — DO NOT
-	// remove those when syncing. Revert to upstream only if upstream's
-	// implementation catches up on robustness.
-	// 3abf2b02b hop-revalidation, CURLOPT_RESOLVE pinning and TLS verification ported 2026-08-09 — do not remove on sync.
 	function getRemoteFile($remote_url, $local_file, $type = 'temp', $timeout = 40)
 	{
-		if (!function_exists('curl_init'))
+
+		$this->error = '';
+		$this->setErrorNum(null);
+
+		// check for cURL
+		if(!function_exists('curl_init'))
 		{
 			$msg = 'e_file::getRemoteFile() requires cURL to be installed.';
-			if (E107_DEBUG_LEVEL > 0)
+			if(E107_DEBUG_LEVEL > 0)
 			{
 				e107::getLog()->addDebug($msg);
 			}
+
 			error_log($msg);
-			return false;
+
+			return false;            // May not be installed
 		}
 
 		if(!$this->isUrlSafe($remote_url))
 		{
-			$this->error = 'Refused to fetch URL with non-HTTP(S) scheme or private/reserved IP: ' . $remote_url;
+			$this->error = 'Refused to fetch URL with an unresolvable host, a non-HTTP(S) scheme or a private/reserved IP: ' . $remote_url;
 			error_log($this->error);
 			return false;
 		}
 
-		$path = ($type === 'media') ? e_MEDIA : e_TEMP;
-		if ($type === 'import')
-		{
-			$path = e_IMPORT;
-		}
+		$fp = fopen($this->remoteFilePath($type) . $local_file, 'w'); // media-directory or temp directory is the root.
 
-		$localPath = $path . $local_file;
-
-		// Open file handle early
-		$fp = fopen($localPath, 'w');
-		if (!$fp)
+		if($fp === false)
 		{
-			error_log("e_file::getRemoteFile() - Cannot open local file for writing: {$localPath}");
+			$this->error = 'Could not open ' . $this->remoteFilePath($type) . $local_file . ' for writing';
+			error_log($this->error);
+
 			return false;
 		}
 
-		// === Key improvement: extend PHP time limit safely ===
-		// The execution limit is process-wide, so (per upstream b7df6d047) it is
-		// only ever raised, never lowered, and never imposed where the admin set
-		// none (max_execution_time = 0, e.g. CLI). Lite keeps its +15s headroom.
+		// The transfer's own budget belongs to cURL: curlOptions() sets
+		// CURLOPT_TIMEOUT from this same value, and curlFollow() spends one
+		// budget across the whole redirect chain. PHP's execution limit is a
+		// different thing and applies to the whole process, so it is only ever
+		// raised here, never lowered. set_time_limit($timeout) re-armed it at
+		// exactly $timeout, which turned this file's own ten minute grant above
+		// into 40 seconds for everything that ran after the first download, and
+		// 0, meaning no limit at all, into 40 seconds on CLI.
 		$executionLimit = (int) ini_get('max_execution_time');
 
-		if($executionLimit > 0 && $executionLimit < $timeout + 15)
+		if($executionLimit > 0 && $executionLimit < $timeout)
 		{
-			@set_time_limit($timeout + 15);   // @ to suppress warning if safe_mode or disabled
+			@set_time_limit($timeout);
 		}
 
-		// The redirect chain is walked by curlFollow(): CURLOPT_FOLLOWLOCATION is
-		// off, every Location is revalidated through isUrlSafe/resolveOutboundTarget,
-		// the validated address is pinned with CURLOPT_RESOLVE and the TLS peer is
-		// verified — all set in curlOptions(). The download is written straight to
-		// $fp and a 3xx body is truncated before the next hop. Lite's own robustness
-		// (connect timeout, unlink on failure, empty-file guard) is preserved here.
 		$buffer = $this->curlFollow($remote_url, array('timeout' => $timeout),
 			function($cp) use ($fp)
 			{
 				curl_setopt($cp, CURLOPT_FILE, $fp);
-				curl_setopt($cp, CURLOPT_CONNECTTIMEOUT, 10); // connection timeout (important!)
 			},
 			function() use ($fp)
 			{
@@ -1045,22 +1109,9 @@ class e_file
 
 		fclose($fp);
 
-		if ($buffer === false)
+		if($buffer === false && !empty($this->error)) // Fixes curl_error output - here see #1936
 		{
-			if (!empty($this->error))
-			{
-				error_log($this->error);
-			}
-			// delete partial file on error
-			@unlink($localPath);
-			return false;
-		}
-
-		// Check if file was actually written (empty file = probably failed)
-		if (filesize($localPath) === 0)
-		{
-			@unlink($localPath);
-			return false;
+			error_log($this->error);
 		}
 
 		return (bool) $buffer;
@@ -1118,7 +1169,7 @@ class e_file
 
 		if($curlOptions === false)
 		{
-			$this->error = 'Refused to fetch URL with non-HTTP(S) scheme or private/reserved IP: ' . $address;
+			$this->error = 'Refused to fetch URL with an unresolvable host, a non-HTTP(S) scheme or a private/reserved IP: ' . $address;
 
 			return false;
 		}
@@ -1261,7 +1312,7 @@ class e_file
 	private function curlResolveEntry($target)
 	{
 
-		if(empty($target['addresses']) || $this->hostLiteralIp($target['host']) !== false)
+		if($this->unpinnedTarget($target))
 		{
 			return false;
 		}
@@ -1270,7 +1321,7 @@ class e_file
 
 		foreach($target['addresses'] as $ip)
 		{
-			$addresses[] = (strpos($ip, ':') !== false) ? '[' . $ip . ']' : $ip;
+			$addresses[] = $this->addressAuthority($ip);
 		}
 
 		// Several addresses in one entry arrived in libcurl 7.59.0. An older
@@ -1335,7 +1386,7 @@ class e_file
 
 			if($target === false)
 			{
-				$this->error = 'Refused to fetch URL with non-HTTP(S) scheme or private/reserved IP: ' . $url;
+				$this->error = 'Refused to fetch URL with an unresolvable host, a non-HTTP(S) scheme or a private/reserved IP: ' . $url;
 
 				return false;
 			}
@@ -1682,52 +1733,57 @@ class e_file
 			return $this->socketHop($url, $target, $timeout);
 		}
 
-		$request = $this->pinnedRequest($url, $target);
+		return $this->walkOutboundAddresses($target, $timeout,
+			function($address, $seconds) use ($url, $target)
+			{
+				$request = $this->pinnedRequest($url, $address);
 
-		if($request === false)
-		{
-			$this->error = 'Refused to fetch URL with non-HTTP(S) scheme or private/reserved IP: ' . $url;
+				if($request === false)
+				{
+					$this->error = 'Refused to fetch URL with an unresolvable host, a non-HTTP(S) scheme or a private/reserved IP: ' . $url;
 
-			return false;
-		}
+					return false;
+				}
 
-		$context = array(
-			'http' => array(
-				'follow_location' => 0,
-				'max_redirects'   => 1,
-				'timeout'         => $timeout,
-			),
-			'ssl'  => array(
-				'verify_peer'      => true,
-				'verify_peer_name' => true,
-				'peer_name'        => $target['host'],
-			),
-		);
+				$context = array(
+					'http' => array(
+						'follow_location' => 0,
+						'max_redirects'   => 1,
+						'timeout'         => $seconds,
+					),
+					'ssl'  => array(
+						'verify_peer'      => true,
+						'verify_peer_name' => true,
+						'peer_name'        => $target['host'],
+					),
+				);
 
-		if($request['host'] !== '')
-		{
-			$context['http']['header'] = 'Host: ' . $request['host'];
-		}
+				if($request['host'] !== '')
+				{
+					$context['http']['header'] = 'Host: ' . $request['host'];
+				}
 
-		$fp = @fopen($request['url'], 'r', false, stream_context_create($context));
+				$fp = @fopen($request['url'], 'r', false, stream_context_create($context));
 
-		if($fp === false)
-		{
-			$this->error = 'Unable to fetch remote file: ' . $url;
+				if($fp === false)
+				{
+					$this->error = 'Unable to fetch remote file: ' . $url;
 
-			return false;
-		}
+					return false;
+				}
 
-		$meta = stream_get_meta_data($fp);
-		$body = stream_get_contents($fp);
-		fclose($fp);
+				$meta = stream_get_meta_data($fp);
+				$body = stream_get_contents($fp);
+				fclose($fp);
 
-		$headers = isset($meta['wrapper_data']) ? (array) $meta['wrapper_data'] : array();
+				$headers = isset($meta['wrapper_data']) ? (array) $meta['wrapper_data'] : array();
 
-		return array(
-			'result'   => $body,
-			'status'   => $this->headerStatus($headers),
-			'location' => $this->absoluteUrl($url, $this->headerValue($headers, 'location')),
+				return array(
+					'result'   => $body,
+					'status'   => $this->headerStatus($headers),
+					'location' => $this->absoluteUrl($url, $this->headerValue($headers, 'location')),
+				);
+			}
 		);
 	}
 
@@ -1750,11 +1806,6 @@ class e_file
 			return false;
 		}
 
-		// Connect to the address that passed the policy, not to whatever the
-		// name resolves to by the time the socket opens.
-		$peer = empty($target['addresses']) ? $target['host'] : $target['addresses'][0];
-		$peer = (strpos($peer, ':') !== false) ? '[' . $peer . ']' : $peer;
-
 		$transport = ($target['scheme'] === 'https') ? 'ssl://' : 'tcp://';
 		$context = stream_context_create(array(
 			'ssl' => array(
@@ -1764,8 +1815,20 @@ class e_file
 			),
 		));
 
-		$remote = @stream_socket_client($transport . $peer . ':' . $target['port'], $errno, $errstr, $timeout,
-			STREAM_CLIENT_CONNECT, $context);
+		$remote = $this->walkOutboundAddresses($target, $timeout,
+			function($address, $seconds) use ($target, $transport, $context)
+			{
+				// Connect to an address that passed the policy, not to whatever
+				// the name resolves to by the time the socket opens.
+				$peer = ($address === null) ? $target['host'] : $this->addressAuthority($address);
+
+				$errno  = 0;
+				$errstr = '';
+
+				return @stream_socket_client($transport . $peer . ':' . $target['port'], $errno, $errstr, $seconds,
+					STREAM_CLIENT_CONNECT, $context);
+			}
+		);
 
 		if($remote === false)
 		{
@@ -1812,18 +1875,92 @@ class e_file
 
 
 	/**
+	 * The first attempt at an address {@see e_file::resolveOutboundTarget()}
+	 * resolved that answers, so a name whose first address is dead is still
+	 * reached, as it was before the pin and as ext/curl still manages through
+	 * {@see e_file::curlResolveEntry()}.
+	 *
+	 * The addresses share the one deadline the hop was given rather than take
+	 * it each, so a multi-address name cannot multiply the caller's timeout,
+	 * and an address that answers leaves the error field as it found it.
+	 *
+	 * @param array    $target  as resolveOutboundTarget()
+	 * @param int      $timeout seconds for the walk as a whole
+	 * @param callable $attempt function($address, $seconds), $address being
+	 *                          null when there is nothing to pin, returning
+	 *                          false to move on to the next address
+	 * @return mixed the first attempt that is not false, or false
+	 */
+	private function walkOutboundAddresses($target, $timeout, $attempt)
+	{
+
+		if($this->unpinnedTarget($target))
+		{
+			return call_user_func($attempt, null, $timeout);
+		}
+
+		$deadline = microtime(true) + $timeout;
+		$error = $this->error;
+
+		foreach($target['addresses'] as $address)
+		{
+			$remaining = $deadline - microtime(true);
+
+			if($remaining <= 0)
+			{
+				break;
+			}
+
+			$result = call_user_func($attempt, $address, $remaining);
+
+			if($result !== false)
+			{
+				$this->error = $error;
+
+				return $result;
+			}
+		}
+
+		return false;
+	}
+
+
+	/**
+	 * @param string $address
+	 * @return string the address as a URL authority, bracketed when it is IPv6
+	 */
+	private function addressAuthority($address)
+	{
+
+		return (strpos($address, ':') !== false) ? '[' . $address . ']' : $address;
+	}
+
+
+	/**
+	 * @param array $target as resolveOutboundTarget()
+	 * @return bool whether the request travels to the authority it arrived with
+	 */
+	private function unpinnedTarget($target)
+	{
+
+		return empty($target['addresses']) || $this->hostLiteralIp($target['host']) !== false;
+	}
+
+
+	/**
 	 * The URL a stream should open, and the Host header that goes with it, so
 	 * that the connection lands on an address the policy resolved.
 	 *
 	 * CURLOPT_RESOLVE has no stream equivalent: the address goes into the URL
 	 * and the name goes into the Host header and into the certificate check.
 	 *
-	 * @param string $url
-	 * @param array  $target as resolveOutboundTarget()
+	 * @param string      $url
+	 * @param string|null $address one of resolveOutboundTarget()'s addresses,
+	 *                             null when there is nothing to pin
 	 * @return array|false array('url', 'host'), 'host' being '' when nothing
 	 *                     needed rewriting
 	 */
-	private function pinnedRequest($url, $target)
+	private function pinnedRequest($url, $address)
 	{
 
 		$parts = @parse_url($url);
@@ -1833,13 +1970,12 @@ class e_file
 			return false;
 		}
 
-		if(empty($target['addresses']) || $this->hostLiteralIp($target['host']) !== false)
+		if($address === null)
 		{
 			return array('url' => $url, 'host' => '');
 		}
 
-		$address = $target['addresses'][0];
-		$address = (strpos($address, ':') !== false) ? '[' . $address . ']' : $address;
+		$address = $this->addressAuthority($address);
 
 		$host = $parts['host'];
 
@@ -2489,12 +2625,13 @@ class e_file
 		return $baseDir;
 	}
 
+
 	/** First line of {@see scriptExecutionRule()}, and how a written rule is recognised again. */
 	const SCRIPT_RULE_MARKER = '# e107 script execution rule';
 
 
 	/**
-	 * The rule emedia carries, kept here rather than at the call site so a
+	 * The rule e107_media carries, kept here rather than at the call site so a
 	 * host with a different idea of what an interpreter is has one file to edit.
 	 *
 	 * Every directive is AllowOverride FileInfo class. That is deliberate: the
@@ -2551,7 +2688,7 @@ class e_file
 	 *
 	 * The opposite of {@see protectDirectory()} in what it allows and the same in
 	 * how it is applied. That one denies every request for the directory, which
-	 * is right for a private message attachment and wrong for emedia: a deny
+	 * is right for a private message attachment and wrong for e107_media: a deny
 	 * rule there takes every avatar, every site image and every theme's
 	 * {e_MEDIA_IMAGE} URL off the site. This one refuses only the extensions a
 	 * web server hands to an interpreter.
@@ -2596,8 +2733,6 @@ class e_file
 
 		return @file_put_contents($file, $rule, FILE_APPEND) !== false;
 	}
-
-
 
 
 	/**
@@ -2959,58 +3094,73 @@ class e_file
 
 
 	/**
-	 * Returns true is the URL is valid and false if it is not.
+	 * Whether $url answers, over a request pinned to the addresses
+	 * {@see e_file::resolveOutboundTarget()} resolved for it and to no others.
 	 *
-	 * @param $url
+	 * Does not follow redirects: nothing would revalidate the target a Location
+	 * lands on, and a 302 counts as reachable here anyway, so the answer about
+	 * the URL as handed in is the same either way.
+	 *
+	 * @param string $url
 	 * @return bool
 	 */
 	public function isValidURL($url)
 	{
 
-		if(!$this->isUrlSafe($url))
+		$target = $this->permittedOutboundTarget($url);
+
+		if($target === false)
 		{
 			return false;
 		}
 
-		ini_set('default_socket_timeout', 1);
+		$status = $this->walkOutboundAddresses($target, 1,
+			function($address, $seconds) use ($url, $target)
+			{
+				$request = $this->pinnedRequest($url, $address);
 
-		// The probe must not follow redirects: nothing would revalidate the
-		// target it lands on. A 302 already counts as reachable below, so
-		// reporting on the URL as handed in leaves the answer unchanged.
-		//
-		// The default stream context is the wrong place to carry that. Once a
-		// stream has read through it, PHP 5.6 no longer lets
-		// stream_context_set_default() reach the copy later reads take, so the
-		// restore is silently lost and `follow_location => 0` stays behind for
-		// the rest of the request. master needs PHP 8, so it cannot reach that
-		// today, but the code is shared with release/v2.3.x and the branch's
-		// 5.6 floor is a stated goal. fopen() has taken a context argument on
-		// every supported version, so the option travels with this one request
-		// and nothing global is touched.
-		$context = stream_context_create(array('http' => array(
-			'follow_location' => 0,
-			'max_redirects'   => 1,
-			// Without this a 3xx or 4xx is an fopen() failure and the status
-			// line, which is the whole answer, never arrives.
-			'ignore_errors'   => true,
-		)));
+				if($request === false)
+				{
+					return false;
+				}
 
-		$headers = array();
-		$stream  = @fopen($url, 'r', false, $context);
+				$http = array(
+					'follow_location' => 0,
+					'max_redirects'   => 1,
+					'ignore_errors'   => true,
+					'timeout'         => $seconds,
+				);
 
-		if($stream !== false)
-		{
-			$meta    = stream_get_meta_data($stream);
-			$headers = isset($meta['wrapper_data']) && is_array($meta['wrapper_data']) ? $meta['wrapper_data'] : array();
-			fclose($stream);
-		}
+				if($request['host'] !== '')
+				{
+					$http['header'] = 'Host: ' . $request['host'];
+				}
 
-		if(empty($headers[0]))
-		{
-			return false;
-		}
+				$context = stream_context_create(array(
+					'http' => $http,
+					'ssl'  => array(
+						'verify_peer'      => true,
+						'verify_peer_name' => true,
+						'peer_name'        => $target['host'],
+					),
+				));
 
-		return (stripos($headers[0], "200 OK") || strpos($headers[0], "302"));
+				$stream = @fopen($request['url'], 'r', false, $context);
+
+				if($stream === false)
+				{
+					return false;
+				}
+
+				$meta    = stream_get_meta_data($stream);
+				$headers = isset($meta['wrapper_data']) && is_array($meta['wrapper_data']) ? $meta['wrapper_data'] : array();
+				fclose($stream);
+
+				return $this->headerStatus($headers);
+			}
+		);
+
+		return ($status === 200 || $status === 302);
 	}
 
 
@@ -3025,128 +3175,180 @@ class e_file
 	public function unzipArchive($localfile, $type, $overwrite = false)
 	{
 
-		$mes = e107::getMessage();
+		if(empty($localfile))
+		{
+			return $this->unzipFailed($localfile, "Couldn't open the archive. No file was uploaded.");
+		}
+
+		if(!class_exists('ZipArchive'))
+		{
+			return $this->unzipFailed($localfile, "Couldn't read the archive. This server's PHP has no zip extension.");
+		}
 
 		chmod(e_TEMP . $localfile, 0755);
 
-		$fileinfo = array();
+		$zip = new ZipArchive;
+		$opened = $zip->open(e_TEMP . $localfile);
 
+		if($opened !== true)
+		{
+			return $this->unzipFailed($localfile, "Couldn't open the archive. " . $this->zipOpenError($opened));
+		}
+
+		$fileinfo = array();
 		$dir = false;
 
-		if(class_exists('ZipArchive')) // PHP7 compat. method.
+		for($i = 0; $i < $zip->numFiles; $i++)
 		{
-			$zip = new ZipArchive;
+			$fileinfo = pathinfo($zip->getNameIndex($i));
 
-			if($zip->open(e_TEMP . $localfile) === true)
+			if($fileinfo['dirname'] === '.')
 			{
-				for($i = 0; $i < $zip->numFiles; $i++)
-				{
-					$filename = $zip->getNameIndex($i);
-
-					$fileinfo = pathinfo($filename);
-
-					if($fileinfo['dirname'] === '.')
-					{
-						$dir = $fileinfo['basename'];
-						break;
-					}
-					elseif($fileinfo['basename'] === 'plugin.php' || $fileinfo['basename'] === 'theme.php')
-					{
-						$dir = $fileinfo['dirname'];
-					}
-
-					//   $stat = $zip->statIndex( $i );
-					//    print_a( $stat['name']  );
-				}
-
-
-				$zip->extractTo(e_TEMP);
-				chmod(e_TEMP . $dir, 0755);
-
-				if(empty($dir) && deftrue('e_DEBUG'))
-				{
-					print_a($fileinfo);
-				}
-
-
-				$zip->close();
+				$dir = $fileinfo['basename'];
+				break;
 			}
 
-
+			if($fileinfo['basename'] === 'plugin.php' || $fileinfo['basename'] === 'theme.php')
+			{
+				$dir = $fileinfo['dirname'];
+			}
 		}
-	/*	else // Legacy Method.
+
+		if(empty($dir) && deftrue('e_DEBUG'))
 		{
-			require_once(e_HANDLER . "pclzip.lib.php");
+			print_a($fileinfo);
+		}
 
-			$archive = new PclZip(e_TEMP . $localfile);
-			$unarc = ($fileList = $archive->extract(PCLZIP_OPT_PATH, e_TEMP, PCLZIP_OPT_SET_CHMOD, 0755)); // Store in TEMP first.
-			$dir = $this->getRootFolder($unarc);
-		}*/
+		$refusal = $this->unusableRootFolder($dir);
 
+		if($refusal === '' && $zip->locateName($dir) !== false)
+		{
+			$refusal = "Couldn't find the plugin or theme folder in the archive. Zip the folder itself, with nothing beside it at the top of the archive.";
+		}
+
+		if($refusal !== '')
+		{
+			return $this->unzipFailed($localfile, $refusal, false, $zip);
+		}
+
+		$extracted = $zip->extractTo(e_TEMP);
+		$zip->close();
+
+		if($extracted === false || !is_dir(e_TEMP . $dir))
+		{
+			return $this->unzipFailed($localfile, "Couldn't unpack the archive into the temporary folder. It may be full, or not writable.", $dir);
+		}
+
+		chmod(e_TEMP . $dir, 0755);
 
 		$destpath = ($type == 'theme') ? e_THEME : e_PLUGIN;
-		//	$typeDiz 	= ucfirst($type);
+
+		if(is_dir($destpath . $dir))
+		{
+			if($overwrite !== true)
+			{
+				return $this->unzipFailed($localfile, "(" . ucfirst($type) . ") Already Downloaded - " . basename($destpath) . '/' . $dir, $dir);
+			}
+
+			if(file_exists(e_TEMP . $localfile) && rename($destpath . $dir, e_BACKUP . $dir . "_" . date("YmdHi")))
+			{
+				e107::getMessage()->addSuccess(ADLAN_195);
+			}
+		}
 
 		@copy(e_TEMP . $localfile, e_BACKUP . $dir . ".zip"); // Make a Backup in the system folder.
 
-		if($dir && is_dir($destpath . $dir))
+		if(rename(e_TEMP . $dir, $destpath . $dir) === false)
 		{
-			if($overwrite === true)
-			{
-				if(file_exists(e_TEMP . $localfile))
-				{
-					$time = date("YmdHi");
-					if(rename($destpath . $dir, e_BACKUP . $dir . "_" . $time))
-					{
-						$mes->addSuccess(ADLAN_195);
-					}
-				}
-			}
-			else
-			{
-
-				$mes->addError("(" . ucfirst($type) . ") Already Downloaded - " . basename($destpath) . '/' . $dir);
-
-				if(file_exists(e_TEMP . $localfile))
-				{
-					@unlink(e_TEMP . $localfile);
-				}
-
-				$this->removeDir(e_TEMP . $dir);
-
-				return false;
-			}
+			return $this->unzipFailed($localfile, "Couldn't Move " . e_TEMP . $dir . " to " . $destpath . $dir . " Folder", $dir);
 		}
 
+		@unlink(e_TEMP . $localfile);
+
+		return $dir;
+	}
+
+
+	/**
+	 * Says why $dir cannot name the archive's root folder, or '' when it can.
+	 *
+	 * @param string|false $dir
+	 * @return string
+	 */
+	private function unusableRootFolder($dir)
+	{
 		if(empty($dir))
 		{
-			$mes->addError("Couldn't detect the root folder in the zip."); //  flush();
-			@unlink(e_TEMP . $localfile);
-
-			return false;
+			return "Couldn't detect the root folder in the zip.";
 		}
 
-		if(is_dir(e_TEMP . $dir))
+		if($dir !== basename($dir) || $dir === '.' || $dir === '..')
 		{
-			$res = rename(e_TEMP . $dir, $destpath . $dir);
-			if($res === false)
-			{
-				$mes->addError("Couldn't Move " . e_TEMP . $dir . " to " . $destpath . $dir . " Folder"); //  flush(); usleep(50000);
-				@unlink(e_TEMP . $localfile);
+			return "Couldn't install the archive. Its root folder is not a plain folder name.";
+		}
 
-				return false;
-			}
+		return '';
+	}
 
 
-			//	$dir 		= basename($unarc[0]['filename']);
-			//	$plugPath	= preg_replace("/[^a-z0-9-\._]/", "-", strtolower($dir));
-			//$status = "Done"; // ADMIN_TRUE_ICON;
+	/**
+	 * Reports why {@see e_file::unzipArchive()} gave up and undoes what that attempt had done.
+	 *
+	 * @param string           $localfile - filename located in e_TEMP
+	 * @param string           $message
+	 * @param string|false     $dir       - folder unpacked into e_TEMP, where one was
+	 * @param ZipArchive|false $zip       - an archive still open, where there is one
+	 * @return false
+	 */
+	private function unzipFailed($localfile, $message, $dir = false, $zip = false)
+	{
+		if($zip instanceof ZipArchive)
+		{
+			$zip->close();
+		}
+
+		if(!empty($dir))
+		{
+			$this->removeDir(e_TEMP . $dir);
+		}
+
+		e107::getMessage()->addError($message);
+
+		if(!empty($localfile))
+		{
 			@unlink(e_TEMP . $localfile);
-
-			return $dir;
 		}
 
 		return false;
+	}
+
+
+	/**
+	 * Puts a failed {@see ZipArchive::open()} into words, falling back to its numeric code.
+	 *
+	 * @param int $status
+	 * @return string
+	 */
+	private function zipOpenError($status)
+	{
+		switch($status)
+		{
+			case ZipArchive::ER_NOENT:
+				return "The file is not there.";
+
+			case ZipArchive::ER_NOZIP:
+				return "The file is not a zip archive.";
+
+			case ZipArchive::ER_INCONS:
+				return "The archive is damaged.";
+
+			case ZipArchive::ER_OPEN:
+			case ZipArchive::ER_READ:
+				return "The file could not be read.";
+
+			default:
+				return "ZipArchive reported error " . (int) $status . ".";
+		}
 	}
 
 
@@ -3181,30 +3383,20 @@ class e_file
 	 * @return array|bool FALSE on failure;
 	 *                                 An array of successful and failed path extractions
 	 */
-	// LITE MODIFICATION: unzipGithubArchive() plugin/theme download
-	// rewrite. Lite handles GitHub archive download/extraction
-	// differently from upstream. When next touched, also review for
-	// path traversal in $params (organization/repo/branch/folder
-	// values reaching the extract path) and zip-slip on extraction.
-	public function unzipGithubArchive($url = 'core', $destination_path = e_BASE, $params = array())
+	public function unzipGithubArchive($url = 'core', $destination_path = e_BASE)
 	{
-
-		// When non-empty, only archive entries beginning with this prefix are
-		// extracted (set by the plugin/theme case to scope a monorepo to one folder).
-		$keepPrefix = '';
 
 		switch($url)
 		{
 			case "core":
-				$localfile  = 'e107-master.zip';
+				$localfile = 'e107-master.zip';
 				$remotefile = 'https://codeload.github.com/e107inc/e107/zip/master';
-				$zipBase    = 'e107-master';
-				$excludes   = array(
+				$excludes = array(
 					'e107-master/.codeclimate.yml',
 					'e107-master/.editorconfig',
 					'e107-master/.gitignore',
 					'e107-master/.gitmodules',
-					'e107-master/CONTRIBUTING.md',
+					'e107-master/CONTRIBUTING.md', # moved to ./.github/CONTRIBUTING.md
 					'e107-master/LICENSE',
 					'e107-master/README.md',
 					'e107-master/composer.json',
@@ -3212,79 +3404,20 @@ class e_file
 					'e107-master/install.php',
 					'e107-master/favicon.ico',
 				);
-				$excludes[] = $zipBase;
-				$excludeMatch = array('/.github/', '/e107_tests/');
-				$newFolders = array(
-					$zipBase . '/e107_admin/'     => $destination_path . e107::getFolder('ADMIN'),
-					$zipBase . '/e107_core/'      => $destination_path . e107::getFolder('CORE'),
-					$zipBase . '/e107_docs/'      => $destination_path . e107::getFolder('DOCS'),
-					$zipBase . '/e107_handlers/'  => $destination_path . e107::getFolder('HANDLERS'),
-					$zipBase . '/e107_images/'    => $destination_path . e107::getFolder('IMAGES'),
-					$zipBase . '/e107_languages/' => $destination_path . e107::getFolder('LANGUAGES'),
-					$zipBase . '/e107_media/'     => $destination_path . e107::getFolder('MEDIA'),
-					$zipBase . '/e107_plugins/'   => $destination_path . e107::getFolder('PLUGINS'),
-					$zipBase . '/e107_system/'    => $destination_path . e107::getFolder('SYSTEM'),
-					$zipBase . '/e107_themes/'    => $destination_path . e107::getFolder('THEMES'),
-					$zipBase . '/e107_web/'       => $destination_path . e107::getFolder('WEB'),
-					$zipBase . '/'                => $destination_path,
+				$excludeMatch = array(
+					'/.github/',
+					'/e107_tests/',
 				);
-			break;
+				break;
 
-			case 'plugin':
-			case 'theme':
-				if (empty($params['organization']) || empty($params['repo']) || empty($params['branch']) || empty($params['folder']))
-				{
-					return false;
-				}
-
-				// LITE MODIFICATION: extract ONLY the requested folder from the repo
-				// archive (e107_plugins/{folder}/ or e107_themes/{folder}/), not the
-				// whole repo. $params['folder'] was previously unused on download, so a
-				// monorepo (repo=e107) unpacked every plugin plus upstream-named dirs
-				// into the site root. Standard: every plugin/theme repo reproduces the
-				// upstream path e107_plugins/{folder}/.
-				// Revert condition: only if upstream gains the same folder-scoped extract.
-				// Defense-in-depth: $params['folder'] reaches a path prefix; reject any
-				// segment with a slash or "..", though e_marketplace::isValidSegment()
-				// already validates it before this call.
-				if (strpos($params['folder'], '/') !== false
-					|| strpos($params['folder'], '\\') !== false
-					|| strpos($params['folder'], '..') !== false)
-				{
-					return false;
-				}
-
-				$zipBase    = $params['repo'] . '-' . $params['branch'];
-				$localfile  = $params['repo'] . '.zip';
-				$remotefile = 'https://codeload.github.com/' . $params['organization'] . '/' . $params['repo'] . '/zip/' . $params['branch'];
-
-				$typeDir    = ($url === 'theme') ? 'e107_themes' : 'e107_plugins';
-				$destFolder = ($url === 'theme') ? e107::getFolder('THEMES') : e107::getFolder('PLUGINS');
-
-				// Only entries under this prefix survive the extraction loop.
-				$keepPrefix = $zipBase . '/' . $typeDir . '/' . $params['folder'] . '/';
-
-				$excludes     = array();
-				$excludeMatch = array();
-				$newFolders   = array(
-					$zipBase . '/' . $typeDir . '/' => e_BASE . $destFolder,
-				);
-			break;
-
+			// language.
+			// eg. https://github.com/e107translations/Spanish/archive/v2.1.5.zip
 			default:
-				$localfile  = str_replace(array('https://github.com/e107translations/', '/archive/v'), array('', '-'), $url);
+				// 'e107-master.zip';
+				$localfile = str_replace(array('https://github.com/e107translations/', '/archive/v'), array('', '-'), $url); //remove dirs.
 				$remotefile = $url;
-				$zipBase    = str_replace('.zip', '', $localfile);
-				$excludes   = array();
-				$excludes[] = $zipBase;
-				$excludeMatch = array('e107_themes/', 'e107_plugins/');
-				$newFolders = array(
-					$zipBase . '/e107_languages/' => $destination_path . e107::getFolder('LANGUAGES'),
-					$zipBase . '/e107_plugins/'   => $destination_path . e107::getFolder('PLUGINS'),
-					$zipBase . '/e107_themes/'    => $destination_path . e107::getFolder('THEMES'),
-					$zipBase . '/'                => $destination_path,
-				);
-			break;
+				$excludes = array();
+				$excludeMatch = array('alt_auth', 'tagwords', 'faqs');
 
 		}
 
@@ -3307,7 +3440,25 @@ class e_file
 
 		chmod(e_TEMP . $localfile, 0755);
 		require_once(e_HANDLER . "pclzip.lib.php");
- 
+
+		$zipBase = str_replace('.zip', '', $localfile); // eg. e107-master
+		$excludes[] = $zipBase;
+
+		$newFolders = array(
+			$zipBase . '/e107_admin/'     => $destination_path . e107::getFolder('ADMIN'),
+			$zipBase . '/e107_core/'      => $destination_path . e107::getFolder('CORE'),
+			$zipBase . '/e107_docs/'      => $destination_path . e107::getFolder('DOCS'),
+			$zipBase . '/e107_handlers/'  => $destination_path . e107::getFolder('HANDLERS'),
+			$zipBase . '/e107_images/'    => $destination_path . e107::getFolder('IMAGES'),
+			$zipBase . '/e107_languages/' => $destination_path . e107::getFolder('LANGUAGES'),
+			$zipBase . '/e107_media/'     => $destination_path . e107::getFolder('MEDIA'),
+			$zipBase . '/e107_plugins/'   => $destination_path . e107::getFolder('PLUGINS'),
+			$zipBase . '/e107_system/'    => $destination_path . e107::getFolder('SYSTEM'),
+			$zipBase . '/e107_themes/'    => $destination_path . e107::getFolder('THEMES'),
+			$zipBase . '/e107_web/'       => $destination_path . e107::getFolder('WEB'),
+			$zipBase . '/'                => $destination_path
+		);
+
 		$srch = array_keys($newFolders);
 		$repl = array_values($newFolders);
 
@@ -3319,16 +3470,9 @@ class e_file
 		$skipped = array();
 
 
-		foreach ($unarc as $k => $v)
+		foreach($unarc as $k => $v)
 		{
-			// Folder-scoped extract: skip anything outside the requested folder.
-			if ($keepPrefix !== '' && strpos($v['stored_filename'], $keepPrefix) !== 0)
-			{
-				$skipped[] = $v['stored_filename'];
-				continue;
-			}
-
-			if (
+			if(
 				$this->matchFound($v['stored_filename'], $excludeMatch) ||
 				in_array($v['stored_filename'], $excludes)
 			)
@@ -3340,52 +3484,24 @@ class e_file
 			$oldPath = $v['filename'];
 			$newPath = str_replace($srch, $repl, $v['stored_filename']);
 
-			if ($v['folder'] == 1)
+			if($v['folder'] == 1 && is_dir($newPath))
 			{
-				if (is_dir($newPath))
-				{
-					continue;
-				}
-				if (!is_dir(dirname($newPath)))
-				{
-					@mkdir(dirname($newPath), 0755, true);
-				}
-				$success[] = $newPath;   // just mark folder as done
+				// $skipped[] =  $newPath. " (already exists)";
 				continue;
 			}
-
-			// File only
-			$dir = dirname($newPath);
-			if (!is_dir($dir) && !@mkdir($dir, 0755, true))
-			{
-				// optional: log failure if needed
-			}
-
-			if (@copy($oldPath, $newPath))
-			{
-				@unlink($oldPath);
-				$success[] = $newPath;
-			}
-			else
+			@mkdir(dirname($newPath), 0755, true);
+			if(!rename($oldPath, $newPath))
 			{
 				$error[] = $newPath;
 			}
-		}
+			else
+			{
+				$success[] = $newPath;
+			}
 
-		// Cleanup temp zip file
-		if (file_exists(e_TEMP . $localfile))
-		{
-			unlink(e_TEMP . $localfile);
-		}
-
-		// Cleanup extracted temp folder
-		if (is_dir(e_TEMP . $zipBase))
-		{
-			$this->removeDir(e_TEMP . $zipBase);
 		}
 
 		return array('success' => $success, 'error' => $error, 'skipped' => $skipped);
-
 	}
 
 

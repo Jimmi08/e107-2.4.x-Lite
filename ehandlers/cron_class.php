@@ -26,6 +26,8 @@ define ('CRON_RETRIGGER_DEBUG', false);
  */
 class _system_cron
 {
+	const REDACTED = '[redacted]';
+
 	function __construct()
 	{
 		e107::coreLan('cron', true);
@@ -186,12 +188,12 @@ class _system_cron
 		}
 
 		$message .= "<h3>e107 PATHS</h3>";
-		$message .= $this->renderTable($userVars);
+		$message .= $this->renderTable($this->withoutSecrets($userVars));
 
 		$message .= "<h3>_SERVER</h3>";
 		$message .= $this->renderTable($this->withoutSecrets($_SERVER));
 		$message .= "<h3>_ENV</h3>";
-		$message .= $this->renderTable($_ENV);
+		$message .= $this->renderTable($this->withoutSecrets($_ENV));
 		$message .= "<h3>LAST ERROR</h3>";
 		$message .= "<pre>".print_r(error_get_last(), true)."</pre>";
 		$message .= "<h3>HEADERS LIST</h3>";
@@ -225,19 +227,68 @@ class _system_cron
 	/**
 	 * @param array $vars
 	 * @return array
-	 *   $vars without the keys that carry the request's token, its HTTP credentials or the request line.
+	 *   $vars without the keys that name a secret, and with every occurrence of a value e107
+	 *   knows to be secret replaced by {@see _system_cron::REDACTED}.
 	 */
 	private function withoutSecrets(array $vars)
 	{
-		foreach(array_keys($vars) as $key)
+		$secrets = $this->secretValues();
+
+		foreach($vars as $key => $value)
 		{
-			if(preg_match('/token|auth|argv|query_string|request_uri/i', $key))
+			if(preg_match('/token|auth|argv|query_string|request_uri|passw|secret/i', $key))
 			{
 				unset($vars[$key]);
+				continue;
 			}
+
+			$vars[$key] = $this->redact($value, $secrets);
 		}
 
 		return $vars;
+	}
+
+	/**
+	 * @param mixed $value
+	 * @param string[] $secrets
+	 * @return mixed
+	 *   $value with every occurrence of a secret replaced, recursing into arrays.
+	 */
+	private function redact($value, array $secrets)
+	{
+		if(is_array($value))
+		{
+			foreach($value as $key => $item)
+			{
+				$value[$key] = $this->redact($item, $secrets);
+			}
+
+			return $value;
+		}
+
+		if(!is_string($value))
+		{
+			return $value;
+		}
+
+		return str_replace($secrets, self::REDACTED, $value);
+	}
+
+	/**
+	 * @return string[]
+	 *   The values that must not leave the site in a diagnostic dump.
+	 */
+	private function secretValues()
+	{
+		$secrets = array();
+		$token = e107::getPref('e_cron_pwd');
+
+		if(is_string($token) && $token !== '')
+		{
+			$secrets[] = $token;
+		}
+
+		return $secrets;
 	}
 
 	/**
@@ -1741,15 +1792,15 @@ class cronSetup
 	/**
 	 * What this server says about itself.
 	 *
-	 * Every probe is suppressed: open_basedir turns a stat outside the site into
-	 * a warning, and a warning is not worth a broken admin page.
+	 * Paths open_basedir puts out of reach are never probed, and every probe
+	 * that does run is suppressed, so a restricted host reports what it can
+	 * see instead of a page of warnings.
 	 *
 	 * @return array
 	 *   array('os' => 'unix'|'windows', 'panel' => 'cpanel'|'directadmin'|'plesk'|null,
 	 *   'panel_url' => string|null, 'php_version' => string, 'php_cli' => string|null,
-	 *   'php_cli_pinned' => bool, 'open_basedir' => bool, 'cron_executable' => bool,
-	 *   'cron_mode' => string|null, 'root' => string, 'siteurl' => string,
-	 *   'https' => bool, 'host' => string)
+	 *   'open_basedir' => bool, 'cron_executable' => bool, 'cron_mode' => string|null,
+	 *   'root' => string, 'siteurl' => string, 'https' => bool, 'host' => string)
 	 */
 	public static function detectEnvironment()
 	{
@@ -1762,7 +1813,7 @@ class cronSetup
 
 		foreach(self::panelProbes() as $name => $probe)
 		{
-			if(@is_file($probe['file']))
+			if(self::withinOpenBasedir($probe['file']) && @is_file($probe['file']))
 			{
 				$panel = $name;
 				$panelPort = $probe['port'];
@@ -1774,7 +1825,7 @@ class cronSetup
 
 		foreach(self::candidatePaths($os, PHP_VERSION, PHP_BINDIR) as $candidate)
 		{
-			if(@is_file($candidate) && @is_executable($candidate))
+			if(self::withinOpenBasedir($candidate) && @is_file($candidate) && @is_executable($candidate))
 			{
 				$cli = $candidate;
 				break;
@@ -1790,7 +1841,6 @@ class cronSetup
 			'panel_url'       => ($panel !== null && $host !== '') ? 'https://'.$host.':'.$panelPort.'/' : null,
 			'php_version'     => PHP_VERSION,
 			'php_cli'         => $cli,
-			'php_cli_pinned'  => ($cli !== null && self::namesVersion($cli)),
 			'open_basedir'    => ((string) ini_get('open_basedir') !== ''),
 			'cron_executable' => (bool) @is_executable($cronFile),
 			'cron_mode'       => ($mode === false) ? null : substr(decoct($mode), -3),
@@ -1887,6 +1937,64 @@ class cronSetup
 	}
 
 	/**
+	 * Whether open_basedir is likely to let this process stat the path.
+	 *
+	 * PHP compares against each entry as a directory name rather than as a
+	 * string, and resolves symbolic links before it does. This reads the same
+	 * setting the same way, without the link resolution, and it allows the path
+	 * whenever an entry is relative, so the answer is "worth attempting" and
+	 * not a guarantee.
+	 *
+	 * @param string $path
+	 *   An absolute path.
+	 * @param string|null $basedir
+	 *   An open_basedir setting; read from the running configuration when null.
+	 * @return bool
+	 */
+	public static function withinOpenBasedir($path, $basedir = null)
+	{
+		if($basedir === null)
+		{
+			$basedir = (string) ini_get('open_basedir');
+		}
+
+		if($basedir === '')
+		{
+			return true;
+		}
+
+		foreach(explode(PATH_SEPARATOR, $basedir) as $prefix)
+		{
+			if($prefix === '')
+			{
+				continue;
+			}
+
+			if(!self::isAbsolutePath($prefix))
+			{
+				return true;
+			}
+
+			if(strpos($path, rtrim($prefix, '/\\').DIRECTORY_SEPARATOR) === 0)
+			{
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	/**
+	 * @param string $path
+	 *   A non-empty path.
+	 * @return bool
+	 */
+	private static function isAbsolutePath($path)
+	{
+		return $path[0] === '/' || $path[0] === '\\' || strpos($path, ':') === 1;
+	}
+
+	/**
 	 * @return array
 	 */
 	private static function panelProbes()
@@ -1896,16 +2004,6 @@ class cronSetup
 			'directadmin' => array('file' => '/usr/local/directadmin/conf/directadmin.conf', 'port' => 2222),
 			'plesk'       => array('file' => '/usr/local/psa/version', 'port' => 8443),
 		);
-	}
-
-	/**
-	 * @param string $path
-	 * @return bool
-	 *   Whether the path names a PHP version, so that the command it appears in stops working on an upgrade.
-	 */
-	private static function namesVersion($path)
-	{
-		return (bool) preg_match('#php[-/\\\\]?\d#i', (string) $path);
 	}
 
 	/**
@@ -2021,15 +2119,15 @@ class cronSetup
 		{
 			$parts = explode('.', (string) $env['php_version']);
 			$notes[] = str_replace('[x]', $parts[0].'.'.(isset($parts[1]) ? $parts[1] : '0'), LAN_CRON_SETUP_PHP_NOT_FOUND);
+
+			if(!empty($env['open_basedir']))
+			{
+				$notes[] = LAN_CRON_SETUP_OPEN_BASEDIR_NOTE;
+			}
 		}
 		else
 		{
-			$notes[] = str_replace(array('[x]', '[y]'), array($env['php_version'], $env['php_cli']), LAN_CRON_SETUP_PHP_FOUND);
-		}
-
-		if(!empty($env['open_basedir']))
-		{
-			$notes[] = LAN_CRON_SETUP_OPEN_BASEDIR_NOTE;
+			$notes[] = str_replace('[x]', $env['php_cli'], LAN_CRON_SETUP_PHP_FOUND);
 		}
 
 		$notes[] = ($env['os'] === 'windows') ? LAN_CRON_SETUP_SCHTASKS_ACCOUNT_NOTE : LAN_CRON_SETUP_PANEL_HOWTO;

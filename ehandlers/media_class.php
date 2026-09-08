@@ -593,11 +593,6 @@ class e_media
 
 		// fail closed; the default places the specified category before the _common categories.
 		// LITE MODIFICATION: media_category ASC dropped from default
-		// ORDER BY (kept only media_id DESC). Upstream's category sort
-		// ordered images incorrectly in our case. Revert only if upstream
-		// fixes the category sort or our usage changes.
-		// NOTE: re-applied onto upstream's refactored IdentifierFilter::orderBy
-		// fail-closed default (old Lite used an if/else preg_match branch).
 		$safeOrderBy = ($orderby && IdentifierFilter::orderBy($orderby) !== false) ? $orderby : 'media_id DESC';
 
 		$qb->orderBy($safeOrderBy);
@@ -1212,7 +1207,7 @@ class e_media
 		if(empty($this->mimePaths[$pmime]))
 		{
 			$this->log("Couldn't detect mime-type ($mime).");
-			$text = $text = str_replace('[x]',$mime,IMALAN_111); //FIXME LAN IMALAN_112 is not generic. This method can be called from anywhere, not only eadmin/image.php.
+			$text = $text = str_replace('[x]',$mime,IMALAN_111); //FIXME LAN IMALAN_112 is not generic. This method can be called from anywhere, not only e107_admin/image.php.
 			$mes->add($text, E_MESSAGE_ERROR);
 			return FALSE;
 		}

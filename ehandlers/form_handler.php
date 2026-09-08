@@ -594,7 +594,7 @@ class e_form
 		}
 
 		$id = !empty($options['id']) ? 'id="'.$options['id'].'" ' : '';
-		$toggle = ($this->_bootstrap > 3) ? 'data-bs-toggle="tab"' : 'data-toggle="tab"';
+		$toggle = $this->tp->toAttributes($this->tp->bootstrapData(['toggle' => 'tab']));
 
 		$text  ='
 		<!-- Nav tabs -->
@@ -617,7 +617,7 @@ class e_form
 			}
 
 			$active = ($key == $act) ? ' active' : '';
-			$text .= '<li class="nav-item'.$active.'"><a class="nav-link'.$active.'" href="#'.$key.'" '.$toggle.'>'.$tab['caption'].'</a></li>';
+			$text .= '<li class="nav-item'.$active.'"><a class="nav-link'.$active.'" href="#'.$key.'"'.$toggle.'>'.$tab['caption'].'</a></li>';
 			$c++;
 		}
 
@@ -3592,7 +3592,7 @@ class e_form
 			<button type="submit" name="etrigger_filter" value="etrigger_filter" id="etrigger-filter" class="btn filter e-hide-if-js btn-primary"><span>Filter</span></button>
 
 						<span class="indicator" style="display: none;">
-							<img src="/e107_2.0/eimages/generic/loading_16.gif" class="icon action S16" alt="Loading...">
+							<img src="/e107_2.0/e107_images/generic/loading_16.gif" class="icon action S16" alt="Loading...">
 						</span>	
 
 		*/
@@ -5319,6 +5319,29 @@ var_dump($select_options);*/
 	}
 
 	/**
+	 * Inline-edit option list for a userclass field, extended with any class the record already holds.
+	 * @param array $parms field read/write parms; 'classlist' selects the option source
+	 * @param string|int $value comma-separated class ids currently stored against the record
+	 * @return array class id => class name
+	 */
+	private function userclassInlineOptions($parms, $value)
+	{
+		$options = $this->_uc->uc_required_class_list(vartrue($parms['classlist'], 'public,guest,nobody,member,admin,main,classes'));
+
+		foreach(explode(',', (string) $value) as $cid)
+		{
+			$cid = trim($cid);
+
+			if($cid !== '' && !isset($options[$cid]))
+			{
+				$options[$cid] = $this->_uc->getName($cid);
+			}
+		}
+
+		return $options;
+	}
+
+	/**
 	 * Check if a value should be linked and wrap in <a> tag if required.
 	 * @todo global pref for the target option?
 	 * @param mixed $value
@@ -5426,7 +5449,7 @@ var_dump($select_options);*/
 		$editIconDefault = deftrue('ADMIN_EDIT_ICON', $tp->toGlyph('fa-edit'));
 		$deleteIconDefault = deftrue('ADMIN_DELETE_ICON', $tp->toGlyph('fa-trash'));
 
-		// option to set custom icons. @see eadmin/image.php media_form_ui::options
+		// option to set custom icons. @see e107_admin/image.php media_form_ui::options
 		if(!empty($attributes['icons']))
 		{
 			$editIconDefault = !empty($attributes['icons']['edit']) ? $attributes['icons']['edit'] : $editIconDefault;
@@ -6244,10 +6267,8 @@ var_dump($select_options);*/
 				{
 					// $mode = preg_replace('/[^\w]/', '', vartrue($_GET['mode'], ''));
 
-					$uc_options = vartrue($parms['classlist'], 'public,guest,nobody,member,admin,main,classes'); // defaults to 'public,guest,nobody,member,classes' (userclass handler)
+					$array = $this->userclassInlineOptions($parms, $value);
 					unset($parms['classlist']);
-
-					$array = e107::getUserClass()->uc_required_class_list($uc_options); //XXX Ugly looking (non-standard) function naming - TODO discuss name change.
 
 					$value = $this->renderInline($field, $id, $attributes['title'], $value, $dispvalue, 'select', $array, array('placement'=>'left'));
 				}
@@ -6280,8 +6301,7 @@ var_dump($select_options);*/
 				// Inline Editing.  
 				if(!vartrue($attributes['noedit']) && vartrue($parms['editable']) && !vartrue($parms['link'])) // avoid bad markup, better solution coming up
 				{
-					$uc_options = vartrue($parms['classlist'], 'public,guest, nobody,member,admin,main,classes'); // defaults to 'public,guest,nobody,member,classes' (userclass handler)
-					$array = e107::getUserClass()->uc_required_class_list($uc_options); //XXX Ugly looking (non-standard) function naming - TODO discuss name change.
+					$array = $this->userclassInlineOptions($parms, $value);
 
 					//NOTE Leading ',' required on $value; so it picks up existing value.
 					$value = $this->renderInline($field,$id,$attributes['title'],",$value",$dispvalue,'checklist',$array,['placement'=>'bottom']);
@@ -8241,11 +8261,7 @@ var_dump($select_options);*/
 
 		$writeParms = $att['writeParms'];
 
-		// LITE MODIFICATION: label suppression for bbarea/method fields.
-		// Upstream emits labels here in all cases; Lite suppresses them
-		// for these field types. Intentional Lite UI choice. Remove only
-		// if Lite's form rendering convention changes.
-		if ((vartrue($att['type']) === 'bbarea' || vartrue($att['type']) === 'method') && !empty($writeParms['nolabel']))
+		if(vartrue($att['type']) === 'bbarea' || !empty($writeParms['nolabel']))
 		{
 			$text = "
 			<tr>

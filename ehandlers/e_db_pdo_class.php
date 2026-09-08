@@ -144,7 +144,7 @@ class e_db_pdo implements e_db
 		catch(PDOException $ex)
 		{
 			$this->mySQLlastErrText = $ex->getMessage();
-			$this->mySQLlastErrNum = $ex->getCode();
+			$this->mySQLlastErrNum = $this->_errorNumber($ex);
 			$this->dbg->log($this->mySQLlastErrText);
 			return false;
 		}
@@ -201,7 +201,7 @@ class e_db_pdo implements e_db
 		catch (PDOException $e)
 		{
 			$this->mySQLlastErrText = $e->getMessage();
-			$this->mySQLlastErrNum = $e->getCode();
+			$this->mySQLlastErrNum = $this->_errorNumber($e);
 			return false;
 	    }
 
@@ -313,6 +313,7 @@ class e_db_pdo implements e_db
 		if(!is_string($statement) || trim($statement) === '')
 		{
 			$this->mySQLlastErrText = 'Empty or non-string query passed to '.__FUNCTION__.'()';
+			$this->mySQLlastErrNum = -1;
 
 			return false;
 		}
@@ -349,7 +350,7 @@ class e_db_pdo implements e_db
 			{
 				$sQryRes = false;
 				$this->mySQLlastErrText = $ex->getMessage();
-				$this->mySQLlastErrNum = $ex->getCode();
+				$this->mySQLlastErrNum = $this->_errorNumber($ex);
 			}
 		}
 		else
@@ -376,7 +377,7 @@ class e_db_pdo implements e_db
 			{
 				$sQryRes = false;
 				$this->mySQLlastErrText = $ex->getMessage();
-				$this->mySQLlastErrNum = $ex->getCode();
+				$this->mySQLlastErrNum = $this->_errorNumber($ex);
 			}
 		}
 
@@ -462,6 +463,10 @@ class e_db_pdo implements e_db
 	{
 		$this->_notifyDeprecated('select', 'Use the query builder: $sql->createQueryBuilder()->select(...)->from(\'table\')->where(...)->fetchAll().');
 
+		if(($table = $this->_safeIdentifier($table)) === false)
+		{
+			return $this->_refuseIdentifier(__FUNCTION__);
+		}
 
 		$table = $this->hasLanguage($table);
 
@@ -620,6 +625,11 @@ class e_db_pdo implements e_db
 	{
 		$this->_notifyDeprecated('count', 'Use the query builder: $sql->createQueryBuilder()->selectCount()->from(\'table\')->where(...)->fetchOne().');
 
+		if ($fields != 'generic' && ($table = $this->_safeIdentifier($table)) === false)
+		{
+			return $this->_refuseIdentifier(__FUNCTION__);
+		}
+
 		$table = $this->hasLanguage($table);
 
 		if ($fields == 'generic')
@@ -696,6 +706,11 @@ class e_db_pdo implements e_db
 	function delete($table, $arg = '', $debug = false, $log_type = '', $log_remark = '')
 	{
 		$this->_notifyDeprecated('delete', 'Use the query builder: $sql->createQueryBuilder()->delete(\'table\')->where(...)->execute().');
+
+		if(($table = $this->_safeIdentifier($table)) === false)
+		{
+			return $this->_refuseIdentifier(__FUNCTION__);
+		}
 
 		$table = $this->hasLanguage($table);
 		$this->mySQLcurTable = $table;
@@ -928,7 +943,11 @@ class e_db_pdo implements e_db
 	 */
 	public function fields($table, $prefix = '', $retinfo = false)
 	{
-
+		if(($table = $this->_safeIdentifier($table)) === false
+			|| ($prefix != '' && ($prefix = $this->_safeIdentifier($prefix, true)) === false))
+		{
+			return $this->_refuseIdentifier(__FUNCTION__);
+		}
 
 		$this->_getMySQLaccess();
 
@@ -1238,6 +1257,7 @@ class e_db_pdo implements e_db
 		catch (\Exception $e)
 		{
 			$this->mySQLlastErrText = 'mysqldump-php error: ' .$e->getMessage();
+			$this->mySQLlastErrNum = $this->_errorNumber($e);
 		    return false;
 		}
 
@@ -1273,6 +1293,27 @@ class e_db_pdo implements e_db
 		return $from." :: ".$this->mySQLlastErrText;
 
 
+	}
+
+
+	/**
+	 * MySQL error number behind a PDO exception, matching what {@see e_db_mysql} records; -1 when the error carries no driver number.
+	 *
+	 * Before PHP 7.3.22 and 7.4.10 (php-src bug #64705) a connection failure sets no errorInfo and puts the errno in the exception code as an int, while a SQLSTATE always arrives there as a string, so the test is is_int() and never is_numeric(): SQLSTATE values such as '23000' are all digits.
+	 *
+	 * @param Exception $ex
+	 * @return int
+	 */
+	private function _errorNumber($ex)
+	{
+		if(isset($ex->errorInfo[1]) && (int) $ex->errorInfo[1] !== 0)
+		{
+			return (int) $ex->errorInfo[1];
+		}
+
+		$code = $ex->getCode();
+
+		return (is_int($code) && $code !== 0) ? $code : -1;
 	}
 
 

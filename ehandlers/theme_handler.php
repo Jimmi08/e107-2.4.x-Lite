@@ -1526,7 +1526,7 @@ class themeHandler
 			$this->id = $this->curTheme;
 
 			$this->setLayouts(); // Update the layouts in case they have been manually changed.
-			$this->SetCustomPages($_POST['custompages']);
+			$this->SetCustomPages(varset($_POST['custompages']));
 			$this->setStyle();
 
 			e107::getConfig()->save();
@@ -1942,7 +1942,7 @@ class themeHandler
 
 			foreach ($var as $field=>$val)
 			{
-				if(is_numeric($field))
+				if(self::isThemeConfigMarkupRow($field))
 				{
 					$text .= "<tr><td><b>".$val['caption']."</b>:</td><td colspan='2'>".$val['html']."<div class='field-help'>".$val['help']."</div></td></tr>";
 				}
@@ -1977,7 +1977,9 @@ class themeHandler
 
 
 	/**
-	 * @return bool|mixed|void
+	 * Stores the theme's own configuration preferences, reporting what {@see e_pref::save()} reported: false when the write failed, 0 when there was nothing to write; a pre-v2.1.4 theme's process() has no failure contract, so the false it is entitled to return is reported as 0.
+	 *
+	 * @return bool|int|mixed|void
 	 */
 	function setThemeConfig()
 	{
@@ -1989,42 +1991,113 @@ class themeHandler
 
 			if($name === 'theme_config') // v2.1.4 - don't use process() method.
 			{
-				$pref = e107::getThemeConfig();
-				$values = e107::getThemeConfig($this->id)->getPref();
+				$pref = e107::getThemeConfig($this->id);
+				$values = $pref->getPref();
 
 				$fields = call_user_func(array(&$this->themeConfigObj, 'config'));
 
 				foreach($fields as $field=>$data)
 				{
+					if(self::isThemeConfigMarkupRow($field))
+					{
+						continue;
+					}
+
 					if(!empty($data['multilan']))
 					{
-						$values[$field][e_LANGUAGE] =	$_POST[$field][e_LANGUAGE];							
+						if(!isset($values[$field]) || !is_array($values[$field]))
+						{
+							$values[$field] = array();
+						}
+
+						$values[$field][e_LANGUAGE] = isset($_POST[$field][e_LANGUAGE]) ? $_POST[$field][e_LANGUAGE] : '';
 					} else {
-						$values[$field] = $_POST[$field];
+						$values[$field] = isset($_POST[$field]) ? $_POST[$field] : self::themeConfigEmptyValue($data);
 					}
 				}
 
-				if($pref->setPref($values)->save(true,true,false))
+				$saved = $pref->setPref($values)->save(true,false,false);
+
+				if($saved !== false && $pref->hasData())
 				{
 					$siteThemePref = e107::getConfig()->get('sitetheme_pref');
-					if(!empty($siteThemePref))
+					if(!empty($siteThemePref) && $pref === e107::getThemeConfig())
 					{
 						e107::getConfig()->set('sitetheme_pref')->save(false,true,false); // remove old theme pref
 					}
 				}
 
-			//	if($pref->dataHasChanged())
-				{
+				e107::getCache()->clearAll('library'); // Need to clear cache in order to refresh library information.
 
-					e107::getCache()->clearAll('library'); // Need to clear cache in order to refresh library information.
-				}
-
-				return true;
+				return $saved;
 			}
 
 			e107::getCache()->clearAll('library');
-			return call_user_func(array(&$this->themeConfigObj, 'process')); //pre v2.1.4
+
+			$processed = call_user_func(array(&$this->themeConfigObj, 'process')); //pre v2.1.4
+
+			return $processed === false ? 0 : $processed;
 		}
+	}
+
+	/**
+	 * Whether a row of a theme's theme_config::config() is raw markup rather than a field declaration: {@see themeHandler::renderThemeConfig()} writes such a row out as it stands and {@see themeHandler::setThemeConfig()} stores nothing for it.
+	 *
+	 * @param int|string $field key of the row in a theme's theme_config::config()
+	 * @return bool
+	 */
+	private static function isThemeConfigMarkupRow($field)
+	{
+		return is_numeric($field);
+	}
+
+	/**
+	 * The value stored for a theme configuration field absent from the POST; the types {@see e_form::renderElement()} posts as name[] get an empty array and every other type ''. A type whose picker always emits a hidden input (media) never goes absent, so it stays scalar.
+	 *
+	 * @param array $data field declaration from a theme's theme_config::config()
+	 * @return array|string
+	 */
+	private static function themeConfigEmptyValue($data)
+	{
+		$type = varset($data['type']);
+
+		if($type === 'checkboxes' || $type === 'comma' || $type === 'userclasses')
+		{
+			return array();
+		}
+
+		if(!in_array($type, array('dropdown', 'lanlist', 'language', 'country', 'userclass', 'layouts'), true))
+		{
+			return '';
+		}
+
+		$parms = varset($data['writeParms'], array());
+
+		if($json = e107::getParser()->isJSON($parms))
+		{
+			$parms = $json;
+		}
+
+		if(is_string($parms))
+		{
+			parse_str($parms, $parms);
+		}
+
+		if($type === 'country' || $type === 'userclass' || $type === 'layouts' || ($type === 'dropdown' && isset($parms['optArray'])))
+		{
+			$options = $parms;
+		}
+		else
+		{
+			$options = varset($parms['__options'], array());
+		}
+
+		if(is_string($options))
+		{
+			parse_str($options, $options);
+		}
+
+		return empty($options['multiple']) ? '' : array();
 	}
 
 	/**
@@ -2108,27 +2181,20 @@ class themeHandler
 
 		$text = '<div style="padding-bottom:100px">';
 
-		// LITE MODIFICATION: Bootstrap 3 markup for the theme-manager nav.
-		// Lite's `backend` admin theme is Bootstrap 3 (not upstream's
-		// Bootstrap 5). Porting upstream's BS5 nav markup would visually
-		// break the admin theme manager. Revert to BS5 markup ONLY if
-		// Lite's admin `backend` theme is upgraded to Bootstrap 5.
-		// Distinct from library_manager.php — that bumps the FRONTEND
-		// library (BS 5.2 -> 5.3); admin backend stays BS3.
 		$text .= "
 
         <ul class='nav nav-tabs'>
-        <li class='active'><a data-toggle='tab' data-bs-toggle='tab' href='#core-thememanager-configure'>".LAN_CONFIGURE."</a></li>";
-		
+        <li class='nav-item active'><a class='nav-link active' data-toggle='tab' data-bs-toggle='tab' href='#core-thememanager-configure'>".LAN_CONFIGURE."</a></li>";
+
 
 		if($this->themeConfigObj && call_user_func(array(&$this->themeConfigObj, 'config')) && $mode == self::RENDER_SITEPREFS)
 		{
-			$text .= "<li><a data-toggle='tab' data-bs-toggle='tab' href='#core-thememanager-customconfig'>".LAN_PREFS."</a></li>\n";
+			$text .= "<li class='nav-item'><a class='nav-link' data-toggle='tab' data-bs-toggle='tab' href='#core-thememanager-customconfig'>".LAN_PREFS."</a></li>\n";
 		}
 
 		if($this->themeConfigObj && call_user_func(array(&$this->themeConfigObj, 'help')))
 		{
-			$text .= "<li><a data-toggle='tab' data-bs-toggle='tab' href='#core-thememanager-help'>".LAN_HELP."</a></li>\n";
+			$text .= "<li class='nav-item'><a class='nav-link' data-toggle='tab' data-bs-toggle='tab' href='#core-thememanager-help'>".LAN_HELP."</a></li>\n";
 		}
 
 		$text .= "</ul>
@@ -2698,13 +2764,9 @@ class themeHandler
 			$mes->addDebug("Custom Pages: ".print_a($customPages,true));
 
 			$med = e107::getMedia();
-			$med->import('_common_image', e_THEME.$name, "^.*?logo.*?(\.png|\.jpeg|\.jpg|\.JPG|\.GIF|\.PNG)$");
-			// LITE MODIFICATION: _common_image imported from theme /install/
-			// subdir, not theme root. Lite theme-packaging convention places
-			// install assets in /install/. Revert only if Lite's theme
-			// packaging convention changes.
-			$med->import('_common_image', e_THEME.$name."/install/", '', 'min-size=20000');
-			
+			$med->import('_common_image', e_THEME.$name, "^.*?logo.*?(\.png|\.jpeg|\.jpg|\.JPG|\.GIF|\.PNG)$");	
+			$med->import('_common_image', e_THEME.$name, '', 'min-size=20000');
+
 
 
 			$this->theme_adminlog('01', $name.', style.css');
@@ -2875,7 +2937,11 @@ class themeHandler
 
 		$msg = $this->setThemeConfig();
 
-		if($msg)
+		if($msg === false)
+		{
+			$mes->addError(LAN_THEME_OPTIONS_NOT_SAVED);
+		}
+		elseif($msg)
 		{
 			$mes->add(TPVLAN_37, E_MESSAGE_SUCCESS);
 			if(is_array($msg))
@@ -3044,8 +3110,8 @@ interface e_theme_config
 
 /**
  * Interface e_theme_render
- * @see ethemes/bootstrap3/theme.php
- * @see ethemes/bootstrap3/admin_theme.php
+ * @see e107_themes/bootstrap3/theme.php
+ * @see e107_themes/bootstrap3/admin_theme.php
  */
 interface e_theme_render
 {

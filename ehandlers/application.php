@@ -175,18 +175,6 @@ class e_url
 				if($newLocation != $this->_request)
 				{
 					$redirect = e107::getParser()->replaceConstants($newLocation);
-
-					// LITE FEATURE — do not remove when syncing from upstream.
-					// Upstream's e_url 'redirect' key performs a rewrite, not a true
-					// HTTP redirect. Lite adds a separate 'norewrite' key so an e_url
-					// rule can request a classic 301 redirect instead. Changing the
-					// core 'redirect' key's behaviour would be a breaking change, so
-					// this is implemented as an additive key.
-					if (isset($v['norewrite']) && $v['norewrite'])
-					{
-						e107::redirect($redirect, 301);
-					}
-
 					list($file,$query) = explode("?", $redirect,2);
 
 					$get = array();
@@ -1298,8 +1286,8 @@ class eRouter
 	 * The only exception are plugins - if plugin requires install (plugin.xml) and it is not installed,
 	 * it won't be registered
 	 * Another important thing is - core has always higher priority, as plugins are not allowed to 
-	 * directly override core modules. At this moment, core modules could be overloaded only via override configs (ecore/override/url/) 
-	 * and controllers (ecore/override/controllers) 
+	 * directly override core modules. At this moment, core modules could be overloaded only via override configs (e107_core/override/url/) 
+	 * and controllers (e107_core/override/controllers) 
 	 * This array is stored as url_modules core preference 
 	 * 
 	 * @param string $type possible values are all|plugin|core|override
@@ -5279,8 +5267,7 @@ class eHelper
 	 */
 	public static function removeTrackers($get = array())
 	{
-		// LITE FEATURE — do not remove gtm_debug when sync
-		$trackers = array('fbclid','utm_source','utm_medium','utm_content','utm_campaign','elan', 'msclkid', 'gclid', 'gad', 'gad_source', 'mcp_token', 'gtm_debug');
+		$trackers = array('fbclid','utm_source','utm_medium','utm_content','utm_campaign','elan', 'msclkid', 'gclid', 'gad', 'gad_source', 'mcp_token');
 
 		foreach($trackers as $val)
 		{

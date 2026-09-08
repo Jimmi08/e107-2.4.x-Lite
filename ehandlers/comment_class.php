@@ -717,6 +717,48 @@ class comment
 
 
 	/**
+	 * Whether the item accepts comments; a comment type core models no switch for passes.
+	 *
+	 * @param string|int $table comment type, or the core table name it maps to
+	 * @param int        $id    id of the item in that table
+	 * @return bool
+	 */
+	private function itemAcceptsComments($table, $id)
+	{
+		$sql = e107::getDb();
+		$id = (int) $id;
+		$type = $this->getCommentType($table);
+		$table = $this->getTable(is_numeric($type) ? (int) $type : $type);
+
+		switch ($table)
+		{
+			case 'news':
+				return (bool) $sql->createQueryBuilder()->select('news_id')->from('news')
+					->where('news_id', $id)->where('news_allow_comments', 0)->fetchRow();
+
+			case 'poll':
+				return (bool) $sql->createQueryBuilder()->select('poll_id')->from('polls')
+					->where('poll_id', $id)->where('poll_comment', 1)->fetchRow();
+
+			case 'page':
+				return (bool) $sql->createQueryBuilder()->select('page_id')->from('page')
+					->where('page_id', $id)->where('page_comment_flag', 1)->fetchRow();
+
+			case 'download':
+				return (bool) $sql->createQueryBuilder()->select('download_id')->from('download')
+					->where('download_id', $id)->where('download_comment', 1)->fetchRow();
+
+			case 'user':
+			case 'profile':
+				return !empty(e107::pref('core', 'profile_comments'))
+					&& (bool) $sql->createQueryBuilder()->select('user_id')->from('user')
+						->where('user_id', $id)->fetchRow();
+		}
+
+		return true;
+	}
+
+	/**
 	 * Add a comment to an item
 	 * e-token POST value should be always valid when using this method.
 	 *
@@ -771,6 +813,8 @@ class comment
 		}
 
 		if ($this->getCommentPermissions() != 'rw') return;
+
+		if (!$this->itemAcceptsComments($table, $id)) return false;
 
 		if ($user_func = e107::getOverride()->check($this,'enter_comment'))
 		{
@@ -1706,19 +1750,12 @@ class comment
 								->fetchRow();
 							if ($row2)
 							{
-								// LITE MODIFICATION
-								// WHAT: news_class.php require is kept commented out (Lite diverges from upstream here).
-								// WHY:  the code immediately after this point resolves the news comment title/URL
-								//       directly from the query row ($row2 -> news_title + e107::getUrl()->create(
-								//       'news/view/item', $row2)), so news_class does not need to be loaded here.
-								//       Upstream itself marks the equivalent require "// FIXME shouldn't be here." in comment.php.
-								// REVERT WHEN: news-type comment rendering breaks without it, or upstream removes the require.
-								//require_once(e_HANDLER.'news_class.php');
+								require_once(e_HANDLER.'news_class.php');
 								$ret['comment_type'] = COMLAN_TYPE_1;
 								$ret['comment_title'] = $tp->toHTML($row2['news_title'], true, 'emotes_off, no_make_clickable');
-								$ret['comment_url'] = e107::url('news', 'item', $row2);// LITE MODIFICATION (#84): news SEF via e107::url()
+								$ret['comment_url'] = e107::getUrl()->create('news/view/item', $row2);//e_HTTP."comment.php?comment.news.".$row['comment_item_id'];
 								$ret['comment_category_heading'] = COMLAN_TYPE_1;
-								$ret['comment_category_url'] = e107::url('news', 'index');// LITE MODIFICATION (#84): news SEF via e107::url()
+								$ret['comment_category_url'] = e107::getUrl()->create('news');//e_HTTP."news.php";
 							}
 							break;
 						case '1': //	article, review or content page - defunct category, but filter them out

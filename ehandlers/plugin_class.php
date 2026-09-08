@@ -169,6 +169,7 @@ class e_plugin
 		$this->_installed = array();
 		$this->_addons = array();
 		e107::setRegistry('core/e107/addons/e_url');
+		e107\Language\GlobalLanguageList::invalidate();
 
 		$this->_init(true);
 		$this->_initIDs();
@@ -409,23 +410,6 @@ class e_plugin
 
 		return str_replace("'", '', e107::getParser()->toHTML($att['description'], FALSE, 'defs, emotes_off'));
 
-	}
-
-
-	/**
-	 * LITE FEATURE: admin-menu sort order from the primary adminLinks
-	 * <link order="N"> attribute. Upstream gives a plugin no way to influence
-	 * its admin-menu position; Lite adds it. Do not remove when syncing.
-	 * Lower = earlier. Missing/invalid => 999 (sorts after explicitly-ordered
-	 * plugins, preserving legacy alphabetical behaviour). See issue #92.
-	 *
-	 * @return int
-	 */
-	public function getOrder()
-	{
-		$att = varset($this->_data[$this->_plugdir]['adminLinks']['link'][0]['@attributes']);
-
-		return isset($att['order']) ? (int) $att['order'] : 999;
 	}
 
 
@@ -695,7 +679,7 @@ class e_plugin
 		}
 
 
-        if(e_PAGE == 'e107_update.php')
+        if(defset('e_PAGE') == 'e107_update.php')
         {
             return null;
         }
@@ -1268,7 +1252,6 @@ class e_plugin
 		$core->set('bbcode_list', array())
 			 ->set('shortcode_legacy_list', array())
 			 ->set('shortcode_list', array())
-			 ->set('lan_global_list', array())
 			 ->set('wysiwyg_list', array());
 
 		$paths = $this->getDetected();
@@ -1294,11 +1277,6 @@ class e_plugin
 
 			if ($is_installed)
 			{
-				if($hasLAN = $this->hasLanGlobal())
-				{
-					$core->setPref('lan_global_list/'.$hasLAN, $hasLAN);
-				}
-
 				foreach ($tmp as $val)
 				{
 					if (strpos($val, 'e_') === 0)
@@ -1816,14 +1794,13 @@ class e107plugin
 						$this->XmlLanguageFiles('upgrade');
 					}
 
-					// Reconcile the global/log language-file lists on a folder scan too, not just 'refresh'.
+					// Reconcile the log language-file list on a folder scan too, not just 'refresh'.
 					// XmlLanguageFileCheck() forces an 'uninstall' (removePref) when the plugin is not
-					// installed, so a stale lan_global_list/lan_log_list entry for an uninstalled plugin
-					// is cleared instead of surviving every scan. See https://github.com/e107inc/e107/issues/5709
+					// installed, so a stale lan_log_list entry for an uninstalled plugin is cleared
+					// instead of surviving every scan. See https://github.com/e107inc/e107/issues/5709
 					if ($mode == 'refresh' || $mode == 'update')
 					{
 						if ($this->XmlLanguageFileCheck('_log', 'lan_log_list', 'refresh', $pluginDBList[$plugin_path]['plugin_installflag'], FALSE, $plugin_path)) $sp = TRUE;
-						if ($this->XmlLanguageFileCheck('_global', 'lan_global_list', 'refresh', $pluginDBList[$plugin_path]['plugin_installflag'], TRUE, $plugin_path)) $sp = TRUE;
 					}
 
 					// Check for missing plugin_category in plugin table.
@@ -1912,19 +1889,6 @@ class e107plugin
 			{ // In table, not on server - delete it
 				$sql->createQueryBuilder()->delete('plugin')->where('plugin_id', (int) $plug_info['plugin_id'])->execute();
 				//			echo "Deleted: ".$plug_path."<br />";
-
-				// LITE MODIFICATION: plug_installed orphan cleanup.
-				// Lite externalises plugins to separate repositories, so plugins
-				// genuinely disappear from disk. When a plugin row is deleted
-				// because the folder is gone, Lite also unsets the matching
-				// plug_installed pref entry, and a follow-up loop removes any
-				// pref entry whose folder no longer exists. Stale-pref hygiene
-				// not needed in upstream's bundled-plugins model.
-				if (isset($p_installed[$plug_path]))
-				{
-					unset($p_installed[$plug_path]);
-					$sp = TRUE; // triggers pref save + rebuildUrlConfig + cache clear
-				}
 				}
 			if ($plug_info['status'] == 'update')
 			{
@@ -1939,26 +1903,14 @@ class e107plugin
 				//			echo "Updated: ".$plug_path."<br />";
 				}
 		}
-
-		// LITE MODIFICATION (cont. of plug_installed orphan cleanup): remove any
-		// plug_installed pref entry whose plugin folder no longer exists on disk
-		// (Lite externalises plugins to separate repos). Not needed upstream.
-		foreach ($p_installed as $plug_path => $version)
-		{
-			if (!is_dir(e_PLUGIN . $plug_path))
-			{
-				unset($p_installed[$plug_path]);
-				$sp = TRUE;
-				$mes->addDebug('Removed orphaned plug_installed entry: ' . $plug_path);
-			}
-		}
-
 		if ($sp/* && vartrue($p_installed)*/)
 		{
 			e107::getConfig('core')->setPref('plug_installed', $p_installed);
 			$this->rebuildUrlConfig();
 			e107::getConfig('core')->save(true,false,false);
 		}
+
+		e107::getPlug()->clearCache();
 
 		// Triggering system (post) event.
 		e107::getEvent()->trigger('system_plugins_table_updated', array(
@@ -2973,14 +2925,13 @@ class e107plugin
 		$config = eRouter::adminBuildConfig(e107::getPref('url_config'), $modules); // merge with current config
 		$locations = eRouter::adminBuildLocations($modules); // rebuild locations pref
 		$aliases = eRouter::adminSyncAliases(e107::getPref('url_aliases'), $config); // rebuild aliases
-			
-		// set new values, changes should be saved outside this methods
-	/*	e107::getConfig()
+
+		e107::getConfig()
 			->set('url_aliases', $aliases)
 			->set('url_config', $config)
 			->set('url_modules', $modules)
 			->set('url_locations', $locations);
-			*/
+
 		eRouter::clearCache();
 	}
 
@@ -3660,16 +3611,15 @@ class e107plugin
 
 						if(!$sql->db_Query($query))
 						{
-							$errno = (string) $sql->getLastErrorNumber();
+							$errno = $sql->getLastErrorNumber();
 							$error = $sql->getLastErrorText();
 
 							// "Table already exists" is normal rather than a
 							// failure: uninstalling a plugin leaves its tables in
 							// place unless delete_tables was asked for, so every
 							// reinstall meets them again, and the table being
-							// there is all this step wanted. PDO reports it as
-							// SQLSTATE 42S01 and mysqli as 1050, so take either.
-							if(in_array($errno, array('42S01', '1050'), true))
+							// there is all this step wanted.
+							if((int) $errno === 1050)
 							{
 								$txt = "Table {$v} already present.";
 								$status = E_MESSAGE_INFO;
@@ -4027,15 +3977,8 @@ class e107plugin
 				case 'install':
 				case 'upgrade':
 				case 'refresh':
-					e107::getMessage()->addDebug("Adding ".$this->plugFolder." to lan_global_list");
 					e107::lan($this->plugFolder,'global',true);
-					$core->setPref('lan_global_list/'.$this->plugFolder, $this->plugFolder);
-					$updated = true;
 					break;
-				case 'uninstall':
-					$core->removePref('lan_global_list/'.$this->plugFolder);
-					$updated = true;
-				break;
 			}	
 		}
 			
