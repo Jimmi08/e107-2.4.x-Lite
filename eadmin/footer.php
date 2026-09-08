@@ -8,7 +8,7 @@
  *
  * Admin Footer
  *
- * $Source: /cvs_backup/e107_0.8/eadmin/footer.php,v $
+ * $Source: /cvs_backup/e107_0.8/e107_admin/footer.php,v $
  * $Revision$
  * $Date$
  * $Author$
@@ -113,13 +113,7 @@ if (varset($e107_popup) != 1)
 	//NEW - Iframe mod
 	if (!deftrue('e_IFRAME'))
 	{
-		// LITE MODIFICATION: admin template override allowed.
-		// $override=true (vs upstream's false) lets a custom admin theme
-		// override the admin template. Lite uses its own `backend` admin
-		// theme. See upstream issue #5722 — revert if upstream fixes the
-		// override default for admin templates, or if Lite stops shipping
-		// its own admin theme.
-		$ADMIN_FOOTER = e107::getCoreTemplate('admin', 'footer', true); 
+		$ADMIN_FOOTER = e107::getCoreTemplate('admin', 'footer', false);
 		e107::renderLayout($ADMIN_FOOTER, ['sc'=>'admin']);
 	}
 

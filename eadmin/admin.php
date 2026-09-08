@@ -6,7 +6,6 @@
  * Released under the terms and conditions of the
  * GNU General Public License (http://www.gnu.org/licenses/gpl.txt)
  *
- * LITE VERSION
  */
 
 define('e_ADMIN_HOME', true); // used by some admin shortcodes and class2.
@@ -59,8 +58,9 @@ if (varset($pref['adminstyle'])=='cascade' || varset($pref['adminstyle'])=='begi
 // which blocks Lite's custom eadmin/includes/dashboard.php and leaves
 // the admin dashboard blank. Lite ships dashboard.php as a style.
 // Revert condition: upstream adds 'dashboard' to this whitelist.
-if(in_array($pref['adminstyle'], array('infopanel', 'flexpanel', 'dashboard')))
+if (in_array($pref['adminstyle'], array('infopanel', 'flexpanel', 'dashboard')))
 {
+
 	require_once(e_ADMIN . 'includes/' . $pref['adminstyle'] . '.php');
 
 	$_class = 'adminstyle_' . $pref['adminstyle'];
@@ -306,7 +306,7 @@ class admin_start
 
         if($this->upgradeRequiredFirst)
         {
-            $message = "<p><a class='btn btn-lg btn-primary alert-link' href='e107_update.php'>".LAN_CONTINUE." ".SEP."</a></p>";
+            $message = "<p><a class='btn btn-lg btn-primary alert-link' href='e107_update.php?e-token=".defset('e_TOKEN')."'>".LAN_CONTINUE." ".SEP."</a></p>";
             e107::getMessage()->addInfo($message);
         }
 
@@ -462,12 +462,44 @@ TMPO;
 	 */
 	private function checkNewInstall()
 	{
-		// LITE MODIFICATION: upstream's new-install / pre-v2 upgrade nag
-		// (welcome + "installed before v2 release" alerts linking to e107inc
-		// discussions) is stripped — Lite is a standalone distribution, not
-		// an upgrade target for legacy e107.
-		// Revert condition: Lite becomes an upgrade path for pre-v2 sites.
-		return false;
+
+		$upgradeAlertFlag = e_CACHE.'dismiss.upgrade.alert.txt';
+
+		if(!empty($_GET['dismiss']) && $_GET['dismiss'] == 'upgrade')
+		{
+			if(!defined('e_TOKEN') || !empty($_GET['e-token']))
+			{
+				file_put_contents($upgradeAlertFlag,'true');
+			}
+			else
+			{
+				echo e107::getMessage()->addError(defset('ADLAN_REFUSED_TOKEN_MISSING', 'Invalid or missing security token.'))->render();
+			}
+		}
+
+		$pref = e107::getPref('install_date');
+
+		$v2ReleaseDate = strtotime('August 27, 2015');
+
+		$numDays = (abs($pref - time())/60/60/24);
+
+		if($numDays < 3) // installed in the past 3 days.
+		{
+			$srch = array('[',']');
+			$repl = array("<a href='https://github.com/e107inc/e107/discussions' target='_blank' rel='external'>","</a>");
+			echo e107::getMessage()->setTitle(ADLAN_190,E_MESSAGE_INFO)->addInfo("<p>".str_replace($srch,$repl,ADLAN_192)."</p>")->render();
+		}
+		elseif($pref < $v2ReleaseDate && !file_exists($upgradeAlertFlag)) // installed prior to v2 release.
+		{
+			$srch = array('[',']');
+			$repl = array("<a href='https://github.com/e107inc/e107/discussions' target='_blank' rel='external'>","</a>");
+			$message = str_replace($srch,$repl,ADLAN_191);
+			$message .= "<div class='text-right'><a class='btn btn-xs btn-primary ' href='admin.php?dismiss=upgrade&amp;e-token=".defset('e_TOKEN')."'>".LAN_DONT_SHOW_AGAIN."</a></div>"; //todo do it with class=e-ajax and data-dismiss='alert'
+			echo e107::getMessage()->setTitle(LAN_UPGRADING,E_MESSAGE_INFO)->addInfo($message)->render();
+		}
+
+		e107::getMessage()->setTitle(null,E_MESSAGE_INFO);
+
 
 	}
 
@@ -598,10 +630,27 @@ TMPO;
 
 	private function checkDependencies()
 	{
-		// LITE MODIFICATION: upstream warns when PHP_MAJOR_VERSION < 8. Lite
-		// officially supports PHP 7.4, so the "outdated PHP" nag is suppressed
-		// to avoid a permanent warning on supported installs.
-		// Revert condition: Lite raises its minimum PHP requirement to 8.x.
+		if(PHP_MAJOR_VERSION < 8)
+		{
+			$lanFallback = 'Your website is currently running an [outdated version of PHP], which may pose a security risk. If your plugins will allow it, we recommend upgrading to [x] to ensure that your website is secure and up-to-date.';
+			$lan = defset('LAN_PHP_OUTDATED', $lanFallback);
+			$url = e_ADMIN.'phpinfo.php';
+
+			$lan = e107::getParser()->lanVars($lan, 'PHP 8.2');
+
+			$srch = array('[',']');
+			$repl = [
+				"<a class='text-info' href='$url'>",
+				"</a>"
+			];
+
+			$lan = str_replace($srch, $repl, $lan);
+			eHelper::addSystemNotification('checkDependencies', $lan);
+		}
+		else
+		{
+			eHelper::clearSystemNotification('checkDependencies');
+		}
 
 	}
 

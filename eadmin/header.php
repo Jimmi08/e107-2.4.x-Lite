@@ -258,7 +258,7 @@ echo "\n<!-- footer_inline_css -->\n";
 //
 // Unobtrusive JS via CSS, prevent 3rd party code overload
 //
-// require_once(e_FILE."/e_css.php"); //moved to eweb/css/e107.css 
+// require_once(e_FILE."/e_css.php"); //moved to e107_web/css/e107.css 
 
 //
 // E: Send JS
@@ -346,7 +346,7 @@ if(!empty($pref['e_meta_list']))
 unset($incompatibleMeta);
 
 
-if(!USER && ($pref['user_tracking'] == "session") && varset($pref['password_CHAP'], 0))
+if(!USER && varset($pref['password_CHAP'], 0))
 {
 	if($pref['password_CHAP'] == 2)
 	{
@@ -576,11 +576,6 @@ if($e107_popup != 1)
 	{
 		//removed  check strpos(e_SELF.'?'.e_QUERY, 'menus.php?configure') === FALSE
 		// LITE MODIFICATION: admin template override allowed.
-		// $override=true (vs upstream's false) lets a custom admin theme
-		// override the admin template (header + modal). Lite uses its own
-		// `backend` admin theme. See upstream issue #5722 — revert if
-		// upstream fixes the override default for admin templates, or if
-		// Lite stops shipping its own admin theme.
 		$ADMIN_HEADER = e107::getCoreTemplate('admin', 'header', true);
 		$ADMIN_MODAL = e107::getCoreTemplate('admin', 'modal', true);
 

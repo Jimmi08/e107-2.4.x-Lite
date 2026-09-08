@@ -8,7 +8,7 @@
  *
  * Administration Area Authorization
  *
- * $Source: /cvs_backup/e107_0.8/eadmin/auth.php,v $
+ * $Source: /cvs_backup/e107_0.8/e107_admin/auth.php,v $
  * $Revision$
  * $Date$
  * $Author$
@@ -27,14 +27,11 @@ define('e_CAPTCHA_FONTCOLOR','#F9A533');
 // Required for a clean v1.x -> v2 upgrade. 
 $core = e107::getConfig();
 $adminTheme = $core->get('admintheme');
-// LITE MODIFICATION
-// NEW ADMIN THEME BACKEND 
-
-if($adminTheme !== 'backend' /*&& $adminTheme !== 'bootstrap5'*/)
+if($adminTheme !== 'backend')
 {
-	$core->update('admintheme','backend');
-	$core->update('adminstyle','dashboard');
-	$core->update('admincss','css/admin-exas-core.css');
+	$core->update('admintheme', 'backend');
+	$core->update('adminstyle', 'dashboard');
+	$core->update('admincss', 'css/admin-exas-core.css');
 	$core->set('e_jslib_core',array('prototype' => 'none', 'jquery'=> 'auto'));
 	$core->save();	
 	e107::getRedirect()->redirect(e_SELF);		
@@ -91,7 +88,7 @@ if (ADMIN)
 			$asuser = e107::getSystemUser(e107::getUser()->getSessionDataAs(), false);
 
 			$lanVars = array ('x' => ($asuser->getId() ? $asuser->getName().' ('.$asuser->getValue('email').')' : 'unknown')) ;
-			e107::getMessage()->addInfo(e107::getParser()->lanVars(ADLAN_164, $lanVars).' <a href="'.e_ADMIN_ABS.'users.php?mode=main&amp;action=logoutas">['.LAN_LOGOUT.']</a>');
+			e107::getMessage()->addInfo(e107::getParser()->lanVars(ADLAN_164, $lanVars).' <a href="'.e_ADMIN_ABS.'users.php?mode=main&amp;action=logoutas&amp;e-token='.defset('e_TOKEN').'">['.LAN_LOGOUT.']</a>');
 
 		}
 		// NEW, legacy 3rd party code fix, header called inside the footer o.O
@@ -287,7 +284,7 @@ class auth
 		<div>";
 
 		e107::lan('core', 'login');
-		$text .= e107::getMessage()->render(); // see ehandlers/login.php L622
+		$text .= e107::getMessage()->render(); // see e107_handlers/login.php L622
 		$text .= "<script>
 			window.setTimeout(function() {
 		    $('.alert').fadeTo(500, 0).slideUp(500, function(){
@@ -332,7 +329,7 @@ class auth
 			$destToken = $rd->getStoredDestinationToken();
 			if($destToken === '')
 			{
-				$destToken = $rd->getLoginDestinationToken();
+				$destToken = $rd->getLoginDestinationToken(null, redirection::LOGIN_DEST_TTL, true);
 			}
 			if($destToken !== '')
 			{

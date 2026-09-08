@@ -84,12 +84,12 @@ class plugman_adminArea extends e_admin_dispatcher
 
 		'installed/list'		=> array('caption'=> 'EPL_ADLAN_22', 'perm' => 'Z', 'icon'=>'fa-plug-circle-check'),
 		'avail/list'			=> array('caption'=> 'EPL_ADLAN_23', 'perm' => 'Z', 'icon'=>'fa-plug-circle-xmark'),
-		// LITE MODIFICATION  NOT NEEDED ON LIVE SITE
-		//'online/grid'			=> array('caption'=> 'EPL_ADLAN_220', 'perm' => 'Z', 'icon'=>'fas-search'),  
-		//'avail/upload'			=> array('caption'=>'EPL_ADLAN_38', 'perm' => '0'),
-		//'create/build'          =>  array('caption'=>'EPL_ADLAN_114', 'perm' => '0', 'icon'=>'fas-toolbox'),
+		// LITE MODIFICATION  NOT NEEDED ON LIVE SITE	
+		//	'online/grid'			=> array('caption'=> 'EPL_ADLAN_220', 'perm' => 'Z', 'icon'=>'fas-search'),
+		//	'avail/upload'			=> array('caption'=>'EPL_ADLAN_38', 'perm' => '0'),
+		//	'create/build'          =>  array('caption'=>'EPL_ADLAN_114', 'perm' => '0', 'icon'=>'fas-toolbox'),
 
-	//	'main/create'		=> array('caption'=> LAN_CREATE, 'perm' => 'P'),
+		//	'main/create'		=> array('caption'=> LAN_CREATE, 'perm' => 'P'),
 
 		// 'main/custom'		=> array('caption'=> 'Custom Page', 'perm' => 'P')
 	);
@@ -101,7 +101,7 @@ class plugman_adminArea extends e_admin_dispatcher
 	protected $adminMenuAliases = array(
 		'installed/uninstall'	=> 'installed/list',
 		'lans/list'             => 'create/build',
-		//'online/list'           => 'online/grid', LITE MODIFICATION
+		//'online/list'           => 'online/grid', LITE MODIFICATION  NOT NEEDED ON LIVE SITE
 	);
 
 	protected $adminMenuIcon = 'e-plugmanager-24';
@@ -169,11 +169,7 @@ class plugin_ui extends e_admin_ui
 	//	protected $eventName		= 'plugman-plugin'; // remove comment to enable event triggers in admin.
 		protected $table			= 'plugin';
 		protected $pid				= 'plugin_id';
-		// LITE MODIFICATION: upstream sets perPage = 10 here, overriding the
-		// e_admin_ui default of 20. Lite uses 30 — the plugin list is short and
-		// paginating it at 10 is pointless noise.
-		// Revert condition: upstream makes perPage user-configurable.
-		protected $perPage = 30;
+		protected $perPage			= 30;  //LITE MODIFICATION: upstream sets perPage = 10 here
 
 		protected $batchDelete		= false;
 		protected $batchExport     = false;
@@ -525,6 +521,13 @@ class plugin_ui extends e_admin_ui
 
 		function pullPage()
 		{
+			if(defined('e_TOKEN') && empty($this->getQuery('e-token')))
+			{
+				e107::getMessage()->addError(defset('EPL_ADLAN_REFUSED_PULL_TOKEN_MISSING', 'Invalid Token'));
+				$this->redirectAction('list');
+				return null;
+			}
+
 			$id = $this->getQuery('path');
 
 			if(!e107::isInstalled($id))
@@ -819,13 +822,8 @@ class plugin_ui extends e_admin_ui
 					'label'			=> EPL_ADLAN_57,
 					'helpText'		=> EPL_ADLAN_58,
 					'itemList'		=> array(1=>LAN_YES,0=>LAN_NO),
-					// LITE MODIFICATION: default 0 (No). Upstream defaults to 1 (Yes),
-					// which pre-selects destructive table deletion on uninstall — easy
-					// to confirm by accident and lose plugin data. Lite makes the
-					// non-destructive choice the default.
-					// Revert condition: if upstream changes this default to 0.
-					'itemDefault' 	=> 0
-			);
+					'itemDefault' 	=> 0 // LITE MODIFICATION: default 0 (No). Upstream defaults to 1 (Yes),
+		);
 
 			if ($userclasses)
 			{

@@ -8,7 +8,7 @@
  *
  * e107 blank Plugin
  *
- * $Source: /cvs_backup/e107_0.8/eplugins/blank/admin_config.php,v $
+ * $Source: /cvs_backup/e107_0.8/e107_plugins/blank/admin_config.php,v $
  * $Revision$
  * $Date$
  * $Author$
@@ -106,13 +106,12 @@ class theme_admin extends e_admin_dispatcher
 						'ui' 		=> 'theme_admin_form_ui',
 						'uipath' => null
 		),
-		// LITE MOFIFICATION
-		//'convert'		=> array(
-		//				'controller' => 'theme_builder',
-		//				'path' 		=> null,
-		//				'ui' 		=> 'theme_admin_form_ui',
-		//				'uipath' => null
-		//),
+		'convert'		=> array(
+						'controller' => 'theme_builder',
+						'path' 		=> null,
+						'ui' 		=> 'theme_admin_form_ui',
+						'uipath' => null
+		),
 	);
 
 
@@ -120,10 +119,10 @@ class theme_admin extends e_admin_dispatcher
 		'main/main'			=> array('caption'=> 'TPVLAN_33', 'perm' => '0|1|TMP', 'icon'=>'fas-home'),
 		'main/admin' 		=> array('caption'=> 'TPVLAN_34', 'perm' => '0', 'icon'=>'fas-tachometer-alt'),
 		'main/choose' 		=> array('caption'=> 'TPVLAN_51', 'perm' => '0', 'icon'=>'fas-exchange-alt'),
-	// LITE MODIFICATION
-	//	'main/online'		=> array('caption'=> 'TPVLAN_62', 'perm' => '0', 'icon'=>'fas-search'),
-	//	'main/upload'		=> array('caption'=> 'TPVLAN_38', 'perm' => '0'),
-	//	'convert/main'		=> array('caption'=> 'ADLAN_CL_6', 'perm' => '0', 'icon'=>'fas-toolbox')
+		// LITE MODIFICATION
+		//'main/online'		=> array('caption'=> 'TPVLAN_62', 'perm' => '0', 'icon'=>'fas-search'),
+		//'main/upload'		=> array('caption'=> 'TPVLAN_38', 'perm' => '0'),
+		//'convert/main'		=> array('caption'=> 'ADLAN_CL_6', 'perm' => '0', 'icon'=>'fas-toolbox')
 	);
 
 
@@ -1667,6 +1666,7 @@ TEMPLATE;
 			$folders = e107::getTheme()->clearCache()->getList('id'); // array_keys($list);
 
 			$text = $frm->open('copytheme','get','theme.php?mode=convert');
+			$text .= $frm->hidden('e-token', defset('e_TOKEN'));
 			$text .= "<table class='table adminform'>
 						<colgroup>
 							<col class='col-label' />
@@ -1715,6 +1715,12 @@ TEMPLATE;
 		{
 			if(empty($this->themeSrc) || empty($this->themeName) || is_dir(e_THEME.$this->themeName))
 			{
+				return false;
+			}
+
+			if(defined('e_TOKEN') && empty($_GET['e-token']))
+			{
+				e107::getMessage()->addError(defset('TPVLAN_REFUSED_TOKEN_MISSING', 'Invalid Token'));
 				return false;
 			}
 
