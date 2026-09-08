@@ -11,10 +11,10 @@
 */
 
 setlocale(LC_ALL, 'en_GB.UTF-8', 'en_GB.utf8', 'eng_eng.utf8', 'en');
-const CORE_LC = "en";
-const CORE_LC2 = "gb";
 
 return [
+    "CORE_LC" => "en",
+    "CORE_LC2" => "gb",
     // "TEXTDIRECTION" => "rtl",
     // "CHARSET" => "utf-8", // deprecated: all language packs must be UTF-8
     "CORE_LAN1" => "Error : theme is missing.\\n\\nChange the used themes in your preferences (admin area) or upload files for the current theme to the server.",
@@ -103,6 +103,7 @@ return [
     "LAN_PREVIOUS" => "Previous",
     "LAN_LOGIN" => "Login",
     "LAN_LOGOUT" => "Logout",
+    "LAN_LOGOUT_REFUSED_TOKEN_MISSING" => "You have not been logged out, because that link carried no security token. Use the logout link in this site's own menu rather than a bookmark or a link on another site.",
     "LAN_VERIFY" => "Verify",
     "LAN_SETTINGS" => "Settings",
     "LAN_PASSWORD" => "Password",
