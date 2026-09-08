@@ -395,12 +395,6 @@ class user_dashboard // plugin-folder + '_url'
 
 	function renderOnlineUsers($data=false)
 	{
-		// LITE MODIFICATION: the 'online' plugin is stripped from Lite, so guard
-		// against e107::getOnline() being unavailable when it is not installed.
-		if(!e107::isInstalled('online'))
-		{
-			return '';
-		}
 
 		$ol = e107::getOnline();
 		$tp = e107::getParser();

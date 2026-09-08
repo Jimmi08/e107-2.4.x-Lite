@@ -13,6 +13,18 @@
  * it. The plugins-folder name is stored with the list, so a list made for
  * one layout is never served for the other.
  *
+ * Since 0.4.0 the same preference also carries the SELECTION — the plugin
+ * folders the admin wants a core sync to extract from the repo archive.
+ * Stored format:
+ *
+ *   {"folder": "eplugins", "list": ["banner", "news", ...], "selected": ["news", ...]}
+ *
+ * The stored 'list' is the whitelist for the selection: a folder name can
+ * only be selected when it is in the list, whatever the browser posts. The
+ * six base plugins are always part of the selection. A refresh MERGES the
+ * new list with the old selection instead of resetting it, and reports any
+ * entries it had to drop because they no longer exist in the repo.
+ *
  * One deliberate API call on refresh only; every normal page load reads
  * the stored preference. This keeps well clear of GitHub's unauthenticated
  * rate limit.
@@ -43,12 +55,18 @@ class githubSyncLite_plugin_list
 	}
 
 	/**
-	 * Return the stored plugin-folder list, or null if nothing is stored
-	 * yet or the stored list belongs to a different plugins-folder setting
-	 * (caller should prompt for a refresh). Never hits the network.
+	 * Return the stored plugin data — 'folder', 'list' and 'selected' — or
+	 * null if nothing is stored yet or the stored data belongs to a different
+	 * plugins-folder setting (caller should prompt for a refresh). Never hits
+	 * the network.
+	 *
+	 * 'selected' is always present and always a subset of 'list' (the base
+	 * plugins included). Data stored by 0.3.x has no 'selected' key; it is
+	 * read as basePlugins() ∩ list, so an upgrade behaves like the old
+	 * "base always checked" default until the admin saves a selection.
 	 *
 	 * @param string $pluginsFolder  current 'plugins_folder' preference
-	 * @return array|null  array of folder names, or null if not stored
+	 * @return array|null  array('folder' => string, 'list' => array, 'selected' => array), or null
 	 */
 	public static function getCached($pluginsFolder = 'eplugins')
 	{
@@ -62,7 +80,7 @@ class githubSyncLite_plugin_list
 
 		$data = json_decode($raw, true);
 
-		// Stored format: {'folder': <plugins folder>, 'list': [...]}.
+		// Stored format: {'folder': <plugins folder>, 'list': [...], 'selected': [...]}.
 		// A list made for the other layout counts as stale — prompt for a
 		// refresh instead.
 		if (!is_array($data) || !isset($data['folder'], $data['list'])
@@ -71,13 +89,74 @@ class githubSyncLite_plugin_list
 			return null;
 		}
 
-		return $data['list'];
+		$list = self::cleanNames($data['list']);
+
+		// Old (0.3.x) format without a selection: base plugins only.
+		$selected = (isset($data['selected']) && is_array($data['selected']))
+			? self::cleanNames($data['selected'])
+			: self::basePlugins();
+
+		return array(
+			'folder'   => $pluginsFolder,
+			'list'     => $list,
+			'selected' => self::mergeSelection($selected, $list),
+		);
+	}
+
+	/**
+	 * The stored selection as a plain array of folder names, ready for the
+	 * sync engine's 'plugins' param. Empty array when nothing is stored (or
+	 * the stored data belongs to a different plugins-folder setting) — a
+	 * core sync then writes nothing under the plugins directory, exactly as
+	 * before 0.4.0.
+	 *
+	 * @param string $pluginsFolder  current 'plugins_folder' preference
+	 * @return array
+	 */
+	public static function getSelected($pluginsFolder = 'eplugins')
+	{
+		$cached = self::getCached($pluginsFolder);
+
+		return ($cached === null) ? array() : $cached['selected'];
+	}
+
+	/**
+	 * Store a new selection posted from the Core Sync screen. The stored
+	 * 'list' is the whitelist: whatever the browser sent, only names that are
+	 * in the list are kept — no exceptions — and the base plugins are always
+	 * added. 'list' and 'folder' are left untouched. Nothing is written when
+	 * no list is stored for this plugins-folder setting.
+	 *
+	 * @param array  $posted         raw gsl_plugins[] values from the form
+	 * @param string $pluginsFolder  current 'plugins_folder' preference
+	 * @return array  the selection actually saved (empty when nothing is stored)
+	 */
+	public static function saveSelection(array $posted, $pluginsFolder = 'eplugins')
+	{
+		$cached = self::getCached($pluginsFolder);
+		if ($cached === null)
+		{
+			return array();
+		}
+
+		$selected = self::mergeSelection(self::cleanNames($posted), $cached['list']);
+
+		self::store($cached['folder'], $cached['list'], $selected);
+
+		return $selected;
 	}
 
 	/**
 	 * Fetch the plugin-folder list fresh from GitHub and store it in the
-	 * system cache. One Contents API call. Returns the list on success or
+	 * plugin prefs. One Contents API call. Returns the list on success or
 	 * false on failure (reason reported via getMessage()).
+	 *
+	 * The selection is MERGED, not reset:
+	 *   selected = (old selected ∩ new list) ∪ (basePlugins() ∩ new list)
+	 * Entries dropped because they no longer exist in the repo are reported
+	 * via getMessage()->addInfo() — a silent loss of selection is not
+	 * acceptable. The old data must therefore still be stored when this
+	 * runs: do NOT call clearCache() first.
 	 *
 	 * @param array $p  organization, repo, branch, token, public_repo, plugins_folder
 	 * @return array|false
@@ -186,13 +265,27 @@ class githubSyncLite_plugin_list
 		}
 		sort($folders, SORT_STRING);
 
+		// Merge the previous selection (if any, and only if it was made for
+		// the same plugins-folder layout) with the fresh list. Anything that
+		// is no longer in the repo is dropped — and reported, never silently.
+		$oldSelected = self::getSelected($plugDir);
+		$selected    = self::mergeSelection($oldSelected, $folders);
+
+		$dropped = array_values(array_diff($oldSelected, $folders));
+		if (!empty($dropped))
+		{
+			$safeDropped = array_map(static function ($name) {
+				return htmlspecialchars($name, ENT_QUOTES, 'utf-8');
+			}, $dropped);
+			$mes->addInfo(count($dropped) . ' previously selected plugin folder(s) no longer exist in the repo and were removed from the selection: <strong>'
+				. implode('</strong>, <strong>', $safeDropped) . '</strong>');
+		}
+
 		// Store in the PLUGIN PREFS (survives every cache clear — the core
 		// sync itself clears the system cache when it finishes, which used to
 		// wipe the list). The plugins-folder name is stored alongside the list
 		// so getCached() can reject a list made for the other layout.
-		e107::getPlugConfig('githubSyncLite')
-			->set(self::PREF_KEY, json_encode(array('folder' => $plugDir, 'list' => $folders)))
-			->save(false, true, false);
+		self::store($plugDir, $folders, $selected);
 
 		// Drop the legacy pre-0.3.1 system-cache copy if one is still around.
 		e107::getCache()->clear_sys(self::CACHE_TAG);
@@ -201,9 +294,13 @@ class githubSyncLite_plugin_list
 	}
 
 	/**
-	 * Clear the stored plugin list (used by the manual refresh before a
-	 * fresh fetch, and available for a plain "clear" action). Also drops
-	 * the legacy pre-0.3.1 system-cache copy.
+	 * Clear the stored plugin data — list AND selection together; they live
+	 * in one preference and are never split. Also drops the legacy pre-0.3.1
+	 * system-cache copy. Not used by the manual refresh any more (refresh()
+	 * needs the old selection to merge it); available for a plain "clear"
+	 * action.
+	 *
+	 * @return void
 	 */
 	public static function clearCache()
 	{
@@ -220,6 +317,70 @@ class githubSyncLite_plugin_list
 	public static function basePlugins()
 	{
 		return array('navigation', 'news', 'page', 'siteinfo', 'tinymce4', 'user');
+	}
+
+	/**
+	 * Reduce an arbitrary array (decoded JSON, or raw $_POST values) to a
+	 * de-duplicated list of plain folder-name strings. Same rule as the
+	 * remote list uses: letters, digits, dot, underscore, hyphen; no '..'.
+	 * Everything else (non-strings, nested arrays, paths) is dropped
+	 * silently. Names that pass here are STILL only accepted once they are
+	 * matched against the stored list — see mergeSelection().
+	 *
+	 * @param array $names
+	 * @return array
+	 */
+	private static function cleanNames(array $names)
+	{
+		$clean = array();
+		foreach ($names as $name)
+		{
+			if (!is_string($name) || $name === '' || $name === '.'
+				|| !preg_match('/^[A-Za-z0-9._-]+$/', $name) || strpos($name, '..') !== false)
+			{
+				continue;
+			}
+			$clean[$name] = $name;
+		}
+
+		return array_values($clean);
+	}
+
+	/**
+	 * The one rule for a selection:
+	 *   (wanted ∩ list) ∪ (basePlugins() ∩ list)
+	 * The list is the whitelist — nothing outside it is ever selected, and
+	 * the base plugins are always in when the repo has them. The result
+	 * keeps the list's (sorted) order.
+	 *
+	 * @param array $wanted  candidate names (old selection, or posted values)
+	 * @param array $list    stored plugin-folder list
+	 * @return array
+	 */
+	private static function mergeSelection(array $wanted, array $list)
+	{
+		$keep = array_merge($wanted, self::basePlugins());
+
+		return array_values(array_intersect($list, $keep));
+	}
+
+	/**
+	 * Write the whole structure to the plugin preference in one go.
+	 *
+	 * @param string $folder    'eplugins' or 'e107_plugins' (already whitelisted)
+	 * @param array  $list      plugin-folder list
+	 * @param array  $selected  selection (already a subset of $list)
+	 * @return void
+	 */
+	private static function store($folder, array $list, array $selected)
+	{
+		e107::getPlugConfig('githubSyncLite')
+			->set(self::PREF_KEY, json_encode(array(
+				'folder'   => $folder,
+				'list'     => array_values($list),
+				'selected' => array_values($selected),
+			)))
+			->save(false, true, false);
 	}
 
 	/**

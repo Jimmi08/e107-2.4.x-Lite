@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
-<e107Plugin name="Github Sync Lite" lan="Github Sync Lite" version="0.3.3" date="2026-08-15" compatibility="2.4" installRequired="false" >
+<e107Plugin name="Github Sync Lite" lan="Github Sync Lite" version="0.4.0" date="2026-09-08" compatibility="2.4" installRequired="false" >
 	<author name="Jimako" url="https://www.e107sk.com/" />
 	<summary lan="">Lightweight core + selective-plugin sync from a GitHub repo (Lite).</summary>
-	<description lan="">Downloads the Lite core from a GitHub repo, excluding the plugins folder, and (later) lets you pick which plugins to install. The source repo layout (eplugins vs e107_plugins, "e" vs "e107_" folder prefix) is configurable. Uses its own copy of the sync engine; no database table, no dependency on the full githubSync plugin.</description>
+	<description lan="">Downloads the Lite core from a GitHub repo and, from the same archive, only the plugin folders you selected (selective plugin sync — the selection is saved in the plugin settings; the rest of the repo's plugins folder is skipped). The source repo layout (eplugins vs e107_plugins, "e" vs "e107_" folder prefix) is configurable. Uses its own copy of the sync engine; no database table, no dependency on the full githubSync plugin.</description>
 	<keywords>
 		<word>admin</word>
 		<word>tools</word>

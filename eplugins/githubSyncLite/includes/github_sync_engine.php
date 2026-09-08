@@ -18,6 +18,15 @@
  *
  * Ported from the tested Lite `unzipGithubArchive` logic; see project.md.
  *
+ * LITE MODIFICATION (githubSyncLite bundled copy): a 'core' sync never
+ * writes the whole plugins directory. It takes an optional 'plugins' array
+ * (validated folder names) and extracts ONLY those folders from the repo's
+ * configured plugins directory ({plugins_folder}/) — out of the SAME archive
+ * the core comes from, no separate download. Everything else under either
+ * plugins-directory spelling (eplugins/ and e107_plugins/) is skipped. With
+ * an empty 'plugins' array nothing under the plugins directory is ever
+ * written, exactly as before 0.4.0.
+ *
  * @package githubSync
  */
 
@@ -64,6 +73,8 @@ class github_sync_engine
 	 *     @type int    $public_repo  1 = public (no token), 0 = private (token required).
 	 *     @type string $plugins_folder  Source repo's plugins dir: 'eplugins' (default) or 'e107_plugins'.
 	 *     @type string $folder_prefix   Source repo's core-dir prefix: 'e' (default, Lite) or 'e107_'.
+	 *     @type array  $plugins         'core' only (LITE): plugin folder names to extract from
+	 *                                   {plugins_folder}/ alongside the core. Default: none.
 	 * }
 	 * @return array|false FALSE on hard failure (validation / download / extraction);
 	 *                     otherwise ['success' => [...], 'error' => [...], 'skipped' => [...]].
@@ -152,6 +163,26 @@ class github_sync_engine
 
 		$folder = trim((string) ($params['folder'] ?? ''), '/ ');
 		$p['folder'] = ($folder !== '') ? $folder : $p['repo'];
+
+		// LITE MODIFICATION (githubSyncLite): optional list of plugin folders
+		// a 'core' sync may extract from {plugins_folder}/. Each name becomes
+		// a path-segment comparison in relocate(), so it is re-validated here
+		// regardless of what the caller already checked: only plain segments
+		// (letters, digits, dot, underscore, hyphen; no '..', no '/') survive.
+		// Everything else is dropped silently. Default: empty array (= no
+		// plugin folder is written at all).
+		$p['plugins'] = array();
+		if (isset($params['plugins']) && is_array($params['plugins']))
+		{
+			foreach ($params['plugins'] as $name)
+			{
+				if (is_string($name) && $name !== '.' && self::isValidSegment($name))
+				{
+					$p['plugins'][$name] = $name;
+				}
+			}
+			$p['plugins'] = array_values($p['plugins']);
+		}
 
 		foreach (array('organization', 'repo', 'branch') as $key)
 		{
@@ -418,7 +449,7 @@ class github_sync_engine
 				);
 
 			case 'core':
-				return array(
+				$map = array(
 					$zipBase . '/' . $px . 'admin/'     => e_BASE . e107::getFolder('ADMIN'),
 					$zipBase . '/' . $px . 'core/'      => e_BASE . e107::getFolder('CORE'),
 					$zipBase . '/' . $px . 'docs/'      => e_BASE . e107::getFolder('DOCS'),
@@ -427,16 +458,28 @@ class github_sync_engine
 					$zipBase . '/' . $px . 'images/'    => e_BASE . e107::getFolder('IMAGES'),
 					$zipBase . '/' . $px . 'languages/' => e_BASE . e107::getFolder('LANGUAGES'),
 					$zipBase . '/' . $px . 'media/'     => e_BASE . e107::getFolder('MEDIA'),
-					// LITE MODIFICATION (githubSyncLite): the plugins folder is
-					// intentionally NOT mapped for a core sync. Plugins are pulled
-					// selectively, not with the core. relocate() actively skips both
-					// plugins-folder spellings for type 'core' so the catch-all below
-					// cannot pull them in either.
 					$zipBase . '/' . $px . 'system/'    => e_BASE . e107::getFolder('SYSTEM'),
 					$zipBase . '/' . $px . 'themes/'    => e_BASE . e107::getFolder('THEMES'),
 					$zipBase . '/' . $px . 'web/'       => e_BASE . e107::getFolder('WEB'),
-					$zipBase . '/'                      => e_BASE,
 				);
+
+				// LITE MODIFICATION (githubSyncLite): the plugins folder is mapped
+				// ONLY when the caller selected plugin folders, and relocate()
+				// then lets through just those folders (skipping the rest of
+				// the plugins directory, and the other spelling entirely). With
+				// nothing selected there is no mapping at all, and relocate()
+				// skips both spellings so the catch-all cannot pull them in.
+				// ORDER MATTERS: relocate() applies the map with str_replace()
+				// on ordered arrays, so this entry must come before the
+				// catch-all ($zipBase.'/' => e_BASE), which must stay last.
+				if (!empty($p['plugins']))
+				{
+					$map[$zipBase . '/' . $plugDir . '/'] = e_BASE . e107::getFolder('PLUGINS');
+				}
+
+				$map[$zipBase . '/'] = e_BASE;
+
+				return $map;
 
 			case 'themepack':
 				return array(
@@ -495,6 +538,8 @@ class github_sync_engine
 	 * containing a '..' path segment (zip-slip defence). For 'language',
 	 * skips translations for plugins/themes not present on this site. For strict
 	 * folder-scoped types a $keepPrefix skips everything outside the folder.
+	 * For 'core' (LITE), entries under the plugins directory are let through
+	 * only for the selected plugin folders — see skipCorePluginEntry().
 	 *
 	 * @param array  $unarc
 	 * @param array  $folderMap
@@ -530,21 +575,16 @@ class github_sync_engine
 				continue;
 			}
 
-			// LITE MODIFICATION (githubSyncLite): for a core sync, never write
-			// anything under the plugins folder. buildFolderMap('core') has no
-			// plugins mapping, but the catch-all ($zipBase.'/' => e_BASE) would
-			// still relocate plugin files, so skip them explicitly here. BOTH
-			// spellings are skipped unconditionally (not just the configured
-			// one) as belt-and-braces: a core sync must never write plugin
-			// files, whichever layout the Source repo uses — even when the
-			// 'plugins_folder' preference is set wrong.
-			if ($type === 'core'
-				&& (strpos($stored, $zipBase . '/eplugins/') === 0
-					|| strpos($stored, $zipBase . '/e107_plugins/') === 0))
+			// LITE MODIFICATION (githubSyncLite): for a core sync, the plugins
+			// directory is written SELECTIVELY. Entries under the non-configured
+			// spelling are always skipped; entries under the configured
+			// spelling ({plugins_folder}/) are kept only when their first path
+			// segment is one of the validated $p['plugins'] names. With an
+			// empty selection nothing under either spelling is ever written —
+			// the catch-all ($zipBase.'/' => e_BASE) would otherwise relocate
+			// plugin files, which is why the skip happens here explicitly.
+			if ($type === 'core' && $this->skipCorePluginEntry($stored, $zipBase, $p))
 			{
-				// Skip both the Lite short name (eplugins/) and the upstream long
-				// name (e107_plugins/): a core sync must never write plugin files,
-				// whichever layout the configured Source repo uses.
 				$skipped[] = $stored;
 				continue;
 			}
@@ -666,6 +706,65 @@ class github_sync_engine
 			}
 		}
 		@rmdir($dir);
+	}
+
+	/**
+	 * LITE MODIFICATION (githubSyncLite): decide whether a 'core' sync must
+	 * skip an archive entry because of the plugins directory rules.
+	 *
+	 *   - entry under the NON-configured plugins spelling → always skip;
+	 *   - entry under the configured spelling ({plugins_folder}/) → keep only
+	 *     when the first path segment after it is in the validated
+	 *     $p['plugins'] array (exact, case-sensitive match); otherwise skip;
+	 *   - the plugins container folder entry itself → keep only when the
+	 *     array is non-empty;
+	 *   - anything else (core folders, root files) → not this method's
+	 *     business, never skipped here.
+	 *
+	 * An empty $p['plugins'] therefore reproduces the pre-0.4.0 behaviour:
+	 * nothing under either plugins directory is ever written.
+	 *
+	 * @param string $stored   Archive entry path.
+	 * @param string $zipBase  Archive top-level folder.
+	 * @param array  $p        Validated sync params (plugins_folder, plugins, …).
+	 * @return bool  TRUE = skip this entry.
+	 */
+	private function skipCorePluginEntry($stored, $zipBase, array $p)
+	{
+		$configured = $p['plugins_folder'];
+		$other      = ($configured === 'eplugins') ? 'e107_plugins' : 'eplugins';
+
+		// The other spelling is never written by a core sync, whatever the
+		// selection says — belt-and-braces against a wrong 'plugins_folder'
+		// preference.
+		if (strpos($stored, $zipBase . '/' . $other . '/') === 0)
+		{
+			return true;
+		}
+
+		$prefix = $zipBase . '/' . $configured . '/';
+		if (strpos($stored, $prefix) !== 0)
+		{
+			return false; // not a plugins-directory entry
+		}
+
+		if (empty($p['plugins']))
+		{
+			return true; // nothing selected: the whole directory is skipped
+		}
+
+		$rest = substr($stored, strlen($prefix));
+		if ($rest === '' || $rest === false)
+		{
+			return false; // the plugins container folder itself
+		}
+
+		$segments = explode('/', $rest, 2);
+		$name     = $segments[0];
+
+		// Files directly under the plugins directory have no folder segment
+		// and can never match a selected folder name, so they are skipped too.
+		return !in_array($name, $p['plugins'], true);
 	}
 
 	/**
