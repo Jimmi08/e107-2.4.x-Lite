@@ -1,21 +1,25 @@
 <?php
+/*
+ * e107 website system
+ *
+ * Copyright (C) e107 Inc (e107.org)
+ * Released under the terms and conditions of the
+ * GNU General Public License (http://www.gnu.org/licenses/gpl.txt)
+ *
+ * News frontend
+ *
+ * $URL$
+ * $Id$
+*/
+/**
+ *	@package    e107
+ *	@subpackage	user
+ *	@version 	$Id$;
+ *
+ *	News front page display
+ */
+
 require_once("class2.php");
-
-// LITE FEATURE: News is an installable plugin in Lite (installRequired=true).
-// Guard this entry point so an uninstalled/missing plugin does not fatal on the
-// require_once below. Do not remove when syncing. Mirrors login.php / signup.php
-// (redirect non-admins to the front page; show a notice to the main admin).
-if (!e107::isInstalled('news') || !is_readable(e_PLUGIN.'news/news.php'))
-{
-	if (!getperms('0'))                 // not main admin -> front page
-	{
-		e107::redirect();
-		exit;
-	}
-	require_once(HEADERF);              // main admin -> no redirect, just inform
-	e107::getRender()->tablerender('News', 'The News plugin is not installed (or its files are missing). Install it under Admin → Plugins.');
-	require_once(FOOTERF);
-	exit;
-}
-
 require_once(e_PLUGIN."news/news.php");
+
+

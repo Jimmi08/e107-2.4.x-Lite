@@ -79,41 +79,20 @@ $userMethods = e107::getUserSession();
 $userMethods->deleteExpired();				// Delete time-expired partial registrations
 
 
-$SIGNUP_BEGIN = null;
-$SIGNUP_BODY = null;
-$SIGNUP_END  = null;
-$COPPA_TEMPLATE = null;
-$COPPA_FAIL = null;
+$template = e107::getCoreTemplate('signup');
 
-if($template = e107::getCoreTemplate('signup'))
-{
-	$SIGNUP_BEGIN                   = $template['start'];
-	$SIGNUP_BODY                    = $template['body'];
-	$SIGNUP_END                     = $template['end'];
-	$COPPA_TEMPLATE                 = $template['coppa'];
-	$COPPA_FAIL                     = $template['coppa-fail'];
-	$SIGNUP_EXTENDED_USER_FIELDS    = $template['extended-user-fields'];
-	$SIGNUP_EXTENDED_CAT            = $template['extended-category'];
-}
-else
-{
-	$SIGNUP_EXTENDED_USER_FIELDS = '';
-	$SIGNUP_EXTENDED_CAT = '';
+$SIGNUP_BEGIN                   = vartrue($template['SIGNUP_BEGIN'], varset($template['start'], ''));
+$SIGNUP_BODY                    = vartrue($template['SIGNUP_BODY'], varset($template['body'], ''));
+$SIGNUP_END                     = vartrue($template['SIGNUP_END'], varset($template['end'], ''));
+$COPPA_TEMPLATE                 = vartrue($template['COPPA_TEMPLATE'], varset($template['coppa'], ''));
+$COPPA_FAIL                     = vartrue($template['COPPA_FAIL'], varset($template['coppa-fail'], ''));
+$SIGNUP_EXTENDED_USER_FIELDS    = vartrue($template['SIGNUP_EXTENDED_USER_FIELDS'], varset($template['extended-user-fields'], ''));
+$SIGNUP_EXTENDED_CAT            = vartrue($template['SIGNUP_EXTENDED_CAT'], varset($template['extended-category'], ''));
 
-	$tmplPath = e107::coreTemplatePath('signup');
-	e107::predefineLegacyLans($tmplPath); // #5653: pre-define any missing legacy LAN_* before require.
-	require_once($tmplPath); //correct way to load a core template.
-	if(empty($SIGNUP_BODY) && empty($SIGNUP_BEGIN)) // fall-back in case the template has been loaded before.
-	{
-		require($tmplPath);
-	}
-	$template  = array(
-		'extended-user-fields'  => $SIGNUP_EXTENDED_USER_FIELDS,
-		'extended-category'     => $SIGNUP_EXTENDED_CAT
-	);
-	unset($tmplPath);
-
-}
+$template = array(
+	'extended-user-fields'  => $SIGNUP_EXTENDED_USER_FIELDS,
+	'extended-category'     => $SIGNUP_EXTENDED_CAT
+);
 
 $signup_shortcodes = e107::getScBatch('signup');
 $signup_shortcodes->wrapper('signup');
@@ -176,11 +155,13 @@ if ((USER || (intval($pref['user_reg']) !== 1) || (vartrue($pref['auth_method'],
 //----------------------------------------
 require_once(e_HANDLER."e_signup_class.php");
 
-if(e_QUERY && e_QUERY != 'stage1')
+$signupQuery = explode('&', str_replace('&amp;', '&', e_QUERY));
+
+if($signupQuery[0] && $signupQuery[0] != 'stage1')
 {
 	require_once(HEADERF);
 	$suObj = new e_signup;
-	$suObj->run(e_QUERY);
+	$suObj->run($signupQuery[0]);
 	require_once(FOOTERF);
 	return;
 	exit;

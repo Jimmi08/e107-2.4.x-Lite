@@ -51,9 +51,12 @@ $oblev_before_start = ob_get_level();
 // B: Remove all output buffering
 //
 if(!isset($_E107) || !is_array($_E107)) { $_E107 = array(); }
-if(isset($_E107['cli'], $_SERVER["HTTP_USER_AGENT"]) && !isset($_E107['debug']))
+if(!empty($_E107['cli']) && (PHP_SAPI === "cli-server"
+	|| !empty($_SERVER['REQUEST_METHOD'])
+	|| !empty($_SERVER['HTTP_HOST'])
+	|| !empty($_SERVER['SERVER_PROTOCOL'])))
 {
-	exit();
+	exit(1);
 }
 
 if (version_compare(PHP_VERSION, '5.6', '<'))
@@ -210,7 +213,6 @@ if(empty($config['paths'])) // old e107_config.php format.
 	        $e107_paths[$name] = $$name;
 	    }
 	}
-	unset($name);  //LITE MODIFICATION too general variable name, later conflict
 
 	$legacy_sql_info = compact('mySQLserver', 'mySQLuser', 'mySQLpassword', 'mySQLdefaultdb', 'mySQLprefix');
 	if(isset($mySQLport))
@@ -580,17 +582,7 @@ if(!isset($_E107['no_lan']))
 
 	$dbg->logTime('Include Global Plugin Language Files');
 
-	if(isset($pref['lan_global_list']))
-	{
-		foreach($pref['lan_global_list'] as $path)
-		{
-			if(e107::plugLan($path, 'global', true) === false)
-			{
-				e107::plugLan($path, 'global');
-			}
-
-		}
-	}
+	e107\Language\GlobalLanguageList::loadAll();
 }
 
 if(!isset($_E107['no_session']))
@@ -819,7 +811,7 @@ $e107 = e107::getInstance();		// Is this needed now?
 $dbg->logTime('IP Handler and Ban Check');
 e107::getIPHandler()->ban();
 
-if(USER && !isset($_E107['no_forceuserupdate']) && $_SERVER['QUERY_STRING'] !== 'logout' && varset($pref['force_userupdate']))
+if(USER && !isset($_E107['no_forceuserupdate']) && !logout_requested() && varset($pref['force_userupdate']))
 {
 	if(isset($currentUser) && force_userupdate($currentUser))
 	{
@@ -855,7 +847,7 @@ $dbg->logTime('Login/logout/ban/tz');
 
 if (isset($_POST['userlogin']) || isset($_POST['userlogin_x']))
 {
-	e107::getUser()->login($_POST['username'], $_POST['userpass'], $_POST['autologin'], varset($_POST['hashchallenge']), false);
+	e107::getUser()->login(varset($_POST['username']), varset($_POST['userpass']), (int) varset($_POST['autologin']), varset($_POST['hashchallenge']), false);
 //	e107_require_once(e_HANDLER.'login.php');
 //	$usr = new userlogin($_POST['username'], $_POST['userpass'], $_POST['autologin'], varset($_POST['hashchallenge'],''));
 }
@@ -863,7 +855,11 @@ if (isset($_POST['userlogin']) || isset($_POST['userlogin_x']))
 
 
 // e_QUERY not defined in single entry mod
-if (($_SERVER['QUERY_STRING'] === 'logout'))
+if (logout_refused())
+{
+	e107::getMessage()->addError(defset('LAN_LOGOUT_REFUSED_TOKEN_MISSING', 'You have not been logged out, because that link carried no security token. Use the logout link in this site\'s own menu rather than a bookmark or a link on another site.'));
+}
+elseif (logout_requested())
 {
 	if (USER)
 	{
@@ -890,14 +886,7 @@ if (($_SERVER['QUERY_STRING'] === 'logout'))
 
 	// first model logout and session destroy..
 	e107::getUser()->logout();
-	
-	// it might be removed soon
-	if ($pref['user_tracking'] === 'session')
-	{
-		session_destroy();
-		$_SESSION[e_COOKIE]='';
-		// @TODO: Need to destroy the session cookie as well (not done by session_destroy()
-	}
+
 	cookie(e_COOKIE, '', (time() - 2592000));
 
 	if($prev) // allow scripts to set the logged out URL via setPreviousUrl()
@@ -1325,7 +1314,7 @@ function check_class($var, $userclass = null, $uid = 0)
  * @param string|null     $path The path to the file requesting the permission check.
  *                              This is only used when checking plugin admin permissions.
  *                              Exclude or use {@link null} to use the current page, which auto-detects the plugin path.
- *                              Example: `http://localhost/e107v2/eplugins/gallery/admin_config.php` along with the
+ *                              Example: `http://localhost/e107v2/e107_plugins/gallery/admin_config.php` along with the
  *                              first argument set to `P` will check the plugin admin permissions for plugin `gallery`.
  * @return bool true if the user has the requested admin permissions, false otherwise.
  * @see class2Test::testGetPerms() for examples.
@@ -1672,8 +1661,6 @@ function init_session()
 			define('LOGINMESSAGE', CORE_LAN10);
 			define('CORRUPT_COOKIE', true);
 		}
-
-		define('USERLV', time());  //LITE MODIFICATION avoid fatal error
 	}
 	else
 	{
@@ -1853,7 +1840,8 @@ function cookie($name, $value, $expire=0, $path = e_HTTP, $domain = '', $secure 
 //
 /**
  *
- * generic function for retaining values across pages. ie. cookies or sessions.
+ * generic function for retaining values across pages. The value is kept in the
+ * session; the cookie parameters are ignored since v2.3.12.
  * @deprecated Use e107::getUserSession()->makeUserCookie($userData, $autologin); instead.
  * @param $name
  * @param $value
@@ -1868,26 +1856,7 @@ function session_set($name, $value, $expire='', $path = e_HTTP, $domain = '', $s
 	//$userData = ['user_name
 //	e107::getUserSession()->makeUserCookie($userData, $autologin);
 
-	global $pref;
-	if ($pref['user_tracking'] === 'session')
-	{
-		$_SESSION[$name] = $value;
-	}
-	else
-	{
-		if((empty($domain) && !e_SUBDOMAIN) || (defined('MULTILANG_SUBDOMAIN') && MULTILANG_SUBDOMAIN === true))
-		{
-			$domain = (e_DOMAIN !== false) ? ".".e_DOMAIN : "";
-		}
-
-		if(defined('e_MULTISITE_MATCH'))
-		{
-			$path = '/';
-		}
-		
-		eShims::setcookie($name, $value, $expire, $path, $domain, $secure, true);
-		$_COOKIE[$name] = $value;
-	}
+	$_SESSION[$name] = $value;
 }
 
 //------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------//
@@ -1979,6 +1948,26 @@ function include_lan($path, $force = false)
 	return e107::includeLan($path, $force);
 }
 
+
+
+/**
+ * @return boolean true when the query string asks core to log the current user out
+ */
+function logout_requested()
+{
+	$query = isset($_SERVER['QUERY_STRING']) ? $_SERVER['QUERY_STRING'] : '';
+
+	return ($query === 'logout' || strpos($query, 'logout&') === 0);
+}
+
+
+/**
+ * @return boolean true when that logout arrived without the e-token core's own links carry
+ */
+function logout_refused()
+{
+	return (logout_requested() && defined('e_TOKEN') && empty($_GET['e-token']));
+}
 
 
 /**
@@ -2079,7 +2068,7 @@ class error_handler
 
 		if(!empty($_E107['cli']))
 		{
-			error_reporting(E_ALL & ~E_STRICT & ~E_NOTICE);
+			error_reporting(E_ALL & ~E_NOTICE);
 			return;
 		}
 
@@ -2129,6 +2118,48 @@ class error_handler
 
 
 	/**
+	 * Whether the debug level asks for this diagnostic even when the caller silenced it.
+	 *
+	 * @param int $type
+	 * @return bool
+	 */
+	private function debugWants($type)
+	{
+		if($type === E_USER_DEPRECATED)
+		{
+			return $this->deftrue('E107_DBG_DEPRECATED');
+		}
+
+		return $this->deftrue('E107_DBG_ALLERRORS');
+	}
+
+
+	/**
+	 * Whether the @ operator was holding error reporting down when this diagnostic was raised.
+	 *
+	 * PHP 7 and earlier drop the level to zero. PHP 8 masks it down to the error
+	 * classes @ cannot silence, so a level already inside that set comes back
+	 * unchanged and the operator leaves nothing to read.
+	 *
+	 * @param int $type
+	 * @return bool
+	 */
+	private function isSilenced($type)
+	{
+		$level = error_reporting();
+
+		if($level === 0)
+		{
+			return true;
+		}
+
+		$unsilenceable = E_ERROR | E_CORE_ERROR | E_COMPILE_ERROR | E_USER_ERROR | E_RECOVERABLE_ERROR | E_PARSE;
+
+		return $level === $unsilenceable && !($level & $type);
+	}
+
+
+	/**
 	 * @param $type
 	 * @param $message
 	 * @param $file
@@ -2138,6 +2169,11 @@ class error_handler
 	 */
 	function handle_error($type, $message, $file, $line, $context = null) {
 		$startup_error = (!defined('E107_DEBUG_LEVEL')); // Error before debug system initialized
+
+		if(!$startup_error && $this->isSilenced($type) && !$this->debugWants($type))
+		{
+			return;
+		}
 
 		switch($type)
 		{
@@ -2417,7 +2453,7 @@ class e_http_header
 		
 	// $this->setHeader("Cache-Control: must-revalidate", true); 
 		 
-		if(isset($_SERVER['REQUEST_METHOD']) && $_SERVER['REQUEST_METHOD'] === 'GET' && $_SERVER['QUERY_STRING'] != 'logout' && $canCache && !deftrue('e_NOCACHE'))
+		if(isset($_SERVER['REQUEST_METHOD']) && $_SERVER['REQUEST_METHOD'] === 'GET' && !logout_requested() && $canCache && !deftrue('e_NOCACHE'))
 		{
 			// header("Cache-Control: must-revalidate", true);	
 			if(e107::getPref('site_page_expires')) // TODO - allow per page

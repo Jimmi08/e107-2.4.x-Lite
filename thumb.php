@@ -91,7 +91,7 @@ set_error_handler("thumbErrorHandler"); // disable to troubleshoot.
 
 
 ini_set('gd.jpeg_ignore_warning', 1);
-//require_once './ehandlers/benchmark.php';
+//require_once './e107_handlers/benchmark.php';
 //$bench = new e_benchmark();
 //$bench->start();
 
@@ -135,7 +135,7 @@ class e_thumbpage
 
 		if(empty($HANDLERS_DIRECTORY))
 		{
-			$HANDLERS_DIRECTORY = 'ehandlers/'; // quick fix for CLI Unit test.
+			$HANDLERS_DIRECTORY = 'ehandlers/'; // quick fix for CLI Unit test. LITE MODIFICATION
 		}
 
 		$tmp = $self.DIRECTORY_SEPARATOR.$HANDLERS_DIRECTORY;
