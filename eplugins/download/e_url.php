@@ -127,7 +127,8 @@ class download_url // plugin-folder + '_url'
 		$config['get']     = array(
 			'regex'		    => '^{alias}/get/([\d]*)/(.*)$',
 			'sef'           => '{alias}/get/{download_id}/{download_sef}',
-			'redirect'	    => '{e_PLUGIN}download/request.php?id=$1', 		// file-path of what to load when the regex returns true.
+			// LITE MODIFICATION: pass the SEF segment through - request.php requires it to match the download record.
+			'redirect'	    => '{e_PLUGIN}download/request.php?id=$1&sef=$2', 		// file-path of what to load when the regex returns true.
 		);
 
 		$config['report']    = array(

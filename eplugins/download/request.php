@@ -107,7 +107,8 @@ class download_request
 		}
 
 
-		if(strpos(e_QUERY, "mirror") !== false)
+		// LITE MODIFICATION: an id+sef request never enters the mirror branch - the SEF slug may contain "mirror".
+		if(empty($_GET['id']) && strpos(e_QUERY, "mirror") !== false)
 		{    // Download from mirror
 			list($action, $download_id, $mirror_id) = explode(".", e_QUERY);
 			$download_id = intval($download_id);
@@ -199,7 +200,8 @@ class download_request
 		// A name that matched a download row is handled below, with the userclass,
 		// active-state and limit checks applied. Anything else that still looks
 		// like a file name has no row behind it, so it is simply not found.
-		if(!$resolved && preg_match("#.*\.[a-z,A-Z]{3,4}#", e_QUERY))
+		// LITE MODIFICATION: skip the file-name test for id+sef requests - the SEF slug may contain a dot.
+		if(!$resolved && empty($_GET['id']) && preg_match("#.*\.[a-z,A-Z]{3,4}#", e_QUERY))
 		{
 			$log->addError("Line" . __LINE__ . ": No download matches " . e_QUERY);
 			$log->toFile('download_requests', 'Download Requests', true); // Create a log file and add the log messages
@@ -218,6 +220,14 @@ class download_request
 				->leftJoin('download_category', 'dc', $qb->expr()->compareColumns('dc.download_category_id', 'd.download_category'))
 				->where('d.download_id', (int) $id)
 				->fetchRow();
+
+			// LITE MODIFICATION: serve a file only for id + matching SEF slug; everything else is a 404.
+			// Legacy id-only and by-name links (request.php?123, request.php?file.zip) are refused.
+			if(!$row || !self::lite_sef_matches($row))
+			{
+				self::lite_refuse_not_found();
+			}
+
 			if($row)
 			{
 				$row['download_url'] = $tp->replaceConstants($row['download_url']); // must be relative file-path.
@@ -487,6 +497,58 @@ class download_request
 				return;
 			}
 		}
+	}
+
+
+	/**
+	 * LITE MODIFICATION: check that a file request carries the id and the SEF slug of the row.
+	 *
+	 * Only the canonical form is accepted - request.php?id=N&sef=slug, produced by the 'get'
+	 * route in e_url.php (both SEF and legacy mode). A row without a stored slug never matches.
+	 *
+	 * @param array $row download row
+	 * @return bool
+	 */
+	private static function lite_sef_matches($row)
+	{
+		if(empty($_GET['id']) || !is_scalar($_GET['id']) || (int) $_GET['id'] !== (int) $row['download_id'])
+		{
+			return false;
+		}
+
+		if(!isset($_GET['sef']) || !is_string($_GET['sef']) || $_GET['sef'] === '')
+		{
+			return false;
+		}
+
+		$expected = (string) varset($row['download_sef'], '');
+
+		if($expected === '')
+		{
+			return false;
+		}
+
+		// The e_url router decodes the query with parse_str(), which turns '+' into a space,
+		// so a slug made with the 'plus' separator would otherwise never match.
+		return hash_equals(str_replace('+', ' ', $expected), str_replace('+', ' ', $_GET['sef']));
+	}
+
+
+	/**
+	 * LITE MODIFICATION: answer a file request that fails the id + SEF check.
+	 *
+	 * Same output for a missing row and for a wrong slug, so the response does not reveal
+	 * which download ids exist. No request input is echoed.
+	 *
+	 * @return void
+	 */
+	private static function lite_refuse_not_found()
+	{
+		header("HTTP/1.0 404 Not Found", true, 404);
+		require_once(HEADERF);
+		e107::getRender()->tablerender(LAN_ERROR, "<div style='text-align:center'>" . LAN_FILE_NOT_FOUND . "<br /><br /><a href='javascript:history.back(1)'>" . LAN_BACK . "</a></div>");
+		require_once(FOOTERF);
+		exit();
 	}
 
 
