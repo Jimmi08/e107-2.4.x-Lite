@@ -40,6 +40,20 @@ class github_sync_engine
 	/** Supported sync types. */
 	const SUPPORTED_TYPES = array('core', 'plugin', 'theme', 'themepack', 'language', 'other');
 
+	/** The two whitelisted spellings of the source repo's plugins directory. */
+	const PLUGINS_FOLDERS = array('eplugins', 'e107_plugins');
+
+	/** The two whitelisted prefixes of the source repo's core directories. */
+	const FOLDER_PREFIXES = array('e', 'e107_');
+
+	/**
+	 * Core directory names WITHOUT their prefix. Combined with a folder prefix
+	 * ('e' or 'e107_') they give the top-level core folders a repo may carry
+	 * (eadmin / e107_admin, ehandlers / e107_handlers, …). Used by
+	 * detectLayout() only; buildFolderMap() keeps its explicit list.
+	 */
+	const CORE_DIRS = array('admin', 'core', 'docs', 'files', 'handlers', 'images', 'languages', 'media', 'system', 'themes', 'web');
+
 	/** Files at the repo root that should never be copied into the e107 tree. */
 	private $excludeFiles = array(
 		'.codeclimate.yml',
@@ -110,6 +124,20 @@ class github_sync_engine
 			return false;
 		}
 
+		// Layout guard: the row's folder_prefix / plugins_folder describe the
+		// SOURCE repo. When the extracted archive clearly uses the other
+		// spelling, every mapped prefix would match nothing and the entries
+		// would end up wherever the map's fallback sends them — so stop here,
+		// before anything is written, and say which value the archive needs.
+		// The detected value is only reported, never applied to the row.
+		$mismatches = $this->layoutMismatches($this->detectLayout($unarc, $zipBase), $p);
+		if (!empty($mismatches))
+		{
+			$this->reportLayoutMismatch($mismatches, $p);
+			$this->cleanup($localfile, $zipBase);
+			return false;
+		}
+
 		$folderMap = $this->buildFolderMap($p, $zipBase);
 		if (empty($folderMap))
 		{
@@ -152,11 +180,11 @@ class github_sync_engine
 		// layouts is ever accepted; anything else falls back to the Lite
 		// defaults. The two settings are independent (a repo may combine
 		// e107_ core folders with an eplugins folder, or the other way round).
-		if (!in_array($p['plugins_folder'], array('eplugins', 'e107_plugins'), true))
+		if (!in_array($p['plugins_folder'], self::PLUGINS_FOLDERS, true))
 		{
 			$p['plugins_folder'] = 'eplugins';
 		}
-		if (!in_array($p['folder_prefix'], array('e', 'e107_'), true))
+		if (!in_array($p['folder_prefix'], self::FOLDER_PREFIXES, true))
 		{
 			$p['folder_prefix'] = 'e';
 		}
@@ -411,6 +439,167 @@ class github_sync_engine
 	}
 
 	/**
+	 * Detect which source layout the extracted archive actually uses, from
+	 * its top-level directories under {zipBase}/ (the entry list PclZip
+	 * already returned — the archive is not opened a second time).
+	 *
+	 * For each of the two layout settings the result lists every spelling
+	 * found, keyed by the whitelisted value, with the top-level folder(s)
+	 * that revealed it:
+	 *
+	 *   'plugins_folder' => array('e107_plugins' => array('e107_plugins/'))
+	 *   'folder_prefix'  => array('e107_' => array('e107_languages/', 'e107_themes/'))
+	 *
+	 * A spelling that is not present is simply absent from the list, so an
+	 * empty list means the archive carries no such folder at all (a
+	 * single-plugin repo, a theme repo, an 'other' row) — which is NOT a
+	 * mismatch, see layoutMismatches(). Only directories count: a folder
+	 * entry, or any entry with a further path segment below the top level.
+	 *
+	 * @param array  $unarc    PclZip entry list.
+	 * @param string $zipBase  Archive top-level folder.
+	 * @return array  array('plugins_folder' => array, 'folder_prefix' => array)
+	 */
+	private function detectLayout(array $unarc, $zipBase)
+	{
+		$found = array('plugins_folder' => array(), 'folder_prefix' => array());
+		$base  = $zipBase . '/';
+		$seen  = array();
+
+		foreach ($unarc as $v)
+		{
+			$stored = str_replace('\\', '/', (string) $v['stored_filename']);
+			if (strpos($stored, $base) !== 0)
+			{
+				continue;
+			}
+
+			$rest  = substr($stored, strlen($base));
+			$slash = strpos($rest, '/');
+
+			// Top-level segment, and whether it is a directory.
+			if ($slash === false)
+			{
+				$name  = $rest;
+				$isDir = (!empty($v['folder']));
+			}
+			else
+			{
+				$name  = substr($rest, 0, $slash);
+				$isDir = true;
+			}
+
+			if ($name === '' || !$isDir || isset($seen[$name]))
+			{
+				continue;
+			}
+			$seen[$name] = true;
+
+			if (in_array($name, self::PLUGINS_FOLDERS, true))
+			{
+				$found['plugins_folder'][$name][] = $name . '/';
+				continue;
+			}
+
+			foreach (self::FOLDER_PREFIXES as $px)
+			{
+				if (strpos($name, $px) === 0 && in_array(substr($name, strlen($px)), self::CORE_DIRS, true))
+				{
+					$found['folder_prefix'][$px][] = $name . '/';
+					break;
+				}
+			}
+		}
+
+		return $found;
+	}
+
+	/**
+	 * Compare the detected layout with the declared one. A setting is a
+	 * mismatch only on a clear contradiction: the archive uses exactly ONE
+	 * spelling and it is not the one the row declares. Nothing found is not a
+	 * mismatch (the repo simply has no such folder), and both spellings found
+	 * is not one either (whatever the row says matches something).
+	 *
+	 * @param array $detected  Result of detectLayout().
+	 * @param array $p         Validated sync params (folder_prefix, plugins_folder, …).
+	 * @return array  One entry per mismatched setting, keyed by setting name:
+	 *                array('declared' => string, 'detected' => string, 'folders' => array).
+	 */
+	private function layoutMismatches(array $detected, array $p)
+	{
+		$mismatches = array();
+
+		foreach (array('folder_prefix', 'plugins_folder') as $setting)
+		{
+			$spellings = $detected[$setting] ?? array();
+			if (count($spellings) !== 1)
+			{
+				continue; // absent, or both spellings present: no contradiction
+			}
+
+			$value = (string) key($spellings);
+			if ($value === $p[$setting])
+			{
+				continue;
+			}
+
+			$mismatches[$setting] = array(
+				'declared' => $p[$setting],
+				'detected' => $value,
+				'folders'  => $spellings[$value],
+			);
+		}
+
+		return $mismatches;
+	}
+
+	/**
+	 * Report a layout mismatch that aborted the sync: which sync it was
+	 * (organization/repo, branch, type), which value is declared, which
+	 * spelling the archive contains (with the folders that show it) and the
+	 * value that would work — via e107::getMessage() and, identically, via
+	 * e107::getLog() so it can be diagnosed from the admin log. The detected
+	 * value is named for the admin to pick in the dropdown; it is never
+	 * written to the row. Archive paths are escaped before rendering;
+	 * nothing else from the sync params (in particular no token) is included.
+	 *
+	 * @param array $mismatches  Result of layoutMismatches() (non-empty).
+	 * @param array $p           Validated sync params.
+	 * @return void
+	 */
+	private function reportLayoutMismatch(array $mismatches, array $p)
+	{
+		$labels = array(
+			'folder_prefix'  => 'folder prefix',
+			'plugins_folder' => 'plugins folder',
+		);
+
+		$esc = function ($value) { return htmlspecialchars((string) $value, ENT_QUOTES, 'utf-8'); };
+
+		$source = $esc($p['organization']) . '/' . $esc($p['repo'])
+			. ' (branch ' . $esc($p['branch']) . ', type ' . $esc($p['type']) . ')';
+
+		$lines = array();
+		foreach ($mismatches as $setting => $m)
+		{
+			$label   = $labels[$setting] ?? $setting;
+			$folders = array_map($esc, array_slice($m['folders'], 0, 5));
+			$more    = (count($m['folders']) > count($folders)) ? ' (+' . (count($m['folders']) - count($folders)) . ' more)' : '';
+
+			$lines[] = 'The configured ' . $label . ' is <strong>' . $esc($m['declared']) . '</strong>, but the archive uses <strong>'
+				. $esc($m['detected']) . '</strong> (found: ' . implode(', ', $folders) . $more . '). '
+				. 'Change the ' . $label . ' setting to <strong>' . $esc($m['detected']) . '</strong> and run the sync again.';
+		}
+
+		$detail = 'Sync of ' . $source . ' aborted: the declared source layout does not match the archive. '
+			. implode(' ', $lines) . ' Nothing was written.';
+
+		e107::getMessage()->addError($detail);
+		e107::getLog()->add('Sync aborted: source layout mismatch', strip_tags($detail), E_LOG_WARNING, '');
+	}
+
+	/**
 	 * Build the {zip path prefix => destination path} remap for a sync type.
 	 *
 	 * NOTE: the folder names on the LEFT side depend on the SOURCE repo's
@@ -500,11 +689,17 @@ class github_sync_engine
 				);
 
 			case 'language':
+				// A language pack has exactly three legitimate destinations:
+				// the languages folder, a plugin's folder and a theme's folder.
+				// There is deliberately NO catch-all ($zipBase.'/' => e_BASE):
+				// an entry matching none of these prefixes (e.g. when the
+				// row's folder_prefix does not match the repo layout) is
+				// skipped and reported by relocate(), never written to the
+				// site root.
 				return array(
 					$zipBase . '/' . $px . 'languages/' => e_BASE . e107::getFolder('LANGUAGES'),
 					$zipBase . '/' . $plugDir . '/'     => e_BASE . e107::getFolder('PLUGINS'),
 					$zipBase . '/' . $px . 'themes/'    => e_BASE . e107::getFolder('THEMES'),
-					$zipBase . '/'                      => e_BASE,
 				);
 		}
 
@@ -536,8 +731,9 @@ class github_sync_engine
 	 * Move extracted entries from e_TEMP into their destinations.
 	 * Uses copy+unlink (the tested Lite pattern) and rejects any archive entry
 	 * containing a '..' path segment (zip-slip defence). For 'language',
-	 * skips translations for plugins/themes not present on this site. For strict
-	 * folder-scoped types a $keepPrefix skips everything outside the folder.
+	 * skips (and reports) every entry that matches none of the mapped prefixes,
+	 * and skips translations for plugins/themes not present on this site. For
+	 * strict folder-scoped types a $keepPrefix skips everything outside the folder.
 	 * For 'core' (LITE), entries under the plugins directory are let through
 	 * only for the selected plugin folders — see skipCorePluginEntry().
 	 *
@@ -560,13 +756,30 @@ class github_sync_engine
 		$srch = array_keys($folderMap);
 		$repl = array_values($folderMap);
 
-		$success = array();
-		$error   = array();
-		$skipped = array();
+		$success   = array();
+		$error     = array();
+		$skipped   = array();
+		$unmatched = array(); // 'language' only: entries outside every mapped prefix
 
 		foreach ($unarc as $v)
 		{
 			$stored = $v['stored_filename'];
+
+			// language: the map has no catch-all (see buildFolderMap()), so an
+			// entry that starts with none of the mapped prefixes has nowhere
+			// legitimate to go. Skip it and remember it for the report instead
+			// of letting str_replace() below leave the path untouched and
+			// write it relative to the current directory. The archive root
+			// folder itself is skipped silently — it is not content.
+			if ($type === 'language' && !$this->matchesPrefix($stored, $srch))
+			{
+				$skipped[] = $stored;
+				if ($stored !== $zipBase . '/' && $stored !== $zipBase)
+				{
+					$unmatched[] = $stored;
+				}
+				continue;
+			}
 
 			// Folder-scoped extract: skip anything outside the requested folder.
 			if ($keepPrefix !== '' && strpos($stored, $keepPrefix) !== 0)
@@ -642,7 +855,61 @@ class github_sync_engine
 			}
 		}
 
+		if (!empty($unmatched))
+		{
+			$this->reportUnmatched($unmatched, $p);
+		}
+
 		return array('success' => $success, 'error' => $error, 'skipped' => $skipped);
+	}
+
+	/**
+	 * True if $path starts with any of the given archive path prefixes.
+	 *
+	 * @param string $path      Archive entry path.
+	 * @param array  $prefixes  Left-hand side of the folder map.
+	 * @return bool
+	 */
+	private function matchesPrefix($path, array $prefixes)
+	{
+		foreach ($prefixes as $prefix)
+		{
+			if (strpos($path, $prefix) === 0)
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * Report archive entries a 'language' sync skipped because they matched
+	 * none of the mapped prefixes: a count plus the first few paths via
+	 * e107::getMessage(), and the same via e107::getLog() so a misconfigured
+	 * row (folder_prefix / plugins_folder not matching the repo layout) can be
+	 * diagnosed from the admin log. Paths are escaped before rendering;
+	 * nothing else from the sync params (in particular no token) is included.
+	 *
+	 * @param array $unmatched  Skipped archive entry paths.
+	 * @param array $p          Validated sync params (folder_prefix, plugins_folder, …).
+	 * @return void
+	 */
+	private function reportUnmatched(array $unmatched, array $p)
+	{
+		$total   = count($unmatched);
+		$sample  = array_slice($unmatched, 0, 5);
+		$safe    = array_map(function ($path) { return htmlspecialchars($path, ENT_QUOTES, 'utf-8'); }, $sample);
+		$safePx  = htmlspecialchars($p['folder_prefix'], ENT_QUOTES, 'utf-8');
+		$safePlg = htmlspecialchars($p['plugins_folder'], ENT_QUOTES, 'utf-8');
+		$more    = ($total > count($sample)) ? ' (+' . ($total - count($sample)) . ' more)' : '';
+
+		$detail = $total . ' archive entr' . ($total === 1 ? 'y' : 'ies') . ' matched none of the mapped folders '
+			. '(' . $safePx . 'languages/, ' . $safePlg . '/, ' . $safePx . 'themes/) and were not written: '
+			. implode(', ', $safe) . $more
+			. '. If these are translations, check the row\'s folder prefix / plugins folder layout.';
+
+		e107::getMessage()->addWarning($detail);
+		e107::getLog()->add('Language sync: unmatched entries skipped', $detail, E_LOG_WARNING, '');
 	}
 
 	/**

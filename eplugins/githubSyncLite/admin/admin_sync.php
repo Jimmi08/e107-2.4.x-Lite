@@ -93,7 +93,6 @@ class githubSyncLite_ui extends e_admin_ui
 	 */
 	public function mainPage()
 	{
-		$this->addTitle('Core Sync');
 
 		$mes = e107::getMessage();
 		$req = $this->getRequest();
@@ -187,10 +186,7 @@ class githubSyncLite_ui extends e_admin_ui
 
 		$selectedCount = count(githubSyncLite_plugin_list::getSelected($c['plugins_folder']));
 
-		$body  = '<p>Downloads <strong>core</strong> files from the source repo and extracts them over this '
-			. 'installation, <strong>overwriting existing core files</strong>. The <strong>selected plugin '
-			. 'folders</strong> below are extracted from the same archive — no separate download per plugin.</p>';
-		$body .= "<table class='table table-striped'><tbody>";
+		$body = "<table class='table table-striped'><tbody>";
 		$body .= "<tr><td style='width:28%'><strong>Source repo</strong></td><td>" . $sourceCell
 			. " &middot; branch <strong>" . $safeBranch . "</strong> (change on the <strong>Source</strong> screen)</td></tr>";
 		$body .= "<tr><td><strong>Repo layout</strong></td><td>core folders <strong>" . $safePrefix
@@ -210,7 +206,7 @@ class githubSyncLite_ui extends e_admin_ui
 		$plugins = $this->renderPluginSelection();
 
 		$out  = $mes->render();
-		$out .= e107::getRender()->tablerender('Core sync (+ selected plugins from ' . $safePlugDir . '/)', $body, 'gsl-core', true);
+		$out .= e107::getRender()->tablerender('', $body, 'gsl-core', true);
 		$out .= e107::getRender()->tablerender('Plugins', $plugins, 'gsl-plugins', true);
 
 		return $out;
@@ -363,8 +359,8 @@ class githubSyncLite_ui extends e_admin_ui
 	}
 
 	/**
-	 * Renders the plugin list from the stored preference as checkboxes,
-	 * checked from the STORED SELECTION. The installed / on-disk / not-present
+	 * Renders the plugin list from the stored preference as checkboxes in a
+	 * two-column table, checked from the STORED SELECTION. The installed / on-disk / not-present
 	 * labels are informational only. The toolbar and the checkbox table sit
 	 * inside ONE form ($frm->open() → toolbar → table → $frm->close()), so
 	 * "Save selection" and "Run core sync" post the checkboxes; "Refresh
@@ -408,7 +404,10 @@ class githubSyncLite_ui extends e_admin_ui
 		$base     = githubSyncLite_plugin_list::basePlugins();
 		$selected = $cached['selected'];
 
-		$rows = '';
+		// Two-column layout: each plugin contributes one three-cell group
+		// (checkbox, folder name, status), and two groups are joined into a
+		// single table row below.
+		$cells = array();
 		foreach ($cached['list'] as $folder)
 		{
 			$isBase    = in_array($folder, $base, true);
@@ -446,12 +445,20 @@ class githubSyncLite_ui extends e_admin_ui
 
 			$safeFolder = htmlspecialchars($folder, ENT_QUOTES, 'utf-8');
 
-			$rows .= "<tr>";
-			$rows .= "<td style='width:5%' class='center'>"
+			$cells[] = "<td style='width:5%' class='center'>"
 				. $frm->checkbox('gsl_plugins[]', $safeFolder, $checked, array('class' => $boxClass))
-				. "</td>";
-			$rows .= "<td>{$safeFolder}</td>";
-			$rows .= "<td>" . implode(' ', $labelBits) . "</td>";
+				. "</td>"
+				. "<td style='width:25%'>{$safeFolder}</td>"
+				. "<td style='width:20%'>" . implode(' ', $labelBits) . "</td>";
+		}
+
+		// Pair the groups up; an odd count leaves one empty half-row.
+		$rows  = '';
+		$total = count($cells);
+		for ($i = 0; $i < $total; $i += 2)
+		{
+			$rows .= "<tr>" . $cells[$i];
+			$rows .= isset($cells[$i + 1]) ? $cells[$i + 1] : "<td colspan='3'></td>";
 			$rows .= "</tr>";
 		}
 
@@ -475,7 +482,10 @@ class githubSyncLite_ui extends e_admin_ui
 		$legend .= '</tbody></table>';
 
 		$table  = "<table class='table table-striped'>";
-		$table .= "<thead><tr><th style='width:5%'></th><th>Plugin folder</th><th>Status</th></tr></thead>";
+		$table .= "<thead><tr>"
+			. "<th style='width:5%'></th><th>Plugin folder</th><th>Status</th>"
+			. "<th style='width:5%'></th><th>Plugin folder</th><th>Status</th>"
+			. "</tr></thead>";
 		$table .= "<tbody>{$rows}</tbody>";
 		$table .= "</table>";
 
