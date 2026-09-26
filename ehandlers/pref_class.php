@@ -572,6 +572,7 @@ class e_pref extends e_front_model
 		}
 
 		$display = $session_messages !== false;
+		$noChangesMessage = defset('LAN_SETTINGS_NOT_SAVED_NO_CHANGES_MADE', 'Settings not saved as no changes were made.');
 
 		e107::getMessage()->setUnique($this->prefid); // attempt to fix
 		
@@ -589,7 +590,7 @@ class e_pref extends e_front_model
 		{
 			if($display)
 			{
-				e107::getMessage()->addInfo(LAN_SETTINGS_NOT_SAVED_NO_CHANGES_MADE, $this->prefid, $session_messages)->moveStack($this->prefid);
+				e107::getMessage()->addInfo($noChangesMessage, $this->prefid, $session_messages)->moveStack($this->prefid);
 			}
 
 			return 0;
@@ -641,7 +642,7 @@ class e_pref extends e_front_model
 
 				if($display)
 				{
-					e107::getMessage()->addInfo(LAN_SETTINGS_NOT_SAVED_NO_CHANGES_MADE, $this->prefid, $session_messages);
+					e107::getMessage()->addInfo($noChangesMessage, $this->prefid, $session_messages);
 				}
 
 				e107::getMessage()->moveStack($this->prefid);
@@ -700,15 +701,12 @@ class e_pref extends e_front_model
 				$logId = 'PREFS_01';
 			}
 
-			// FIXME: Admin LAN dependency out of nowhere
-			e107::includeLan(e_LANGUAGEDIR . e_LANGUAGE . '/admin/lan_admin.php');
-
-			$log->addSuccess(LAN_SETSAVED, $display);
+			$log->addSuccess(defset('LAN_SETSAVED', 'Your settings have been saved'), $display);
 			$uid = defset('USERID');
 
 			if(empty($uid)) // Log extra details of any pref changes made by a non-user.
 			{
-				$log->addWarning(print_r(debug_backtrace(null,2), true), false);
+				$log->addWarning(print_r(debug_backtrace(0, 2), true), false);
 			}
 
 			$log->save($logId);
@@ -736,7 +734,7 @@ class e_pref extends e_front_model
 		}
 		else
 		{
-			e107::getMessage()->addInfo(LAN_SETTINGS_NOT_SAVED_NO_CHANGES_MADE, $this->prefid, $session_messages);
+			e107::getMessage()->addInfo($noChangesMessage, $this->prefid, $session_messages);
 			if(!$disallow_logs) $log->flushMessages('LAN_FIXME', E_LOG_INFORMATIVE, '', $this->prefid);
 			e107::getMessage()->moveStack($this->prefid);
 			return 0;
@@ -1089,6 +1087,28 @@ class e_pref extends e_front_model
 		return $this;
 	}
 
+	/**
+	 * Delete the row this object reads and writes, along with the cached copy of it.
+	 *
+	 * @return int|false rows removed, or false on a delete that failed or had no row name to key on
+	 */
+	protected function deletePrefRow()
+	{
+		if(empty($this->prefid))
+		{
+			return false;
+		}
+
+		$removed = e107::getDb($this->prefid)->createQueryBuilder()->delete('core')
+			->where('e107_name', $this->prefid)
+			->execute();
+
+		$this->clearPrefCache();
+		$this->destroy();
+
+		return $removed;
+	}
+
     /**
      * Override
      */
@@ -1296,8 +1316,6 @@ class e_plugin_pref extends e_pref
 	 */
 	function __construct($plugin_id, $multi_row = '', $load = true)
 	{
-		// Sanitise like e_pref::__construct does for $prefid; $this->plugin_id is used
-		// directly in a DELETE WHERE clause by delete().
 		$this->plugin_id = preg_replace('/[^\w\-]/', '', $plugin_id);
 		if($multi_row)
 		{
@@ -1321,21 +1339,13 @@ class e_plugin_pref extends e_pref
 	}
 
 	/**
-	 * Delete plugin preferences
-	 * @see e107_handlers/e_pref#delete()
-	 * @return boolean
+	 * Delete plugin preferences, {@see e_pref::deletePrefRow()}
+	 *
+	 * @return int|false rows removed, or false on a delete that failed or had no row name to key on
 	 */
 	public function delete($ids, $destroy = true, $session_messages = false)
 	{
-		$ret = false;
-		if($this->plugin_id)
-		{
-			$ret = e107::getDb($this->plugin_id)->createQueryBuilder()->delete('core')
-				->where('e107_name', $this->plugin_id)
-				->execute();
-			$this->destroy();
-		}
-		return $ret;
+		return $this->deletePrefRow();
 	}
 }
 
@@ -1369,8 +1379,6 @@ class e_theme_pref extends e_pref
 	 */
 	function __construct($theme_id, $multi_row = '', $load = true)
 	{
-		// Sanitise like e_pref::__construct does for $prefid; $this->theme_id is used
-		// directly in a DELETE WHERE clause by delete().
 		$this->theme_id = preg_replace('/[^\w\-]/', '', $theme_id);
 		if($multi_row)
 		{
@@ -1394,21 +1402,13 @@ class e_theme_pref extends e_pref
 	}
 
 	/**
-	 * Delete plugin preferences
-	 * @see e107_handlers/e_pref#delete()
-	 * @return boolean
+	 * Delete theme preferences, {@see e_pref::deletePrefRow()}
+	 *
+	 * @return int|false rows removed, or false on a delete that failed or had no row name to key on
 	 */
 	public function delete($ids, $destroy = true, $session_messages = false)
 	{
-		$ret = false;
-		if($this->theme_id)
-		{
-			$ret = e107::getDb($this->theme_id)->createQueryBuilder()->delete('core')
-				->where('e107_name', $this->theme_id)
-				->execute();
-			$this->destroy();
-		}
-		return $ret;
+		return $this->deletePrefRow();
 	}
 }
 

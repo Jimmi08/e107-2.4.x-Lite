@@ -121,6 +121,9 @@ class QueryBuilder
 	/** @var string|null alias for the FROM sub-select */
 	private $fromSubAlias = null;
 
+	/** @var string|null developer-authored FROM source taken verbatim */
+	private $fromRaw = null;
+
 	/**
 	 * @var array[] queued joins. Each entry is
 	 *      array('type', 'table', 'alias', 'condition'); 'table' may instead be
@@ -348,6 +351,24 @@ class QueryBuilder
 	}
 
 	/**
+	 * Escape text so the server matches it literally inside a regular
+	 * expression; see {@see PlatformInterface::quoteRegexpLiteral()}. Bind the
+	 * assembled pattern as a value, e.g. with
+	 * {@see ExpressionBuilder::regexp()}.
+	 *
+	 * <code>
+	 * $qb->where($qb->expr()->regexp('news_title', '^'.$qb->quoteRegexpLiteral($keyword)));
+	 * </code>
+	 *
+	 * @param string $value
+	 * @return string escaped text, without delimiters or anchors
+	 */
+	public function quoteRegexpLiteral($value)
+	{
+		return $this->platform->quoteRegexpLiteral($value);
+	}
+
+	/**
 	 * Start a SELECT query and set the column list. Each entry must be a
 	 * plain column name (`col`, `tbl.col`, `tbl.*`, `*`), validated and
 	 * quoted fail-closed, or a vouched {@see SqlFragment} (its bound
@@ -569,6 +590,34 @@ class QueryBuilder
 		$this->alias = $alias;
 		$this->fromSub = null;
 		$this->fromSubAlias = null;
+		$this->fromRaw = null;
+
+		return $this;
+	}
+
+	/**
+	 * Select from a single developer-authored FROM source taken verbatim, for a
+	 * source {@see QueryBuilder::from()} refuses: the explicit raw hatch for the
+	 * FROM clause, alongside {@see QueryBuilder::selectRaw()} for the column
+	 * list. '#table' markers are resolved at execution, joins and aliases are
+	 * spelled inside the expression, and the string must never carry user input.
+	 *
+	 * <code>
+	 * $qb->selectRaw('n.news_id, c.category_name')
+	 *     ->fromRaw('#news AS n LEFT JOIN #news_category AS c ON n.news_category = c.category_id');
+	 * </code>
+	 *
+	 * @param SqlFragment|string $expression Raw FROM source.
+	 * @return QueryBuilder $this
+	 */
+	public function fromRaw($expression)
+	{
+		$this->type = self::TYPE_SELECT;
+		$this->fromRaw = $this->_vouchedFragment($expression);
+		$this->table = null;
+		$this->alias = null;
+		$this->fromSub = null;
+		$this->fromSubAlias = null;
 
 		return $this;
 	}
@@ -596,6 +645,7 @@ class QueryBuilder
 		$this->fromSubAlias = $alias;
 		$this->table = null;
 		$this->alias = null;
+		$this->fromRaw = null;
 
 		return $this;
 	}
@@ -702,6 +752,36 @@ class QueryBuilder
 	public function leftJoinSub($query, $alias, $condition)
 	{
 		return $this->_joinSub('LEFT', $query, $alias, $condition);
+	}
+
+	/**
+	 * INNER JOIN a derived table of literal rows, every value bound: the way to
+	 * attach values the query cannot derive itself, such as an order computed in
+	 * PHP, to the rows they belong to. Compiled as a UNION ALL of one-row SELECTs,
+	 * the spelling every engine accepts, where a VALUES table constructor is
+	 * MySQL 8.0.19 and MariaDB 10.3 grammar. An empty row list compiles to an
+	 * empty table with the same columns, so the join is well-formed either way.
+	 *
+	 * <code>
+	 * $qb->select('c.*', 'p.rank')
+	 *     ->from('download_category', 'c')
+	 *     ->joinValues(array('id', 'rank'), array(array(3, 1), array(7, 2)), 'p',
+	 *         $qb->expr()->compareColumns('p.id', 'c.download_category_id'))
+	 *     ->orderBy('p.rank');
+	 * </code>
+	 *
+	 * @see \e107\Database\QueryBuilderTest::testJoinValues()
+	 * @param string[] $columns Column names of the derived table; validated and quoted.
+	 * @param array $rows Rows as positional value lists, one value per column.
+	 * @param string $alias Alias for the derived table; validated and quoted.
+	 * @param SqlFragment $condition Vouched ON condition; see {@see QueryBuilder::join()}.
+	 * @return QueryBuilder $this
+	 * @throws InvalidArgumentException when a column or the alias fails validation, when
+	 *                  a row is not one value per column, or on a bare-string condition.
+	 */
+	public function joinValues(array $columns, array $rows, $alias, $condition)
+	{
+		return $this->_joinExpression('INNER', $this->_valuesTable($columns, $rows), $alias, $condition);
 	}
 
 	/**
@@ -3052,15 +3132,87 @@ class QueryBuilder
 	 */
 	private function _joinSub($type, $query, $alias, $condition)
 	{
+		return $this->_joinExpression($type, $this->_subQuery($query), $alias, $condition);
+	}
+
+	/**
+	 * Record a join whose source is compiled SQL rather than a table name.
+	 *
+	 * @param string $type
+	 * @param string $expr
+	 * @param string $alias
+	 * @param SqlFragment $condition
+	 * @return QueryBuilder $this
+	 */
+	private function _joinExpression($type, $expr, $alias, $condition)
+	{
 		$this->join[] = array(
 			'type'      => $type,
 			'table'     => null,
-			'expr'      => $this->_subQuery($query),
+			'expr'      => $expr,
 			'alias'     => $alias,
 			'condition' => $this->_vouchedCondition($condition),
 		);
 
 		return $this;
+	}
+
+	/**
+	 * "(SELECT :p AS `c`, ... UNION ALL SELECT :p, ...)" over bound rows, or an
+	 * empty table of the named columns when there are no rows.
+	 *
+	 * @param string[] $columns
+	 * @param array $rows
+	 * @return string
+	 * @throws InvalidArgumentException
+	 */
+	private function _valuesTable(array $columns, array $rows)
+	{
+		if(count($columns) === 0)
+		{
+			throw new InvalidArgumentException('A values table needs at least one column.');
+		}
+
+		$quoted = array();
+
+		foreach($columns as $column)
+		{
+			$quoted[] = $this->_quotedAlias($column);
+		}
+
+		$arms = array();
+
+		foreach(array_values($rows) as $i => $row)
+		{
+			if(!is_array($row) || count($row) !== count($quoted))
+			{
+				throw new InvalidArgumentException('Values table rows must be one value per column.');
+			}
+
+			$terms = array();
+
+			foreach(array_values($row) as $j => $value)
+			{
+				$placeholder = $this->createNamedParameter($value);
+				$terms[] = ($i === 0) ? $placeholder.' AS '.$quoted[$j] : $placeholder;
+			}
+
+			$arms[] = 'SELECT '.implode(', ', $terms);
+		}
+
+		if(count($arms) === 0)
+		{
+			$terms = array();
+
+			foreach($quoted as $column)
+			{
+				$terms[] = 'NULL AS '.$column;
+			}
+
+			return '(SELECT '.implode(', ', $terms).' LIMIT 0)';
+		}
+
+		return '('.implode(' UNION ALL ', $arms).')';
 	}
 
 	/**
@@ -3614,7 +3766,11 @@ class QueryBuilder
 	 */
 	private function _compileSelect()
 	{
-		if($this->fromSub !== null)
+		if($this->fromRaw !== null)
+		{
+			$source = $this->fromRaw;
+		}
+		elseif($this->fromSub !== null)
 		{
 			$source = $this->fromSub.' AS '.$this->_quotedAlias($this->fromSubAlias);
 		}

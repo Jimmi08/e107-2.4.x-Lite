@@ -4121,7 +4121,7 @@ class e_admin_controller_ui extends e_admin_controller
 	protected function isTypedBatchTrigger($type)
 	{
 		return in_array($type, array('sefgen', 'bool', 'boolreverse', 'attach', 'deattach',
-			'addAll', 'clearAll', 'ucadd', 'ucremove', 'ucaddall', 'ucdelall'), true);
+			'attach_all', 'deattach_all', 'ucadd', 'ucremove', 'ucaddall', 'ucdelall'), true);
 	}
 
 	/**
@@ -4144,6 +4144,58 @@ class e_admin_controller_ui extends e_admin_controller
 		}
 
 		return true;
+	}
+
+	/**
+	 * The option values behind one of the batch entries {@see e_admin_form_ui::renderBatchFilter()}
+	 * builds from a comma or checkboxes field's optArray, empty when that field offers no such entry.
+	 *
+	 * @param string $field field segment of the posted batch trigger
+	 * @param string $offer optArray key the menu built the entry from, also the
+	 *                      {@see e_admin_ui::handleCommaBatch()} mode it dispatches to
+	 * @return array
+	 */
+	private function batchOptionList($field, $offer)
+	{
+		$parms = $this->getFieldAttr($field, 'writeParms', array());
+		if(!is_array($parms))
+		{
+			parse_str($parms, $parms);
+		}
+
+		$type = $this->getFieldAttr($field, 'type');
+
+		if(!empty($parms['optArray']))
+		{
+			$optArray = is_array($parms['optArray']) ? $parms['optArray'] : array();
+
+			if($type === 'dropdown' && !empty($parms['multiple']))
+			{
+				$type = 'comma';
+				$parms = $optArray;
+			}
+			else
+			{
+				$fopts = $parms;
+				unset($fopts['optArray']);
+				$parms = $optArray;
+				$parms['__options'] = $fopts;
+			}
+		}
+
+		if(($type !== 'comma' && $type !== 'checkboxes') || !isset($parms[$offer]))
+		{
+			return array();
+		}
+
+		$opts = varset($parms['__options'], array());
+		if(!is_array($opts))
+		{
+			parse_str($opts, $opts);
+		}
+		unset($parms['__options'], $parms['addAll'], $parms['clearAll']);
+
+		return !empty($opts['simple']) ? array_values($parms) : array_keys($parms);
 	}
 
 	/**
@@ -4312,37 +4364,31 @@ class e_admin_controller_ui extends e_admin_controller
 			// see commma, userclasses batch options
 			case 'attach':
 			case 'deattach':
-			case 'addAll':
-			case 'clearAll':
+			case 'attach_all':
+			case 'deattach_all':
 				if(empty($selected))
 				{
 					return $this;
 				}
 				$field = $trigger[1];
-				$value = $trigger[2];
+				$value = varset($trigger[2]);
+				$mode = $trigger[0];
 
-				if($trigger[0] === 'addAll')
+				if($mode === 'attach_all' || $mode === 'deattach_all')
 				{
-					$parms = $this->getFieldAttr($field, 'writeParms', array());
-					if(!is_array($parms))
-					{
-						parse_str($parms, $parms);
-					}
-					unset($parms['__options']);
-					$value = $parms;
+					$mode = $mode === 'attach_all' ? 'addAll' : 'clearAll';
+					$value = $this->batchOptionList($field, $mode);
+
 					if(empty($value))
 					{
-						return $this;
-					}
-					if(!is_array($value))
-					{
-						$value = array_map('trim', explode(',', $value));
+						e107::getMessage()->addDebug('Unhandled batch option list: ' .var_export($field, true));
+						break;
 					}
 				}
 
-				if(method_exists($this, 'handleCommaBatch')) 
+				if(method_exists($this, 'handleCommaBatch'))
 				{
-					$this->handleCommaBatch($selected, $field, $value, $trigger[0]);
+					$this->handleCommaBatch($selected, $field, $value, $mode);
 				}
 			break;
 
@@ -5427,7 +5473,6 @@ class e_admin_controller_ui extends e_admin_controller
 	 */
 	public function _modifyListQrySearch($listQry, $searchTerm, $filterOptions, $tablePath,  $tableFrom, $primaryName, $raw, $orderField, $qryAsc, $forceFrom, $qryFrom, $forceTo, $perPage, $qryField,  $isfilter, $handleAction)
 	{
-		$generateTest = false;
 		$tp       = e107::getParser();
 		$fields   = $this->getFields();
 		$joinData = $this->getJoinData();
@@ -5445,41 +5490,6 @@ class e_admin_controller_ui extends e_admin_controller
 		$searchFilter = $this->_parseFilterRequest($filterOptions);
 
 		$listQry = $this->listQry; // check for modification during parseFilterRequest();
-
-		$debugData = [
-			'uri'    => e_REQUEST_URI,
-		    'methodInvocation' => [
-		        'listQry'      => (string) $listQry,
-		        'searchTerm'   => $searchTerm,
-		        'filterOptions'=> $filterOptions,
-		        'tablePath'    => $tablePath,
-		        'tableFrom'    => $tableFrom,
-		        'primaryName'  => $primaryName,
-		        'raw'          => (bool) $raw,
-		        'orderField'   => $orderField,
-		        'qryAsc'       => $qryAsc,
-		        'forceFrom'    => $forceFrom,
-		        'qryFrom'      => $qryFrom,
-		        'forceTo'      => $forceTo,
-		        'perPage'      => $perPage,
-		        'qryField'     => $qryField,
-		        'isfilter'     => $isfilter,
-		        'handleAction' => $handleAction
-		    ],
-		    'preProcessedData' => [
-		        'fields'   => $fields,
-		        'joinData' => $joinData,
-		        'listOrder' => $this->listOrder,
-		    ],
-		    'intermediateStates' => [
-		        'searchTerm'  => $searchTerm,
-		        'searchQuery' => $searchQuery,
-		        'searchFilter'=> $searchFilter,
-		        'listQry'     => $this->listQry
-		    ]
-		];
-
-
 
 		if(E107_DEBUG_LEVEL == E107_DBG_SQLQUERIES)
 		{
@@ -5928,30 +5938,6 @@ class e_admin_controller_ui extends e_admin_controller
 		// print_a($this->fields);
 
 		$this->_log('listQry: ' . str_replace('#', MPREFIX, $qry));
-
-		// JSON encode the debug data
-		$debugData['intermediateStates']['listQryBeforeFinal'] = $listQry;
-
-		$debugData['expected'] = $qry;
-		$jsonDebugInfo = json_encode($debugData, JSON_PRETTY_PRINT);
-
-		// Optionally log the JSON data to a file for inspection
-		if($generateTest && !e107::isCli())
-		{
-			$path = e_BASE."e107_tests/tests/_data/e_admin_ui/_modifyListQrySearch/".sha1($jsonDebugInfo).".json";
-			if(file_put_contents($path, $jsonDebugInfo . PHP_EOL, FILE_APPEND))
-			{
-				e107::getMessage()->addDebug('Saved test info to ' . $path);
-			}
-		}
-
-
-		// Print to the debug interface (optional, can overload logs)
-			if(E107_DEBUG_LEVEL == E107_DBG_SQLQUERIES)
-			{
-				e107::getMessage()->addDebug('<pre>' . $jsonDebugInfo . '</pre>');
-			}
-
 
 		return $qry;
 	}
