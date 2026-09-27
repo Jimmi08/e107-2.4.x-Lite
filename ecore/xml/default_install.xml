@@ -13,6 +13,7 @@
 		<core name="adminlanguage"></core>
 		<core name="adminpwordchange">0</core>
 		<core name="adminstyle">dashboard</core>
+		<!-- LITE MODIFICATION: Lite admin theme (backend/admin-exas-core.css) -->
 		<core name="admintheme">backend</core>
 		<core name="allowCommentEdit">0</core>
 		<core name="allowEmailLogin">2</core>
