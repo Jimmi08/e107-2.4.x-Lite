@@ -1654,7 +1654,7 @@ return [
 
 		if(varset($_POST['pass1']) || !vartrue($this->previous_steps['admin']['password']))
 		{
-			if($_POST['pass1'] != $_POST['pass2'])
+			if(varset($_POST['pass1'], '') !== varset($_POST['pass2'], ''))
 			{
 				$this->required['pass1'] = LANINS_049; // passwords don't match.
 			}
@@ -2084,7 +2084,7 @@ return [
 	{
 		global $e_forms;
 
-		$data = array('name'=>$this->previous_steps['prefs']['sitename'], 'theme'=>$this->previous_steps['prefs']['sitetheme'], 'language'=>$this->previous_steps['language'], 'url'=>$_SERVER['SCRIPT_URL'],'version'=> defset('e_VERSION'), 'php'=>defset('PHP_VERSION'));
+		$data = array('name'=>$this->previous_steps['prefs']['sitename'], 'theme'=>$this->previous_steps['prefs']['sitetheme'], 'language'=>$this->previous_steps['language'], 'url'=>varset($_SERVER['SCRIPT_URL']),'version'=> defset('e_VERSION'), 'php'=>defset('PHP_VERSION'));
 		$base = base64_encode(http_build_query($data, '','&'));
 		$url = "https://e107.org/e-install/".$base;
 		$e_forms->add_plain_html("<img src='".$url."' style='width:1px; height:1px' />");
