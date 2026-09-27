@@ -13,43 +13,27 @@
 require_once("class2.php");
 
 
-// LITE MODIFICATION: upstream's single dense if() guard rewritten
-// into four sequential cases (Refs #78) for clarity AND to fix the
-// user_reg=0 + landing=login infinite redirect loop. Upstream
-// redirects to $prev/SITEURL on registration-disabled, which loops
-// with checkMembersOnly when login.php is the members-only landing.
-// Lite redirects to membersonly.php (in self_exceptions) to break
-// the loop. Revert condition: upstream adopts a per-case structure
-// AND a non-looping target for user_reg=0.
-$login_admin_redirect = !getperms('0'); // main admin (perms '0') is never bounced from login.php
-$prev = varset(e107::getRedirect()->getPreviousUrl(), SITEURL);
-
-if (e_QUERY !== 'preview' && $login_admin_redirect)
+if ((USER || e_LOGIN != e_SELF || (empty($pref['user_reg']) && !e107::getUserProvider()->isSocialLoginEnabled())) && e_QUERY !== 'preview' && !getperms('0') ) // Disable page if user logged in, or some custom e_LOGIN value is used.
 {
-	// already logged in -> send to the previous page (or profile edit if landing here)
-	if (USER)
+	$dest = e107::getRedirect()->getLoginDestination();
+
+	if(!empty($dest))
 	{
-		if (defined('e_PAGE') && e_PAGE == 'login.php')
-		{
-			$prev = e107::getUrl()->create('user/myprofile/edit', array('id' => USERID));
-		}
+		e107::getRedirect()->clearLoginDestination();
+		e107::redirect($dest);
+		exit();
+	}
+
+	$prev = e107::getRedirect()->getPreviousUrl();
+
+	if(!empty($prev))
+	{
 		e107::redirect($prev);
 		exit();
 	}
 
-	// a plugin overrides the login URL -> bounce away from default login.php
-	if (e_LOGIN != e_SELF)
-	{
-		e107::redirect($prev);
-		exit();
-	}
-
-	// registration disabled (user_reg=0) and no social login -> private-site splash
-	if (empty($pref['user_reg']) && !e107::getUserProvider()->isSocialLoginEnabled())
-	{
-		e107::redirect(e_HTTP.'membersonly.php');
-		exit();
-	}
+	e107::redirect();
+	exit();
 }
 
 e107::coreLan('login');
