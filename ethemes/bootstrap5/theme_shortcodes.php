@@ -2,7 +2,7 @@
 /*
  * e107 website system
  *
- * Copyright (C) 2008-2021 e107 Inc (e107.org)
+ * Copyright (C) 2008-2022 e107 Inc (e107.org)
  * Released under the terms and conditions of the
  * GNU General Public License (http://www.gnu.org/licenses/gpl.txt)
  *
@@ -10,8 +10,7 @@
  *
 */
 
-use JetBrains\PhpStorm\ArrayShape;
-use JetBrains\PhpStorm\Deprecated;
+
 
 /**
  *
@@ -27,36 +26,6 @@ class theme_shortcodes extends e_shortcode
 	function sc_header()
 	{
 		return "<!-- Dynamic Header template -->\n";
-	}
-
-	/**
-	 * Optional {---CAPTION---} processing.
-	 * @shortcode {---CAPTION---}
-	 * @return string
-	 */
-	function sc_caption($caption)
-	{
-
-		$caption = e107::getRender()->getMainCaption();
-
-		if ($caption)
-		{
-			return $caption;
-		}
-		else
-		{
-			if (defined('PAGE_NAME'))
-			{
-
-				return PAGE_NAME;
-			}
-			if (defined('e_PAGETITLE'))
-			{
-
-				return e_PAGETITLE;
-			}
-		}
-		return "";
 	}
 
 
@@ -100,13 +69,21 @@ class theme_shortcodes extends e_shortcode
 
 	}
 
+	/**
+	 * Optional {---CAPTION---} processing.
+	 * @shortcode {---CAPTION---}
+	 * @return string
+	 */
+	function sc_caption($caption)
+	{
+		return $caption; 
+	}
 
 	/**
 	 * Optional {---BREADCRUMB---} processing.
 	 * @shortcode {---BREADCRUMB---}
 	 * @return string
 	 */
-	
 	 /*
 	function sc_breadcrumb($array)
 	{
@@ -181,7 +158,45 @@ class theme_shortcodes extends e_shortcode
 
 	}
 
+	function sc_bootstrap_branding()
+	{
+		$pref = e107::pref('theme', 'branding');
 
+		switch ($pref)
+		{
+			case 'logo':
+
+				return e107::getParser()->parseTemplate('{SITELOGO: h=30}', true);
+
+				break;
+
+			case 'sitenamelogo':
+				return "<span>" . e107::getParser()->parseTemplate('{SITELOGO: h=30}', true) . "</span>" . SITENAME;
+
+				break;
+
+			case 'sitename':
+			default:
+
+				return SITENAME;
+
+				break;
+		}
+	}
+
+	function sc_bootstrap_nav_align()
+	{
+		$pref = e107::pref('theme', 'nav_alignment');
+
+		if ($pref == 'right')
+		{
+			return 	e107::getParser()->parseTemplate('{NAVIGATION: type=main&class=ms-auto}');
+		}
+		else
+		{
+			return e107::getParser()->parseTemplate('{NAVIGATION: type=main&class=me-auto}');
+		}
+	}
 
 
 }

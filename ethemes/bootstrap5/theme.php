@@ -57,10 +57,10 @@ if(!defined('e107_INIT'))
 		}
 
 
-		function tablestyle($caption, $text, $mode='', $options = array())
+		function tablestyle($caption, $text, $mode='', $data = array())
 		{
 
-			$style = varset($options['setStyle'], 'default');
+			$style = varset($data['setStyle'], 'default');
 
 			// Override style based on mode.
 			switch($mode)
@@ -82,15 +82,15 @@ if(!defined('e107_INIT'))
 				break;
 			}
 
-			echo "\n<!-- tablestyle initial:  style=" . $style . "  mode=" . $mode . "  UniqueId=" . varset($options['uniqueId']) . " -->\n\n";
+			echo "\n<!-- tablestyle initial:  style=" . $style . "  mode=" . $mode . "  UniqueId=" . varset($data['uniqueId']) . " -->\n\n";
 
 			
-			if($style === 'listgroup' && empty($options['list']))
+			if($style === 'listgroup' && empty($data['list']))
 			{
 				$style = 'cardmenu';
 			}
 
-			if($style === 'cardmenu' && !empty($options['list']))
+			if($style === 'cardmenu' && !empty($data['list']))
 			{
 				$style = 'listgroup';
 			}
@@ -106,7 +106,7 @@ if(!defined('e107_INIT'))
 			if(deftrue('e_DEBUG'))
 			{
 				echo "\n<!-- \n";
-				echo json_encode($options, JSON_PRETTY_PRINT);
+				echo json_encode($data, JSON_PRETTY_PRINT);
 				echo "\n-->\n\n";
 			}
 
@@ -167,23 +167,40 @@ if(!defined('e107_INIT'))
 					}
 					echo $text;
 
-					if(!empty($options['footer'])) // XXX @see news-months menu.
+					if(!empty($data['footer'])) // XXX @see news-months menu.
 			        {
 			            echo '<div class="card-footer">
-		                      '.$options['footer'].'
+		                      '.$data['footer'].'
 		                    </div>';
 			        }
 
 
+					echo '</div>';
 					break;
           
-			case "splash":	
-				if (!empty($caption))
-				{
-					echo '<h1 class="header-title">' . $caption . '</h1>';
-				}
-				echo '<p class="text-lg ' . $mode . '">' . $text . '</p>';
-				break;               
+            case 'splash':
+	            echo '<div class="container  justify-content-center text-center my-5" id="'.$mode.'">
+	                 <div class="row align-items-center">
+	                 <div class="card card-signin col-md-6 offset-md-3 " id="login-template"><div class="card-body">';
+
+                if(!empty($caption))
+                {
+  					echo '<h5 class="card-title text-center">' . $caption . '</h5>';
+  				}
+
+  				echo $text;
+
+  				if(!empty($data['footer'])) // XXX @see news-months menu.
+  			    {
+  			        echo '<div class="card-footer">
+  		                   '.$data['footer'].'
+  		                   </div>';
+  			    }
+
+  				echo '</div></div>
+						</div></div>';
+
+  					break;                
 
 
 			   default:
