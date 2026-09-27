@@ -28,6 +28,7 @@ $ret =  array(
 
 
 // minimal software version
+// LITE MODIFICATION: Lite minimum PHP 7.4 / MySQL 5.1.2
 define('MIN_PHP_VERSION',   '7.4');
 define('MIN_MYSQL_VERSION', '5.1.2');
 define('MAKE_INSTALL_LOG', true);
@@ -1654,7 +1655,7 @@ return [
 
 		if(varset($_POST['pass1']) || !vartrue($this->previous_steps['admin']['password']))
 		{
-			if(varset($_POST['pass1'], '') !== varset($_POST['pass2'], ''))
+			if($_POST['pass1'] != $_POST['pass2'])
 			{
 				$this->required['pass1'] = LANINS_049; // passwords don't match.
 			}
@@ -1674,6 +1675,7 @@ return [
 		}
 		else // empty
 		{
+			// LITE MODIFICATION: Lite admin theme (backend/admin-exas-core.css), no admin skin choice
 			$this->previous_steps['prefs']['admincss'] = 'css/admin-exas-core.css';
 		}
 
@@ -2084,7 +2086,7 @@ return [
 	{
 		global $e_forms;
 
-		$data = array('name'=>$this->previous_steps['prefs']['sitename'], 'theme'=>$this->previous_steps['prefs']['sitetheme'], 'language'=>$this->previous_steps['language'], 'url'=>varset($_SERVER['SCRIPT_URL']),'version'=> defset('e_VERSION'), 'php'=>defset('PHP_VERSION'));
+		$data = array('name'=>$this->previous_steps['prefs']['sitename'], 'theme'=>$this->previous_steps['prefs']['sitetheme'], 'language'=>$this->previous_steps['language'], 'url'=>$_SERVER['SCRIPT_URL'],'version'=> defset('e_VERSION'), 'php'=>defset('PHP_VERSION'));
 		$base = base64_encode(http_build_query($data, '','&'));
 		$url = "https://e107.org/e-install/".$base;
 		$e_forms->add_plain_html("<img src='".$url."' style='width:1px; height:1px' />");
@@ -3104,6 +3106,7 @@ class SimpleTemplate
 function template_data()
 {
 
+	// LITE MODIFICATION: installer uses Lite admin theme look
 	return '<!DOCTYPE html>
 	<html lang="en">
 	  <head>
