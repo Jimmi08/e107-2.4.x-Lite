@@ -10,5 +10,6 @@
 
 if (!defined('e107_INIT')) { exit; }
 
-$e107info['e107_version'] = "2.4.0.4 (git)";
+// LITE MODIFICATION: Lite version number, never take upstream
+$e107info['e107_version'] = "2.4.0.5 (git)";
 

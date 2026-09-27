@@ -27,6 +27,7 @@ define('e_CAPTCHA_FONTCOLOR','#F9A533');
 // Required for a clean v1.x -> v2 upgrade. 
 $core = e107::getConfig();
 $adminTheme = $core->get('admintheme');
+// LITE MODIFICATION: force Lite admin theme (backend/dashboard/admin-exas-core.css)
 if($adminTheme !== 'backend')
 {
 	$core->update('admintheme', 'backend');
