@@ -18,7 +18,7 @@ $SEARCH_TEMPLATE['form']['start'] = '
 
 $SEARCH_TEMPLATE['form']['advanced'] = '
 						<div class="form-group">
-						    <label for="t" class="col-sm-3 control-label">{SEARCH_ADV_A}</label>
+						    <label for="{SEARCH_ADV_ID}" class="col-sm-3 control-label">{SEARCH_ADV_A}</label>
 						    <div class="col-sm-9">	
 						        
 						      {SEARCH_ADV_B}
@@ -36,16 +36,6 @@ $SEARCH_TEMPLATE['form']['enhanced'] = '
 						    </div>
 					    </div>';
 
-
-/*
-$SEARCH_TEMPLATE['form']['type'] = '
-	<div class="form-group">
-	    <label for="inputPassword3" class="col-sm-3 control-label">{LAN=SEARCH_75}</label>
-	    <div class="col-sm-9">
-	    {SEARCH_TYPE_SEL}
-	    </div>
-	</div>';
-*/
 
 $SEARCH_TEMPLATE['form']['category'] = '
 										<div class="form-group ">
