@@ -9,7 +9,7 @@
 | Branch | `sync-upstream-2026-09-26` (name as requested, created from `main`) |
 | Tag note | Tag `2.4.0.4` points to `b80ad923e` — it was created on `main` before this sync. |
 
-Scope: `elanguages/`, `ehandlers/`, `eadmin/`, `eweb/`, repo root, and (scope extension by instruction) `ecore/`.
+Scope: `elanguages/`, `ehandlers/`, `eadmin/`, `eweb/`, repo root, and (scope extensions by instruction) `ecore/`, `ethemes/`.
 
 Directory mapping (§2) applied only to code; comments keep the upstream `e107_*` form (instruction). Where Lite
 still carries an `e107_*` literal in code (e.g. `ehandlers/file_class.php:3448–3458`, `ehandlers/secure_img_handler.php:166`,
@@ -30,6 +30,9 @@ still carries an `e107_*` literal in code (e.g. `ehandlers/file_class.php:3448�
 | `edae44bd0` | sync(ecore) |
 | `dbc2e3534` | sync(root): upstream login.php guard |
 | `ff57e4234` | sync(ecore): 00d730581 in sc_admin_logo, markers |
+| `d8738ecbf` | audit: this report (first version) |
+| `bafac1c07` | sync(ethemes): bootstrap3/bootstrap5 from upstream |
+| `22483dbcb` | fix(ethemes/backend): logout link carries e-token |
 
 ---
 
@@ -260,6 +263,39 @@ still carries an `e107_*` literal in code (e.g. `ehandlers/file_class.php:3448�
 `ecore/xml/default_install.xml` loaded with `xmlClass::loadXMLfile(..., 'advanced')` before and after the marker:
 3 top-level keys, no `comment` key anywhere, `md5(serialize())` identical (`be3aa50bbc94fa922004e11c09a8ae53`).
 
+## 7. ethemes/ (← e107_themes/) — scope extension
+
+- `_blank`, `voux` (upstream-only themes): **skipped by instruction**.
+- `ethemes/index.html`: kept.
+- `bootstrap3`, `bootstrap5`: **taken fully from upstream by instruction** (no marker check, no STOP; neither
+  theme contained a marker before). Directory mapping applied to code and data; comments keep the upstream
+  `e107_*` form. After the replace the only differences to upstream are the two mapped lines
+  `href=&quot;eadmin/admin.php&quot;` in `bootstrap3/install/install.xml` and `bootstrap5/install/install.xml`
+  (the six `/* … e107_admin/phpinfo.php */` CSS comments keep the upstream form).
+  - **Lite-only files deleted (4):** `bootstrap3/css/admin-exas-core.css`, `bootstrap3/images/admin-exas-core.webp`,
+    `bootstrap3/templates/admin_template.php`, `bootstrap3/templates/dashboard_template.php`.
+  - **Upstream-only files added (3):** `bootstrap3/admin_style.css`, `bootstrap3/admin_theme.php`,
+    `bootstrap5/templates/forum/forum_stats_template.php`.
+  - **Lite version differed before the replace (19):**
+    - bootstrap3: `css/bootstrap-dark.min.css`, `css/corporate.css`, `css/kadmin.css`, `css/modern-dark-2.css`,
+      `css/modern-dark.css`, `css/modern-light.css` (upstream added the phpinfo palette block), `install/install.xml`,
+      `theme.php`, `theme.xml`, `theme_config.php`, `theme_shortcodes.php`.
+    - bootstrap5: `install/install.xml`, `layouts/splash_layout.html`, `style.css`, `theme.html`, `theme.php`,
+      `theme.xml`, `theme_config.php`, `theme_shortcodes.php`.
+  - Notes (not acted on):
+    - The Lite `bootstrap3/install/install.xml` set `admincss=css/admin-exas-core.css`, `adminpref=1`,
+      `adminstyle=dashboard`, `admintheme=backend`, `url_main_module=page`; the upstream file does not, so installing
+      with bootstrap3 no longer applies those prefs (core `ecore/xml/default_install.xml` still sets the admin theme).
+    - `ethemes/backend/theme.xml:21` declares its own `css/admin-exas-core.css` + `images/admin-exas-core.webp`;
+      nothing in the tree referenced the deleted bootstrap3 copies (grep).
+- `backend` (Lite-only theme): not synced. Separate commit `22483dbcb`: `theme_shortcodes.php` logout link changed from
+  `e_HTTP.'index.php?logout'` to `e_HTTP.'index.php?logout&amp;e-token='.defset('e_TOKEN')` (form used by upstream
+  bootstrap3). Marker **added by instruction**; it is placed on its own line directly above the `$text .= '`
+  statement that holds the link, because the link line is inside a PHP string (a `//` there would be output as HTML).
+  - Finding (not changed, out of scope): `eplugins/login_menu/login_menu.php:52` and
+    `eplugins/login_menu/login_menu_shortcodes.php:319, 324` still build `index.php?logout` without an e-token.
+- `php -l` on changed PHP files: no errors.
+
 ---
 
 ## Markers
@@ -268,20 +304,20 @@ Counted in `*.php`, `*.js`, `*.css` and, per instruction, also `*.xml`.
 
 | Marker | before (php/js/css) | before (xml) | after (php/js/css) | after (xml) |
 |---|---|---|---|---|
-| `LITE MODIFICATION` | 62 | 0 | 66 | 1 |
+| `LITE MODIFICATION` | 62 | 0 | 67 | 1 |
 | `LITE FEATURE` | 3 | 0 | 3 | 0 |
 | `LITE-SKIP` | 57 | 0 | 57 | 0 |
 
-`LITE MODIFICATION` php/js/css 62 → 66 = −2 + 6:
+`LITE MODIFICATION` php/js/css 62 → 67 = −2 + 7:
 - **Removed by instruction:** `ehandlers/online_class.php` (defensive init of `$members_online`); `login.php` (Refs #78 guard).
 - **Added by instruction:** `eadmin/auth.php`; `eadmin/ver.php`; `install.php` ×3 (min PHP/MySQL, default admincss,
-  installer look); `ecore/url/user/url.php`.
+  installer look); `ecore/url/user/url.php`; `ethemes/backend/theme_shortcodes.php`.
 - xml 0 → 1, **added by instruction:** `ecore/xml/default_install.xml`.
 
 ## Checks
 
 - `php -l` on all 166 added/modified PHP files: no errors (PHP 8.4.19).
-- `git diff --name-only main..HEAD`: only `elanguages/`, `ehandlers/`, `eadmin/`, `eweb/`, `ecore/`, root files
+- `git diff --name-only main..HEAD`: only `elanguages/`, `ehandlers/`, `eadmin/`, `eweb/`, `ecore/`, `ethemes/`, root files
   (`LICENSE`, `class2.php`, `fpw.php`, `install.php`, `login.php`, `page.php`, `rate.php`) — plus this report in `audit/`.
 - `git status` clean, no `.rej` / `.orig`.
 - Branch pushed; no merge, no PR, nothing pushed to `main`.
