@@ -43,6 +43,10 @@ still carries an `e107_*` literal in code (e.g. `ehandlers/file_class.php:3448�
 | `9546b7962` | feat(eplugins/featurebox): add from upstream |
 | `1785df0a6` | feat(eplugins/forum): add from upstream |
 | `036241118` | sync(eplugins/login_menu): f1e3452ce registry guards |
+| `f27d531ab` | audit: eplugins section |
+| `1c1c6f593` | sync(eplugins/rss) |
+| `3d21975b7` | audit: rss section |
+| `a83f07454` | sync(eplugins/rss): keep Lite plugin.xml metadata, marker |
 
 ---
 
@@ -340,9 +344,15 @@ literals (`rss_menu/` → `rss/`, `e107::url('rss_menu', …)` → `e107::url('r
 - Merged around marker: `admin_prefs.php` (upstream formatting taken; `target='_blank'` marker kept).
 - Marked, no upstream change outside protected code: `rss.php` (6 markers), `rss_setup.php` (news-guard marker).
 - Identical: images, `English_global.php`, `rss_resolver.php`, `rss_shortcodes.php`, `rss_sql.php`, `templates/rss_template.php`.
-- **Pending instruction:** `plugin.xml` — unmarked Lite values `version="2.1"`, `date="2026-08-01"`, `compatibility="2.4"`,
-  author `Jimmi` / `https://www.e107sk.com`; upstream has `version="1.3"`, `date="2012-08-01"`, `compatibility="2.0"`,
-  author `e107 Inc.`. Not replaced.
+- `plugin.xml` (STOP → instruction): Lite version kept — upstream differs only in the metadata (`version="1.3"`,
+  `date="2012-08-01"`, `compatibility="2.0"`, author `e107 Inc.`) and the final newline, so nothing else was taken.
+  Lite keeps `version="2.1"`, `date="2026-08-01"`, `compatibility="2.4"`, author `Jimmi` / `https://www.e107sk.com`.
+  Marker **added by instruction** as an XML comment on its own line between the `<?xml …?>` declaration and the root
+  `<e107Plugin>` element (`a83f07454`).
+  **XML check:** core reads `plugin.xml` through `xmlClass::loadXMLfile(…, 'advanced')` → `parseXml()` → `xml2array()`
+  (`ehandlers/plugin_class.php:963` `parse_plugin_xml()`, also `:3737`, `:5622`). Loaded the same way before and after
+  the edit: 7 top-level keys, no `comment` key anywhere, `md5(serialize())` identical
+  (`2f2c7de1aed97995464bc41d1502e628`).
 
 **STOP — `login_menu_class.php` (instruction):** both markers **removed by instruction — fixed upstream in `f1e3452ce`**:
 - `parse_external_list()`: upstream cache guard taken (per-`$active` key `loginbox_elist_<0|1>`, `getRegistry(..., FALSE)`).
@@ -393,7 +403,19 @@ login menu stays off.
   `chatbox_menu`, `comment_menu`, `contact`, `faqs`, `gallery`, `gsitemap`, `hero`, `import`, `linkwords`, `list_new`,
   `newforumposts_main`, `newsfeed`, `newsletter`, `online`, `pm`, `poll`, `search_menu`, `signin`, `social`, `tagcloud`.
 
-`php -l` on all changed PHP files of the plugin phase: no errors.
+`php -l` on all 86 added/modified PHP files of the plugin phase: no errors.
+
+#### Plugin phase — marker count per variant
+
+| Marker | `*.php` before → after | `*.js` | `*.css` | `*.xml` before → after |
+|---|---|---|---|---|
+| `LITE MODIFICATION` | 67 → 65 | 0 → 0 | 0 → 0 | 1 → 2 |
+| `LITE FEATURE` | 3 → 3 | 0 → 0 | 0 → 0 | 0 → 0 |
+| `LITE-SKIP` | 57 → 57 | 0 → 0 | 0 → 0 | 0 → 0 |
+
+- `*.php` −2: **removed by instruction — fixed upstream in `f1e3452ce`** (`login_menu_class.php` `parse_external_list()`,
+  `get_plugin_data()`).
+- `*.xml` +1: **added by instruction** (`eplugins/rss/plugin.xml`).
 
 ---
 
@@ -403,7 +425,7 @@ Counted in `*.php`, `*.js`, `*.css` and, per instruction, also `*.xml`.
 
 | Marker | before (php/js/css) | before (xml) | after (php/js/css) | after (xml) |
 |---|---|---|---|---|
-| `LITE MODIFICATION` | 62 | 0 | 65 | 1 |
+| `LITE MODIFICATION` | 62 | 0 | 65 | 2 |
 | `LITE FEATURE` | 3 | 0 | 3 | 0 |
 | `LITE-SKIP` | 57 | 0 | 57 | 0 |
 
@@ -412,7 +434,7 @@ Counted in `*.php`, `*.js`, `*.css` and, per instruction, also `*.xml`.
   `eplugins/login_menu/login_menu_class.php` ×2 (`parse_external_list()`, `get_plugin_data()` — fixed upstream in `f1e3452ce`).
 - **Added by instruction:** `eadmin/auth.php`; `eadmin/ver.php`; `install.php` ×3 (min PHP/MySQL, default admincss,
   installer look); `ecore/url/user/url.php`; `ethemes/backend/theme_shortcodes.php`.
-- xml 0 → 1, **added by instruction:** `ecore/xml/default_install.xml`.
+- xml 0 → 2, **added by instruction:** `ecore/xml/default_install.xml`; `eplugins/rss/plugin.xml`.
 
 ## Checks
 
