@@ -161,7 +161,7 @@ $DASHBOARD_TEMPLATE['positions']['menu-area-10'] = array();	 	// full bottom row
 
 */
 
-//$caption = e107::getParser()->lanVars(LAN_CONTROL_PANEL, ucwords(USERNAME));
+$caption = e107::getParser()->lanVars('LAN_CONTROL_PANEL', htmlspecialchars(ucwords((string) defset('USERNAME', '')), ENT_QUOTES, 'UTF-8', false));
 
 if(getperms('1')) {
 	//icons by admin categories  

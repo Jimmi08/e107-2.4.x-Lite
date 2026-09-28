@@ -376,7 +376,7 @@
 
 			$newarray = e107::getNav()->adminLinks($dashboardLinks);
 
-			$adminPanel = "<div id='.$dashboardUniqueId.' >";
+			$adminPanel = "<div>";
 
 			foreach ($newarray as $key => $val) {
 				if ($dashboardLinks == "plugins") {
@@ -468,23 +468,33 @@
 			$dashboardCaption     = varset($options['caption'], '');
 
 			$fullarray = self::$fullPluginIcons; //all plugins
+			$newarray = array();
 
 			if ($plugs = e107::getAddonConfig('e_dashboard', null, $dashboardKey)) {
 
 				foreach ($plugs as $key => $plug) {
 					//check if is key
+					if (empty($fullarray["p-" . $key]['link'])) {
+						continue;
+					}
 					$newarray["p-" . $key] = $fullarray["p-" . $key];
 				}
 			}
-			$adminPanel = "<div id='.$dashboardUniqueId.' >";
+			$adminPanel = "<div>";
+			$tiles = 0;
 
 			foreach ($newarray as $key => $val) {
 				if ($tmp = e107::getNav()->renderAdminButton($val['link'], $val['title'], $val['caption'], $val['perms'], $val['icon_32'], "div")) {
 
 					$adminPanel .= $tmp;
+					$tiles++;
 				}
 			}
 			$adminPanel .= "</div>";
+
+			if ($tiles === 0) {
+				return '';
+			}
 
 			$ns->setStyle($dashboardStyle);
 			$ns->setUniqueId($dashboardUniqueId);
