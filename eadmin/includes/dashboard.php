@@ -22,42 +22,10 @@
 		$flepanelEnabled = false;
 	}
 
-	//define('FLEXPANEL_ENABLED', $flepanelEnabled);
-	//change: allow use flex always, not depends on personalization access
-	define('FLEXPANEL_ENABLED', true);
+	define('FLEXPANEL_ENABLED', $flepanelEnabled);
 	//LITE-SKIP Lite removes the e107.org admin RSS feed entirely (no phone-home).
 	//LITE-SKIP ADMINFEEDMORE dropped. See Lite #88.
 	//LITE-SKIP define('ADMINFEEDMORE', 'https://e107.org/blog');
-
-	// Save rearranged menus to user.
-	if (e_AJAX_REQUEST) {
-		if (FLEXPANEL_ENABLED && varset($_POST['core-flexpanel-order'], false)) {
-			/*
-			$message = date('r') . "\n" . $message . "\n";
-			$message .= "\n_POST\n";
-			$message .= print_r($_POST, true);
-			$message .= "\n_GET\n";
-			$message .= print_r($_GET, true);
-
-			$message .= '---------------';
-
-			file_put_contents(e_LOG . 'uiAjaxFlexDashboard.log', $message . "\n\n", FILE_APPEND);
-			*/
-
-			// If "Apply dashboard preferences to all administrators" is checked.
-			if ($adminPref == 1) {
-				e107::getConfig()
-					->setPosted('core-flexpanel-order', $_POST['core-flexpanel-order'])
-					->save();
-			} else {
-				e107::getUser()
-					->getConfig()
-					->set('core-flexpanel-order', $_POST['core-flexpanel-order'])
-					->save();
-			}
-			exit;
-		}
-	}
 
 	// Dashboard uses infopanel's methods to avoid code duplication.
 	// not used directly flexpanel - intention 
@@ -76,6 +44,8 @@
 	{
 
 		public $positions	= array();
+		protected $areas = array();
+		protected $renderedPanels = array();
 		static $userAdminPanelArray = array();
 		static $fullAdminPanelArray = array();
 		//static $fullPluginPanelArray = array(); not needed, personalization is not used for plugins
@@ -93,7 +63,8 @@
 		{
 			//	parent::__construct();
 
-			$this->positions = e107::getTemplate(false, 'dashboard', 'positions');
+			$this->positions = (array) e107::getTemplate(false, 'dashboard', 'positions');
+			$this->areas = array_keys($this->positions);
 
 			self::$adminPref = e107::getConfig()->get('adminpref', 0);
 
@@ -126,7 +97,7 @@
 
 
 			/* flex is enabled only if each admin can have its own admin dashboard adminpref = false */
-			if (FLEXPANEL_ENABLED) {
+			if ($this->canEditLayout()) {
 				e107::css('inline', '.draggable-panels .panel-heading { cursor: move; }');
 				e107::js('core', 'core/admin.flexpanel.js', 'jquery', 4);
 
@@ -139,10 +110,10 @@
 				}
 
 				// Save posted Layout type.
-				if (varset($_POST['e-flexpanel-layout'])) {
+				if (varset($_POST['e-flexpanel-layout']) && is_string($_POST['e-flexpanel-layout']) && array_key_exists($_POST['e-flexpanel-layout'], $this->getDefaultPositions())) {
 
 					// If Layout has been changed, we clear previous arrangement in order to use defaults.
-					if (self::$user_pref['core-flexpanel-layout'] != $_POST['e-flexpanel-layout']) {
+					if (varset(self::$user_pref['core-flexpanel-layout']) != $_POST['e-flexpanel-layout']) {
 						$this->savePref('core-flexpanel-order', array());
 					}
 
@@ -178,6 +149,95 @@
 			}
 		}
 
+		/**
+		 * @return bool
+		 */
+		public function canEditLayout()
+		{
+			if (!deftrue('ADMIN') || !FLEXPANEL_ENABLED) {
+				return false;
+			}
+
+			return (self::$adminPref == 1) ? getperms('1') : true;
+		}
+
+		/**
+		 * Merge the posted panel order into the stored one and save it.
+		 *
+		 * @param array $posted
+		 * @return void
+		 */
+		public function saveOrder($posted)
+		{
+			if (!is_array($posted) || !$this->canEditLayout()) {
+				return;
+			}
+
+			if (self::$adminPref == 1) {
+				$stored = e107::getConfig()->get('core-flexpanel-order', array());
+			} else {
+				$stored = e107::getUser()->getConfig()->get('core-flexpanel-order', array());
+			}
+
+			if (!is_array($stored)) {
+				$stored = array();
+			}
+
+			$changed = false;
+
+			foreach ($posted as $id => $pos) {
+				$id = (string) $id;
+
+				if (!isset($this->renderedPanels[$id]) || !is_array($pos)) {
+					continue;
+				}
+
+				$area = varset($pos['area'], '');
+
+				if (!is_string($area) || !in_array($area, $this->areas, true)) {
+					continue;
+				}
+
+				$stored[$id] = array(
+					'area'   => $area,
+					'weight' => (int) varset($pos['weight'], 0),
+				);
+				$changed = true;
+			}
+
+			if (!$changed) {
+				return;
+			}
+
+			if (self::$adminPref == 1) {
+				e107::getConfig()
+					->setPosted('core-flexpanel-order', $stored)
+					->save();
+			} else {
+				e107::getUser()
+					->getConfig()
+					->set('core-flexpanel-order', $stored)
+					->save();
+			}
+		}
+
+		/**
+		 * @param string $id
+		 * @param string $html
+		 * @return void
+		 */
+		protected function addToPosition($id, $html)
+		{
+			$this->renderedPanels[$id] = true;
+
+			$info = $this->getMenuPosition($id);
+
+			if (!isset($this->positions[$info['area']][$info['weight']])) {
+				$this->positions[$info['area']][$info['weight']] = '';
+			}
+			$this->positions[$info['area']][$info['weight']] .= $html;
+		}
+
 
 		/**
 		 * Get selected area and position for a menu item. see flexpanel class
@@ -189,8 +249,14 @@
 		 */
 		function getMenuPosition($id)
 		{
-			if (!empty(self::$user_pref['core-flexpanel-order'][$id])) {
-				return self::$user_pref['core-flexpanel-order'][$id];
+			$order = varset(self::$user_pref['core-flexpanel-order'], array());
+			$stored = (is_array($order) && isset($order[$id])) ? $order[$id] : null;
+
+			if (is_array($stored) && isset($stored['area']) && in_array($stored['area'], $this->areas, true)) {
+				return array(
+					'area'   => $stored['area'],
+					'weight' => (int) varset($stored['weight'], 0),
+				);
 			}
 
 			$default = array(
@@ -355,12 +421,7 @@
 					$id = str_replace('_', '-', $id); // TODO fix this if they solve #4940 different way
 					$ns->setUniqueId($id);
 					$inc = $ns->tablerender($val['caption'], $val['text'], $val['mode'], true);
-					$info = $this->getMenuPosition($id);
-
-					if (!isset($this->positions[$info['area']][$info['weight']])) {
-						$this->positions[$info['area']][$info['weight']] = '';
-					}
-					$this->positions[$info['area']][$info['weight']] .= $inc;
+					$this->addToPosition($id, $inc);
 				}
 			};
 			return false;
@@ -434,12 +495,7 @@
 					$id = str_replace('_', '-', $id); // TODO fix this if they solve #4940 different way
 					$ns->setUniqueId($id);
 					$inc = $ns->tablerender($val['caption'], $val['text'], $val['mode'], true);
-					$info = $this->getMenuPosition($id);
-
-					if (!isset($this->positions[$info['area']][$info['weight']])) {
-						$this->positions[$info['area']][$info['weight']] = '';
-					}
-					$this->positions[$info['area']][$info['weight']] .= $inc;
+					$this->addToPosition($id, $inc);
 				}
 			}
 
@@ -589,6 +645,13 @@
 
 			$frm = e107::getForm();
 
+			if (e_AJAX_REQUEST && isset($_POST['core-flexpanel-order'])) {
+				if ($this->canEditLayout()) {
+					$this->buildPanels();
+					$this->saveOrder($_POST['core-flexpanel-order']);
+				}
+				exit;
+			}
 
 			if (varset($_GET['mode']) == 'customize') {
 				echo $frm->open('infopanel', 'post', e_SELF);
@@ -599,48 +662,7 @@
 				return;
 			}
 
-			/* LOGIC CHANGE SET EVERYTHING IN TEMPLATE *************************************
-			/* TODO FIXME template name - for now trying to avoid to use admin_template   */
-
-			$supported_panels = e107::getTemplate(false, 'dashboard', 'panels');
-
-			foreach ($supported_panels as $key => $panel) {
-
-
-				$params  = $panel;
-				$perm = varset($params['perm'], false);
-				$multi = varset($params['multi'], false);
-
-				if (!getperms($perm)) continue;
-
-
-				$params['uniqueId'] 	= $key;
-				$params['style'] 		= varset($params['style'], 'flexpanel');
-				//	$params['options'] 		= $panel ;
-
-				//e107::callMethod("adminstyle_dashboard", $panel_type, $params);  this is not working for multi dashboard 
-				$method_name = varset($panel['method_name'], $key);
-				$method_name = str_replace('-', '_', $method_name); // TODO fix this if they solve #4940 different way
-
-				$text = '';
-				if (method_exists('adminstyle_dashboard', $method_name)) {
-
-					$text = $this->$method_name($params);
-				}
-
-				if ($text)  //or test multi par 
-				{
-
-					$info = $this->getMenuPosition($key);
-
-					if (!isset($this->positions[$info['area']][$info['weight']])) {
-						$this->positions[$info['area']][$info['weight']] = '';
-					}
-					$this->positions[$info['area']][$info['weight']] .= $text;
-				}
-			}
-
-			/*  END OF CHANGE **************************************************************/
+			$this->buildPanels();
 
 			/*
 			// --------------------- User Selected Menus ----------------------
@@ -687,5 +709,48 @@
 			}
 
 			echo $template;
+		}
+
+		/**
+		 * Collect the panels visible to the current admin into their positions.
+		 */
+		protected function buildPanels()
+		{
+			/* LOGIC CHANGE SET EVERYTHING IN TEMPLATE *************************************
+			/* TODO FIXME template name - for now trying to avoid to use admin_template   */
+
+			$supported_panels = (array) e107::getTemplate(false, 'dashboard', 'panels');
+
+			foreach ($supported_panels as $key => $panel) {
+
+
+				$params  = $panel;
+				$perm = varset($params['perm'], false);
+				$multi = varset($params['multi'], false);
+
+				if (!getperms($perm)) continue;
+
+
+				$params['uniqueId'] 	= $key;
+				$params['style'] 		= varset($params['style'], 'flexpanel');
+				//	$params['options'] 		= $panel ;
+
+				//e107::callMethod("adminstyle_dashboard", $panel_type, $params);  this is not working for multi dashboard 
+				$method_name = varset($panel['method_name'], $key);
+				$method_name = str_replace('-', '_', $method_name); // TODO fix this if they solve #4940 different way
+
+				$text = '';
+				if (method_exists('adminstyle_dashboard', $method_name)) {
+
+					$text = $this->$method_name($params);
+				}
+
+				if ($text)  //or test multi par
+				{
+					$this->addToPosition($key, $text);
+				}
+			}
+
+			/*  END OF CHANGE **************************************************************/
 		}
 	}
