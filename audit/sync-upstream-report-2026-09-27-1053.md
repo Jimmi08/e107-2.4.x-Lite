@@ -47,6 +47,8 @@ still carries an `e107_*` literal in code (e.g. `ehandlers/file_class.php:3448�
 | `1c1c6f593` | sync(eplugins/rss) |
 | `3d21975b7` | audit: rss section |
 | `a83f07454` | sync(eplugins/rss): keep Lite plugin.xml metadata, marker |
+| `567b8f9d8` | audit: close plugin phase |
+| `f45c11c30` | feat(eplugins/pm): add from upstream (correction) |
 
 ---
 
@@ -362,8 +364,34 @@ The `get_coreplugs()` marker (empty core list) is unchanged.
 ### B. Taken fully from upstream (added)
 
 - `featurebox` (22 files) — identical to upstream.
+- `pm` (35 files, added by correction instruction, `f45c11c30`) — identical to upstream (no mapped content).
 - `forum` (225 files) — identical to upstream apart from the directory mapping in two user-facing strings:
   `forum_update.php:899` (`efiles/public`) and `languages/English/English_global.php:9` (`eplugins/forum/…` example URLs).
+
+#### pm: dependencies (nothing changed)
+
+Root files missing in Lite: **none** referenced. The only non-plugin paths pm uses are core handlers present in Lite:
+`ehandlers/user_select_class.php` (`pm.php:81`, `pm_shortcodes.php:166`), `ehandlers/mail_manager_class.php`
+(`e_cron.php:206`), `ehandlers/mail.php` (`pm_class.php:747`, `:829` — both inside comments), and `eadmin/auth.php`,
+`eadmin/footer.php` (`admin_config.php:1076`, `:1079`).
+
+Plugins not in Lite: **none** actually used.
+| file:line | reference | status |
+|---|---|---|
+| `eplugins/pm/e_url.php:27–44` | `forum/rules`, `forum/stats`, `forum/track` routes | inside a `/* */` comment — not active (and `forum` is now in Lite) |
+| `eplugins/pm/e_shortcode.php:113–115` | `THEME.'forum/pm.png'` | theme image, guarded by `file_exists()`, falls back to `pm/images/pm.png` |
+
+Other things pm refers to that do not exist (all identical in upstream):
+| file:line | reference | status |
+|---|---|---|
+| `eplugins/pm/pm_class.php:177` (`legacyAttachmentDir()`) | `e_PLUGIN.'pm/attachments/'` | legacy directory, not shipped upstream either; current attachments go to `e_MEDIA.'plugins/pm/attachments/'` (`pm_class.php:150`) |
+| `eplugins/pm/admin_config.php:727` | `get_files(e_PLUGIN.'pm/attachments')` | same legacy directory, upstream marks it `//FIXME wrong path` |
+| `eplugins/pm/pm.php:40` | `pm/shortcodes/batch/pm_shortcodes.php` | inside a comment |
+| `eplugins/pm/pm.php:194–199`, `:237–241`, `:313–317`, `:384–389`, `:476–480`; `pm_class.php:749–759` | `THEME.'pm_template.php'` / `pm/pm_template.php` | the `pm/pm_template.php` fallbacks are in comments; the live `include_once(THEME.'pm_template.php')` runs only when `THEME_LEGACY === true` (v1 theme); the plugin's own template is `templates/pm_template.php` |
+
+Other notes: pm uses the core cron (`e_cron.php`, bulk-send queue) and mail manager, both present in Lite. With pm now in
+the tree, the forum's `e107::isInstalled('pm')` branches (`forum/shortcodes/batch/view_shortcodes.php:524`, `:897`;
+`forum/forum_viewtopic.php:148`) become active once pm is installed.
 
 #### forum: dependencies (nothing changed)
 
@@ -382,7 +410,7 @@ Root files missing in Lite (calling code read; none of these links is guarded):
 Plugins not in Lite:
 | plugin | file:line | guarded? |
 |---|---|---|
-| pm | `shortcodes/batch/view_shortcodes.php:524`, `:897`; `forum_viewtopic.php:148` | yes — `e107::isInstalled('pm')` |
+| pm | `shortcodes/batch/view_shortcodes.php:524`, `:897`; `forum_viewtopic.php:148` | yes — `e107::isInstalled('pm')` (pm is now in Lite, added later in this phase) |
 | poll | `shortcodes/batch/post_shortcodes.php:424`; `forum_viewtopic.php:197`; `forum_admin.php:241`; `e_meta.php:6`, `:17` | yes — `e107::isInstalled('poll')` |
 | poll | `forum_post.php:239` → `submitPoll()` (`:302` `require_once(e_PLUGIN.'poll/poll_class.php')`) | **no** — runs on any POST with `submitpoll` |
 | poll | `forum_post.php:1135–1137` (preview with `poll_title`) | **no** — only `check_class($prefs->get('poll'))`; pref default `255` (nobody) in `plugin.xml:19` / `forum_class.php:1098` |
@@ -401,9 +429,10 @@ login menu stays off.
 - `githubSyncLite` (Lite-only) — skipped by instruction.
 - Upstream-only plugins skipped by instruction: `_blank`, `admin_menu`, `alt_auth`, `banner`, `blogcalendar_menu`,
   `chatbox_menu`, `comment_menu`, `contact`, `faqs`, `gallery`, `gsitemap`, `hero`, `import`, `linkwords`, `list_new`,
-  `newforumposts_main`, `newsfeed`, `newsletter`, `online`, `pm`, `poll`, `search_menu`, `signin`, `social`, `tagcloud`.
+  `newforumposts_main`, `newsfeed`, `newsletter`, `online`, `poll`, `search_menu`, `signin`, `social`, `tagcloud`.
+  (`pm` was moved from this list to B by a later instruction.)
 
-`php -l` on all 86 added/modified PHP files of the plugin phase: no errors.
+`php -l` on all 86 added/modified PHP files of the plugin phase, plus the 30 PHP files of pm: no errors.
 
 #### Plugin phase — marker count per variant
 
