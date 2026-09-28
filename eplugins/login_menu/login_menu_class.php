@@ -118,6 +118,7 @@ class login_menu_class
             $tmp = array_flip(explode(',', $this->loginPrefs['external_links']));
             
             $cnt = count($tmp);
+            $list_ord = array();
             foreach ($list as $value) {
             	$list_ord[$value] = varset($tmp[$value], $cnt++);
             }
@@ -133,15 +134,10 @@ class login_menu_class
 
     function parse_external_list($active=false, $order=true)
 	{
-        // Prevent more than 1 call.
-        // LITE MODIFICATION: upstream compares the return value against FALSE, but
-        // getRegistry() yields its $default (null) for a missing key. The original guard
-        // therefore returned null on the very first call and the scan below never ran,
-        // leaving external links and stats permanently empty. The sentinel is passed in
-        // as $default instead, so an empty array stays a valid cached result.
-        // Pending upstream report - revert once fixed there.
-       	$tmp = e107::getRegistry('loginbox_elist', false);
-		if($tmp !== false) { return $tmp; }
+        //prevent more than 1 call
+        $cacheId = 'loginbox_elist_'.(int) $active;
+
+        if(($tmp = e107::getRegistry($cacheId, FALSE)) !== FALSE) return $tmp;
         
         $ret = array();
         //$lbox_admin = varsettrue($eplug_admin, false);
@@ -163,11 +159,15 @@ class login_menu_class
         
         foreach ($list as $item) 
 		{
+            if(!e107::isInstalled($item))
+            {
+                continue;
+            }
+
             //core
             if(in_array($item, $coreplugs)) 
 			{
-//                if($tmp = call_user_func(array('login_menu_class', "get_{$item}_stats"), $get_stats))
-                if($tmp = call_user_func(array('login_menu_class', "get_{$item}_stats")))		// $get_stats appears to be no longer used
+                if($tmp = call_user_func(array($this, "get_{$item}_stats")))
                     $ret['stats'][$item] = $tmp;  
                        
                 continue;
@@ -189,7 +189,7 @@ class login_menu_class
             }
         }
 
-        e107::setRegistry('loginbox_elist', $ret);
+        e107::setRegistry($cacheId, $ret);
         
         return $ret;
     }
@@ -211,9 +211,9 @@ class login_menu_class
 
             require_once(e_PLUGIN.'forum/forum_class.php');
 
-            $lbox_stats['forum'][0]['stat_new'] = $sql->createQueryBuilder()
+            $lbox_stats[0]['stat_new'] = $sql->createQueryBuilder()
                 ->from('forum_thread', 't')
-                ->where('t.thread_datestamp', '>', (int) USERLV)
+                ->where('t.thread_datestamp', '>', (int) defset('USERLV', 0))
                 ->whereIn('t.thread_forum_id', e107forum::visibleForumIds())
                 ->count();
         }
@@ -222,7 +222,7 @@ class login_menu_class
     }
 
 
-    function get_chatbox_menu_stats() 
+    function get_chatbox_menu_stats($get_stats=true) 
 	{
 		$sql = e107::getDb();
         
@@ -236,8 +236,8 @@ class login_menu_class
 
         if(!empty($get_stats))
         {
-            $lbox_stats['chatbox_menu'][0]['stat_new']  = $sql->createQueryBuilder()
-                ->from('chatbox')->where('cb_datestamp', '>', (int) USERLV)->count();
+            $lbox_stats[0]['stat_new']  = $sql->createQueryBuilder()
+                ->from('chatbox')->where('cb_datestamp', '>', (int) defset('USERLV', 0))->count();
         }
         
         return $lbox_stats;
@@ -368,36 +368,15 @@ class login_menu_class
 	 */
     function get_plugin_data($plugid) 
 	{
-        // LITE MODIFICATION: same upstream bug as in parse_external_list() - getRegistry()
-        // yields null, not FALSE, for a missing key. Pending upstream report.
-        $tmp = e107::getRegistry('loginbox_eplug_data_'.$plugid, false);
-		if($tmp !== false) { return $tmp; }
+        $plug = e107::getPlug()->load($plugid);
+        $name = $plug->getName();
 
-        $ret = array();
-		if (is_readable(e_PLUGIN.$plugid.'/plugin.xml'))
-		{
-			require_once(e_HANDLER.'xml_class.php');
-			$xml = new xmlClass;
-			$xml->filter = array('name' => FALSE,'version'=>FALSE);			// Just want a couple of variables
-			$readFile = $xml->loadXMLfile(e_PLUGIN.$plugid.'/plugin.xml', true, true);
-            $ret['eplug_name'] = defined($readFile['name']) ? constant($readFile['name']) : $readFile['name'];
-            $ret['eplug_version'] = $readFile['version'];
-		}
-		elseif (is_readable(e_PLUGIN.$plugid.'/plugin.php')) 
-		{
-            
-            include(e_PLUGIN.$plugid.'/plugin.php');
-            $ret['eplug_name'] = defined($eplug_name) ? constant($eplug_name) : $eplug_name;
-            $ret['eplug_version'] = $eplug_version;
+        if(empty($name))
+        {
+            return array();
         }
-		else
-		{
-			return array();
-		}
-		// Valid data here
-		e107::setRegistry('loginbox_eplug_data_'.$plugid, $ret);
 
-        return $ret;
+        return array('eplug_name' => $name, 'eplug_version' => $plug->getVersion());
     }
     
     

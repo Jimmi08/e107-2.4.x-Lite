@@ -1,0 +1,511 @@
+<?php
+/*
+ * e107 website system
+ *
+ * Copyright (C) 2008-2013 e107 Inc (e107.org)
+ * Released under the terms and conditions of the
+ * GNU General Public License (http://www.gnu.org/licenses/gpl.txt)
+ *
+ */
+
+if(!defined('e107_INIT'))
+{
+	require_once(__DIR__.'/../../class2.php');
+}
+
+if (!e107::isInstalled('forum'))
+{
+	e107::redirect();
+	exit;
+}
+
+
+class forumStats
+{
+
+	private $from = 0;
+	private $view = 20;
+	public $subaction = '';
+
+
+
+	function __construct()
+	{
+		e107::lan('forum', "front", true);
+		e107::coreLan('top');
+
+		if(!defined('IMODE')) define('IMODE', 'lite'); // BC
+
+		e107::css('forum', 'forum.css');
+	}
+
+
+	/**
+	 * Turn the top posters into the top repliers: take off the posts that
+	 * opened a thread, work out each one's share of all replies, and sort on
+	 * what is left.
+	 *
+	 * The two sets do not line up. Posters are every author in forum_post;
+	 * thread counts only exist for authors who have opened a thread, so a
+	 * member who has only ever replied has no row there at all. A post whose
+	 * author has since been deleted is keyed on the empty string, because the
+	 * LEFT JOIN that named the author hands back NULL for it, and no thread
+	 * count is ever keyed that way. Both cases mean the same thing: this
+	 * member opened no threads, so take nothing off.
+	 *
+	 * @param array $posters      forum_post rows keyed by user id, each with post_count
+	 * @param array $threadCounts forum_thread counts keyed by user id, each with thread_count
+	 * @param int   $totalReplies replies across the whole forum
+	 * @return array top repliers, most replies first
+	 */
+	public function buildTopRepliers($posters, $threadCounts, $totalReplies)
+	{
+		$sortByReplies = array();
+
+		foreach($posters as $uid => $poster)
+		{
+			$threads = isset($threadCounts[$uid]['thread_count']) ? (int) $threadCounts[$uid]['thread_count'] : 0;
+			$replies = $poster['post_count'] - $threads;
+
+			$sortByReplies[$uid] = $replies;
+			$posters[$uid]['user_forums'] = $replies;
+			// A forum whose threads have never been replied to has no replies
+			// to take a share of.
+			$posters[$uid]['percentage'] = ($totalReplies > 0) ? round(($replies / $totalReplies) * 100, 2) : 0;
+		}
+
+		arsort($sortByReplies, SORT_NUMERIC);
+
+		$topRepliers = array();
+
+		foreach($sortByReplies as $uid => $replies)
+		{
+			$topRepliers[] = $posters[$uid];
+		}
+
+		return $topRepliers;
+	}
+
+
+	function init()
+	{
+
+		$sql = e107::getDb();
+		$tp = e107::getParser();
+		$ns = e107::getRender();
+		$frm = e107::getForm();
+
+
+		require_once(e_PLUGIN.'forum/forum_class.php');
+
+		$forum = new e107forum;
+
+		$total_posts = $sql->createQueryBuilder()->from('forum_post')->count();
+		$total_topics = $sql->createQueryBuilder()->from('forum_thread')->count();
+		$total_replies = $total_posts - $total_topics;
+		$total_views = 0;
+
+		$total_views = $sql->createQueryBuilder()->selectAggregate('SUM', 'thread_views', 'total')->from('forum_thread')->fetchOne();
+
+		$fp = $sql->createQueryBuilder()
+			->select('post_datestamp')->from('forum_post')
+			->where('post_datestamp', '>', 0)
+			->orderBy('post_datestamp', 'ASC')
+			->setFirstResult(0)->setMaxResults(1)
+			->fetchRow();
+		$fp = is_array($fp) ? $fp : array();
+
+		$open_ds = (int) varset($fp['post_datestamp']);
+		$open_days = floor((time()-$open_ds) / 86400);
+		$postsperday = ($open_days < 1 ? $total_posts : round($total_posts / $open_days));
+
+		global $mySQLdefaultdb;
+
+		$db_size = 0;
+		$avg_row_len = 0;
+		// SHOW TABLE STATUS cannot be expressed by the query builder; the database
+		// name is an identifier (not a bindable value), so validate it fail-closed.
+		$dbIdentifier = $sql->quoteIdentifier($mySQLdefaultdb);
+		if($dbIdentifier !== false)
+		{
+			$sql->execute("SHOW TABLE STATUS FROM ".$dbIdentifier);
+			$array = $sql->db_getList();
+			foreach($array as $table)
+			{
+				if($table['Name'] == MPREFIX.'forum_post')
+				{
+					$db_size = eHelper::parseMemorySize($table['Data_length']);
+					$avg_row_len = eHelper::parseMemorySize($table['Avg_row_length']);
+					break;
+				}
+			}
+		}
+
+		$visibleForums = $forum->getForumPermList('view');
+
+		$qb = $sql->createQueryBuilder();
+		$most_activeArray = $qb
+			->select('ft.thread_id', 'ft.thread_user', 'ft.thread_name', 'ft.thread_total_replies', 'ft.thread_datestamp', 'f.forum_sef', 'f.forum_class', 'u.user_name', 'u.user_id')
+			->from('forum_thread', 'ft')
+			->leftJoin('user', 'u', $qb->expr()->compareColumns('ft.thread_user', 'u.user_id'))
+			->leftJoin('forum', 'f', $qb->expr()->compareColumns('f.forum_id', 'ft.thread_forum_id'))
+			->where('ft.thread_active', '>', 0)
+			->whereIn('ft.thread_forum_id', $visibleForums)
+			->orderBy('ft.thread_total_replies', 'DESC')
+			->setFirstResult(0)->setMaxResults(10)
+			->fetchAll();
+
+		$qb = $sql->createQueryBuilder();
+		$most_viewedArray = $qb
+			->select('ft.*', 'f.forum_class', 'f.forum_sef', 'u.user_name', 'u.user_id')
+			->from('forum_thread', 'ft')
+			->leftJoin('user', 'u', $qb->expr()->compareColumns('ft.thread_user', 'u.user_id'))
+			->leftJoin('forum', 'f', $qb->expr()->compareColumns('f.forum_id', 'ft.thread_forum_id'))
+			->whereIn('ft.thread_forum_id', $visibleForums)
+			->orderBy('ft.thread_views', 'DESC')
+			->setFirstResult(0)->setMaxResults(10)
+			->fetchAll();
+
+
+		// get all replies
+		$qb = $sql->createQueryBuilder();
+		$top_repliers_data = $qb
+			->selectAggregate('COUNT', 'fp.post_id', 'post_count')->addSelect('u.user_name', 'u.user_id', 'fp.post_thread')
+			->from('forum_post', 'fp')
+			->leftJoin('user', 'u', $qb->expr()->compareColumns('fp.post_user', 'u.user_id'))
+			->groupBy('fp.post_user')
+			->orderBy('post_count', 'DESC')
+			->setFirstResult(0)->setMaxResults(10)
+			->fetchAll('user_id');
+
+		// build top posters meanwhile
+		$top_posters = array();
+		$topReplier = array();
+		foreach($top_repliers_data as $poster)
+		{
+			$percent = round(($poster['post_count'] / $total_posts) * 100, 2);
+			$topReplier[] = intval($poster['user_id']);
+			$top_posters[] = array("user_id" => $poster['user_id'], "user_name" => vartrue($poster['user_name'],LAN_ANONYMOUS), "user_forums" => $poster['post_count'], "percentage" => $percent);
+		}
+			// end build top posters
+
+		// find topics by top 10 users
+		$qb = $sql->createQueryBuilder();
+		$top_repliers_data_c = $qb
+			->selectAggregate('COUNT', 'ft.thread_id', 'thread_count')->addSelect('u.user_id')
+			->from('forum_thread', 'ft')
+			->leftJoin('user', 'u', $qb->expr()->compareColumns('ft.thread_user', 'u.user_id'))
+			->whereIn('u.user_id', $topReplier)
+			->groupBy('ft.thread_user')
+			->fetchAll('user_id');
+
+		$top_repliers = $this->buildTopRepliers($top_repliers_data, $top_repliers_data_c, $total_replies);
+
+		// get all replies
+		$qb = $sql->createQueryBuilder();
+		$top_topic_starters_data = $qb
+			->selectAggregate('COUNT', 'ft.thread_id', 'thread_count')->addSelect('u.user_name', 'u.user_id')
+			->from('forum_thread', 'ft')
+			->leftJoin('user', 'u', $qb->expr()->compareColumns('ft.thread_user', 'u.user_id'))
+			->groupBy('ft.thread_user')
+			->orderBy('thread_count', 'DESC')
+			->setFirstResult(0)->setMaxResults(10)
+			->fetchAll();
+		$top_topic_starters = array();
+
+		foreach($top_topic_starters_data as $poster)
+		{
+			$percent = round(($poster['thread_count'] / $total_topics) * 100, 2);
+			$top_topic_starters[] = array("user_id" => $poster['user_id'], "user_name" => vartrue($poster['user_name'],LAN_ANONYMOUS), "user_forums" => $poster['thread_count'], "percentage" => $percent);
+		}
+
+
+
+
+
+
+		$sc = e107::getScBatch('stats', 'forum');
+
+		$template = e107::getTemplate('forum', 'forum_stats', null, true, true);
+
+		$panels = array();
+
+		$panels['summary'] = array(array(
+			'open_ds'       => $open_ds,
+			'total_posts'   => $total_posts,
+			'total_topics'  => $total_topics,
+			'total_replies' => $total_replies,
+			'total_views'   => $total_views,
+			'postsperday'   => $postsperday,
+			'db_size'       => $db_size,
+			'avg_row_len'   => $avg_row_len,
+		));
+
+		$panels['most_active']  = $most_activeArray;
+		$panels['most_viewed']  = $most_viewedArray;
+		$panels['top_posters']  = $top_posters;
+		$panels['top_starters'] = $top_topic_starters;
+		$panels['top_repliers'] = $top_repliers;
+
+		$rendered = array();
+
+		foreach($panels as $key => $rows)
+		{
+			if(empty($template[$key]))
+			{
+				continue;
+			}
+
+			$block = $tp->parseTemplate(varset($template[$key]['start']), true, $sc);
+			$count = 1;
+
+			foreach($rows as $row)
+			{
+				$row['count'] = $count++;
+				$sc->setVars($row);
+				$block .= $tp->parseTemplate(varset($template[$key]['item']), true, $sc);
+			}
+
+			$block .= $tp->parseTemplate(varset($template[$key]['end']), true, $sc);
+
+			$rendered[$key] = array(
+				'caption' => varset($template[$key]['caption'], ''),
+				'text'    => $block,
+			);
+		}
+
+		if(deftrue('BOOTSTRAP'))
+		{
+			$breadarray = array(
+				array('text'=> e107::pref('forum','title', defset('LAN_PLUGIN_FORUM_NAME')), 'url' => e107::url('forum','index') ),
+				array('text'=>LAN_FORUM_6013, 'url'=>null)
+			);
+
+			$text = $frm->breadcrumb($breadarray);
+			e107::breadcrumb($breadarray); // assign to {---BREADCRUMB---}
+
+			$text = "<div id='forum-stats'>". $text . $frm->tabs(array_values($rendered))."</div>";
+		}
+		else
+		{
+			$text = '';
+
+			foreach($rendered as $panel)
+			{
+				$text .= "<h3>".$panel['caption']."</h3>".$panel['text'];
+			}
+		}
+
+		$text .= "<div class='center'>".e107::getForm()->pagination(e107::url('forum','index'), LAN_BACK)."</div>";
+
+		$ns -> tablerender(LAN_FORUM_6013, $text, 'forum-stats');
+
+	}
+
+	/**
+	 * @deprecated v2.4.0 The statistics tables render from
+	 *             forum_stats_template.php, where the bar is
+	 *             {PERCENTAGE_BAR}. Retained for callers outside core.
+	 *             Use {@see e_form::progressBar()} directly.
+	 */
+	function showBar($perc)
+	{
+		return e107::getForm()->progressBar('prog',$perc);
+	}
+
+
+	function topPosters()               // from top.php - unused.
+	{
+		$pref = e107::pref('core');
+		$rank = e107::getRank();
+		$sql = e107::getDb();
+		$sql2 = e107::getDb('sql2');
+		$ns = e107::getRender();
+		$tp = e107::getParser();
+
+		foreach(array('main_admin', 'admin', 'moderator') as $role)
+		{
+			$constant = 'IMAGE_rank_'.$role.'_image';
+
+			if(defined($constant))
+			{
+				continue;
+			}
+
+			$themeImage = varset($pref['rank_'.$role.'_image'], '');
+			$src = (!empty($themeImage) && file_exists(THEME."forum/".$themeImage))
+				? THEME_ABS."forum/".$themeImage
+				: e_PLUGIN_ABS."forum/images/".IMODE."/".$role.".png";
+
+			define($constant, "<img src='".$src."' alt='' />");
+		}
+
+		if ($this->subaction == 'forum' || $this->subaction == 'all')
+		{
+			require_once (e_PLUGIN.'forum/forum_class.php');
+			$forum = new e107forum();
+
+			$qb = $sql2->createQueryBuilder();
+			$rows = $qb
+				->select('ue.*', 'u.*')
+				->from('user_extended', 'ue')
+				->leftJoin('user', 'u', $qb->expr()->compareColumns('u.user_id', 'ue.user_extended_id'))
+				->where('ue.user_plugin_forum_posts', '>', 0)
+				->orderBy('ue.user_plugin_forum_posts', 'DESC')
+				->setFirstResult((int) $this->from)->setMaxResults((int) $this->view)
+				->fetchAll();
+
+			$text = "
+			<div>
+			<table style='width:95%' class='table table-striped fborder'>
+			<tr>
+			<th style='width:10%; text-align:center' class='forumheader3'>&nbsp;</th>
+			<th style='width:50%' class='forumheader3'>".TOP_LAN_1."</th>
+			<th style='width:10%; text-align:center' class='forumheader3'>".TOP_LAN_2."</th>
+			<th style='width:30%; text-align:center' class='forumheader3'>".TOP_LAN_6."</th>
+			</tr>\n";
+
+			$counter = 1 + $this->from;
+
+			foreach($rows as $row)
+			{
+				//$ldata = get_level($row['user_id'], $row['user_plugin_forum_posts'], $row['user_comments'], $row['user_chats'], $row['user_visits'], $row['user_join'], $row['user_admin'], $row['user_perms'], $pref);
+				$ldata = $rank->getRanks($row, (USER && $forum->isModerator(USERID)));
+
+				if(vartrue($ldata['special']))
+				{
+					$r = $ldata['special'];
+				}
+				else
+				{
+					$r = $ldata['pic'] ? $ldata['pic'] : defset($ldata['name'], $ldata['name']);
+				}
+
+				if(!$r) $r = 'n/a';
+
+				$text .= "<tr>
+				<td style='width:10%; text-align:center' class='forumheader3'>{$counter}</td>
+				<td style='width:50%' class='forumheader3'><a href='".e107::url('user/profile/view', 'id='.$row['user_id'].'&name='.$row['user_name'])."'>{$row['user_name']}</a></td>
+				<td style='width:10%; text-align:center' class='forumheader3'>{$row['user_plugin_forum_posts']}</td>
+				<td style='width:30%; text-align:center' class='forumheader3'>{$r}</td>
+				</tr>";
+
+				$counter++;
+			}
+
+			$text .= "</table>\n</div>";
+
+			if ($this->subaction == 'forum')
+			{
+				$ftotal = $sql->createQueryBuilder()->from('user')->where('user_forums', '>', 0)->count();
+				$parms = "{$ftotal},{$this->view},{$this->from},".e_SELF.'?[FROM].top.forum.'.$this->view;
+				$text .= "<div class='nextprev'>".$tp->parseTemplate("{NEXTPREV={$parms}}").'</div>';
+			}
+
+			$ns->tablerender(TOP_LAN_0, $text, 'forum-stats-top');
+
+
+		}
+	}
+
+
+
+
+	function mostActiveTopics()           // from top.php - unused.
+	{
+		//require_once (e_HANDLER.'userclass_class.php');
+
+		$sql = e107::getDb();
+		$tp = e107::getParser();
+		$ns = e107::getRender();
+
+		require_once (e_PLUGIN.'forum/forum_class.php');
+		$forum = new e107forum();
+
+		$forumList = $forum->getForumPermList('view');
+
+		$qb = $sql->createQueryBuilder();
+		$rows = $qb
+			->select('t.*', 'u.user_name')->selectAs('ul.user_name', 'user_last')->addSelect('f.forum_id', 'f.forum_name', 'f.forum_sef')
+			->from('forum_thread', 't')
+			->leftJoin('forum', 'f', $qb->expr()->compareColumns('f.forum_id', 't.thread_forum_id'))
+			->leftJoin('user', 'u', $qb->expr()->compareColumns('u.user_id', 't.thread_user'))
+			->leftJoin('user', 'ul', $qb->expr()->compareColumns('ul.user_id', 't.thread_lastuser'))
+			->whereIn('t.thread_forum_id', $forumList)
+			->orderBy('t.thread_views', 'DESC')
+			->setFirstResult((int) $this->from)->setMaxResults((int) $this->view)
+			->fetchAll();
+
+		if ($rows)
+		{
+			$text = "<div>\n<table style='width:auto' class='table fborder'>\n";
+			$gen = e107::getDate();
+
+			$text .= "<tr>
+			<th style='width:5%' class='forumheader'>&nbsp;</th>
+			<th style='width:45%' class='forumheader'>".LAN_1."</th>
+			<th style='width:15%; text-align:center' class='forumheader'>".LAN_2."</th>
+			<th style='width:5%; text-align:center' class='forumheader'>".LAN_3."</th>
+			<th style='width:5%; text-align:center' class='forumheader'>".LAN_4."</th>
+			<th style='width:25%; text-align:center' class='forumheader'>".LAN_5."</th>
+			</tr>\n";
+
+			foreach($rows as $row)
+			{
+				if ($row['user_name'])
+				{
+					$POSTER = "<a href='".e107::url('user/profile/view', "name={$row['user_name']}&id={$row['thread_user']}")."'>{$row['user_name']}</a>";
+				}
+				else
+				{
+					$POSTER = $tp->toHTML($row['thread_user_anon']);
+				}
+
+				$row['thread_sef'] = $forum->getThreadSef($row);
+
+				$LINKTOTHREAD = e107::url('forum', 'topic', $row);
+				$LINKTOFORUM = e107::url('forum', 'forum', $row);
+
+				$lastpost_datestamp = $gen->convert_date($row['thread_lastpost'], 'forum');
+
+				if ($row['user_last'])
+				{
+					$LASTPOST = "<a href='".e107::url('user/profile/view', "name={$row['user_last']}&id={$row['thread_lastuser']}")."'>{$row['user_last']}</a><br />".$lastpost_datestamp;
+				}
+				else
+				{
+					$LASTPOST = $tp->toHTML($row['thread_lastuser_anon']).'<br />'.$lastpost_datestamp;
+				}
+
+				$text .= "<tr>
+					<td style='width:5%; text-align:center' class='forumheader3'><img src='".e_PLUGIN_ABS."forum/images/".IMODE."/new_small.png' alt='' /></td>
+					<td style='width:45%' class='forumheader3'><b><a href='{$LINKTOTHREAD}'>{$row['thread_name']}</a></b> <span class='smalltext'>(<a href='{$LINKTOFORUM}'>{$row['forum_name']}</a>)</span></td>
+					<td style='width:15%; text-align:center' class='forumheader3'>{$POSTER}</td>
+					<td style='width:5%; text-align:center' class='forumheader3'>{$row['thread_views']}</td>
+					<td style='width:5%; text-align:center' class='forumheader3'>{$row['thread_total_replies']}</td>
+					<td style='width:25%; text-align:center' class='forumheader3'>{$LASTPOST}</td>
+					</tr>\n";
+			}
+
+			$text .= "</table>\n</div>";
+
+			$ftotal = $sql->createQueryBuilder()->from('forum_thread')->where('thread_parent', 0)->count();
+			$parms = "{$ftotal},{$this->view},{$this->from},".e_SELF.'?[FROM].active.forum.'.$this->view;
+			$text .= "<div class='nextprev'>".$tp->parseTemplate("{NEXTPREV={$parms}}").'</div>';
+
+			$ns->tablerender(LAN_7, $text, 'forum-stats-active');
+
+
+		}
+
+
+	}
+
+}
+
+
+$frmStats = new forumStats;
+require_once(HEADERF);
+$frmStats->init();
+
+require_once(FOOTERF);

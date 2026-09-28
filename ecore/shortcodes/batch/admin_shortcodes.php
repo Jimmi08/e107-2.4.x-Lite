@@ -2254,44 +2254,48 @@ Inverse 	10 	<span class="badge badge-inverse">10</span>
 
 			
 							
-			$tmp[5]['text'] 			= 'e107 Website';
-			$tmp[5]['description'] 		= '';
-			$tmp[5]['link'] 			= 'https://e107.org';
-			$tmp[5]['image'] 			= defset('E_16_E107');
-			$tmp[5]['image_large'] 		= '';
-			$tmp[5]['image_src'] 		= '';
-			$tmp[5]['image_large_src'] 	= '';
-			$tmp[5]['link_class']		= '';
+			// LITE MODIFICATION: e107 external links hidden for all admins (restore getperms('0') to show them to main admin)
+			if(false /* getperms('0') */)
+			{
+				$tmp[5]['text'] 			= 'e107 Website';
+				$tmp[5]['description'] 		= '';
+				$tmp[5]['link'] 			= 'https://e107.org';
+				$tmp[5]['image'] 			= defset('E_16_E107');
+				$tmp[5]['image_large'] 		= '';
+				$tmp[5]['image_src'] 		= '';
+				$tmp[5]['image_large_src'] 	= '';
+				$tmp[5]['link_class']		= '';
 
 										
-			$tmp[6]['text'] 			= 'e107 on Twitter';
-			$tmp[6]['description'] 		= '';
-			$tmp[6]['link'] 			= 'https://twitter.com/e107';
-			$tmp[6]['image'] 			= defset('E_16_TWITTER'); // "<img src='".E_16_NAV_LGOT."' alt='".ADLAN_151."' class='icon S16' />";
-			$tmp[6]['image_large'] 		= '';
-			$tmp[6]['image_src'] 		= '';
-			$tmp[6]['image_large_src'] 	= '';
-			$tmp[6]['link_class']		= '';
+				$tmp[6]['text'] 			= 'e107 on Twitter';
+				$tmp[6]['description'] 		= '';
+				$tmp[6]['link'] 			= 'https://twitter.com/e107';
+				$tmp[6]['image'] 			= defset('E_16_TWITTER'); // "<img src='".E_16_NAV_LGOT."' alt='".ADLAN_151."' class='icon S16' />";
+				$tmp[6]['image_large'] 		= '';
+				$tmp[6]['image_src'] 		= '';
+				$tmp[6]['image_large_src'] 	= '';
+				$tmp[6]['link_class']		= '';
 								
 							
-			$tmp[7]['text'] 			= 'e107 on Facebook';
-			$tmp[7]['description'] 		= '';
-			$tmp[7]['link'] 			= 'https://www.facebook.com/e107CMS';
-			$tmp[7]['image'] 			= defset('E_16_FACEBOOK'); // "<img src='".E_16_NAV_LGOT."' alt='".ADLAN_151."' class='icon S16' />";
-			$tmp[7]['image_large'] 		= '';
-			$tmp[7]['image_src'] 		= '';
-			$tmp[7]['image_large_src'] 	= '';
-			$tmp[7]['link_class']		= '';	
+				$tmp[7]['text'] 			= 'e107 on Facebook';
+				$tmp[7]['description'] 		= '';
+				$tmp[7]['link'] 			= 'https://www.facebook.com/e107CMS';
+				$tmp[7]['image'] 			= defset('E_16_FACEBOOK'); // "<img src='".E_16_NAV_LGOT."' alt='".ADLAN_151."' class='icon S16' />";
+				$tmp[7]['image_large'] 		= '';
+				$tmp[7]['image_src'] 		= '';
+				$tmp[7]['image_large_src'] 	= '';
+				$tmp[7]['link_class']		= '';	
 	
 			
-			$tmp[8]['text'] 			= 'e107 on Github';
-			$tmp[8]['description'] 		= '';
-			$tmp[8]['link'] 			= 'https://github.com/e107inc';
-			$tmp[8]['image'] 			= defset('E_16_GITHUB'); // "<img src='".E_16_NAV_LGOT."' alt='".ADLAN_151."' class='icon S16' />";
-			$tmp[8]['image_large'] 		= '';
-			$tmp[8]['image_src'] 		= '';
-			$tmp[8]['image_large_src'] 	= '';
-			$tmp[8]['link_class']		= '';					
+				$tmp[8]['text'] 			= 'e107 on Github';
+				$tmp[8]['description'] 		= '';
+				$tmp[8]['link'] 			= 'https://github.com/e107inc';
+				$tmp[8]['image'] 			= defset('E_16_GITHUB'); // "<img src='".E_16_NAV_LGOT."' alt='".ADLAN_151."' class='icon S16' />";
+				$tmp[8]['image_large'] 		= '';
+				$tmp[8]['image_src'] 		= '';
+				$tmp[8]['image_large_src'] 	= '';
+				$tmp[8]['link_class']		= '';					
+			}
 				
 			$menu_vars[$type]['text'] = ''; // ADMINNAME; // ""; // ADMINNAME;
 			$menu_vars[$type]['link'] = '#';

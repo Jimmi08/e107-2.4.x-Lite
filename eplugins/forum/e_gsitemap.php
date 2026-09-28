@@ -1,0 +1,48 @@
+<?php
+/*
+ * e107 website system
+ *
+ * Copyright (C) 2008-2018 e107 Inc (e107.org)
+ * Released under the terms and conditions of the
+ * GNU General Public License (http://www.gnu.org/licenses/gpl.txt)
+ *
+ *	gSitemap addon
+ */
+
+if (!defined('e107_INIT')) { exit; }
+
+// v2.x Standard
+class forum_gsitemap // plugin-folder + '_rss'
+{
+
+	function import()
+	{
+		$import = array();
+
+		$sql = e107::getDb();
+
+		$data = $sql->createQueryBuilder()
+			->select('*')->from('forum')
+			->where('forum_parent', '!=', '0')
+			->orderBy('forum_order', 'ASC')
+			->fetchAll();
+
+		foreach($data as $row)
+		{
+			$import[] = array(
+					'id'    => $row['forum_id'],
+					'table' => 'forum',
+					'name'  => $row['forum_name'],
+					'url'   => e107::url('forum','forum',$row, array('mode'=>'full')), // ('forum/forum/view', $row['forum_id']),
+					'type'  => LAN_PLUGIN_FORUM_NAME,
+					'class' => (int) $row['forum_class']
+			);
+
+		}
+
+		return $import;
+	}
+
+
+
+}
