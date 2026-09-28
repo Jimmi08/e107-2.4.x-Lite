@@ -432,7 +432,7 @@ login menu stays off.
   `newforumposts_main`, `newsfeed`, `newsletter`, `online`, `poll`, `search_menu`, `signin`, `social`, `tagcloud`.
   (`pm` was moved from this list to B by a later instruction.)
 
-`php -l` on all 86 added/modified PHP files of the plugin phase, plus the 30 PHP files of pm: no errors.
+`php -l` on all 86 added/modified PHP files of the plugin phase, plus the 19 PHP files of pm: no errors.
 
 #### Plugin phase — marker count per variant
 
