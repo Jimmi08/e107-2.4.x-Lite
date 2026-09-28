@@ -118,6 +118,7 @@ class login_menu_class
             $tmp = array_flip(explode(',', $this->loginPrefs['external_links']));
             
             $cnt = count($tmp);
+            $list_ord = array();
             foreach ($list as $value) {
             	$list_ord[$value] = varset($tmp[$value], $cnt++);
             }
@@ -163,11 +164,15 @@ class login_menu_class
         
         foreach ($list as $item) 
 		{
+            if(!e107::isInstalled($item))
+            {
+                continue;
+            }
+
             //core
             if(in_array($item, $coreplugs)) 
 			{
-//                if($tmp = call_user_func(array('login_menu_class', "get_{$item}_stats"), $get_stats))
-                if($tmp = call_user_func(array('login_menu_class', "get_{$item}_stats")))		// $get_stats appears to be no longer used
+                if($tmp = call_user_func(array($this, "get_{$item}_stats")))
                     $ret['stats'][$item] = $tmp;  
                        
                 continue;
@@ -211,9 +216,9 @@ class login_menu_class
 
             require_once(e_PLUGIN.'forum/forum_class.php');
 
-            $lbox_stats['forum'][0]['stat_new'] = $sql->createQueryBuilder()
+            $lbox_stats[0]['stat_new'] = $sql->createQueryBuilder()
                 ->from('forum_thread', 't')
-                ->where('t.thread_datestamp', '>', (int) USERLV)
+                ->where('t.thread_datestamp', '>', (int) defset('USERLV', 0))
                 ->whereIn('t.thread_forum_id', e107forum::visibleForumIds())
                 ->count();
         }
@@ -222,7 +227,7 @@ class login_menu_class
     }
 
 
-    function get_chatbox_menu_stats() 
+    function get_chatbox_menu_stats($get_stats=true) 
 	{
 		$sql = e107::getDb();
         
@@ -236,8 +241,8 @@ class login_menu_class
 
         if(!empty($get_stats))
         {
-            $lbox_stats['chatbox_menu'][0]['stat_new']  = $sql->createQueryBuilder()
-                ->from('chatbox')->where('cb_datestamp', '>', (int) USERLV)->count();
+            $lbox_stats[0]['stat_new']  = $sql->createQueryBuilder()
+                ->from('chatbox')->where('cb_datestamp', '>', (int) defset('USERLV', 0))->count();
         }
         
         return $lbox_stats;
