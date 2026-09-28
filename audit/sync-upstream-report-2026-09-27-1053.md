@@ -49,6 +49,7 @@ still carries an `e107_*` literal in code (e.g. `ehandlers/file_class.php:3448�
 | `a83f07454` | sync(eplugins/rss): keep Lite plugin.xml metadata, marker |
 | `567b8f9d8` | audit: close plugin phase |
 | `f45c11c30` | feat(eplugins/pm): add from upstream (correction) |
+| `2b3810658` | fix(ecore): e107 external links in the admin user menu for main admin only |
 
 ---
 
@@ -446,6 +447,30 @@ login menu stays off.
   `get_plugin_data()`).
 - `*.xml` +1: **added by instruction** (`eplugins/rss/plugin.xml`).
 
+## 9. Additional Lite fix — admin user menu external links
+
+Instruction: in the `enav_logout` submenu of `{ADMIN_NAVIGATION}` show the four external links only to the main admin
+(`2b3810658`, `ecore/shortcodes/batch/admin_shortcodes.php`).
+
+- Location: `sc_admin_navigation()` builds the `enav_logout` menu by calling `getOtherNav($parm)`
+  (`admin_shortcodes.php:1990–1997`); the entries are defined in `getOtherNav()`, branch
+  `$type == self::ADMIN_NAV_LOGOUT` (from line 2208). The edit is there.
+- `$tmp[5]` e107 Website, `$tmp[6]` Twitter, `$tmp[7]` Facebook, `$tmp[8]` Github are wrapped in `if(getperms('0')) { … }`
+  (re-indented one level, content unchanged). Marker **added by instruction** directly above the `if`.
+  `$tmp[1]` settings, `$tmp[2]` personalize (already conditional), `$tmp[3]` logout and `$tmp[4]` divider are unchanged.
+- **Gap check (read `getOtherNav()` in full and the renderer):** the menu is rendered by
+  `e107::getNav()->admin('', '', $menu_vars, $template, FALSE, FALSE)` → `navigation::admin()`
+  (`ehandlers/sitelinks_class.php:1414`). It iterates `foreach (array_keys($e107_vars) as $act)` and recurses into
+  `$e107_vars[$act]['sub']` the same way (line 1634); it never indexes by position or assumes consecutive keys, and the
+  only re-indexing is `array_values()` inside the optional sort, which is off for this menu (no `'sort'` key, `$sortlist`
+  FALSE). `count()` on the sub-array is used only for the `oversized` class (> 15). The submenu already had a gap when
+  `$tmp[2]` is skipped (`adminpref` set and no `getperms('1')`), so non-consecutive keys were already a supported case.
+  Removing keys 5–8 therefore cannot break rendering. Cosmetic effect for non-main admins: the `$tmp[4]` divider becomes
+  the last item of the submenu.
+- The submenu is used by `ecore/templates/admin_template.php:198, 215` and `ethemes/backend/templates/admin_template.php:203`
+  (`{ADMIN_NAVIGATION=enav_logout}`); both only supply the button template.
+- `php -l`: no errors.
+
 ---
 
 ## Markers
@@ -454,15 +479,16 @@ Counted in `*.php`, `*.js`, `*.css` and, per instruction, also `*.xml`.
 
 | Marker | before (php/js/css) | before (xml) | after (php/js/css) | after (xml) |
 |---|---|---|---|---|
-| `LITE MODIFICATION` | 62 | 0 | 65 | 2 |
+| `LITE MODIFICATION` | 62 | 0 | 66 | 2 |
 | `LITE FEATURE` | 3 | 0 | 3 | 0 |
 | `LITE-SKIP` | 57 | 0 | 57 | 0 |
 
-`LITE MODIFICATION` php/js/css 62 → 65 = −4 + 7:
+`LITE MODIFICATION` php/js/css 62 → 66 = −4 + 8:
 - **Removed by instruction:** `ehandlers/online_class.php` (defensive init of `$members_online`); `login.php` (Refs #78 guard);
   `eplugins/login_menu/login_menu_class.php` ×2 (`parse_external_list()`, `get_plugin_data()` — fixed upstream in `f1e3452ce`).
 - **Added by instruction:** `eadmin/auth.php`; `eadmin/ver.php`; `install.php` ×3 (min PHP/MySQL, default admincss,
-  installer look); `ecore/url/user/url.php`; `ethemes/backend/theme_shortcodes.php`.
+  installer look); `ecore/url/user/url.php`; `ethemes/backend/theme_shortcodes.php`;
+  `ecore/shortcodes/batch/admin_shortcodes.php` (external links in the admin user menu, section 9).
 - xml 0 → 2, **added by instruction:** `ecore/xml/default_install.xml`; `eplugins/rss/plugin.xml`.
 
 ## Checks
