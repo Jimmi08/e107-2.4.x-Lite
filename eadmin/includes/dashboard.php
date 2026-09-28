@@ -99,6 +99,8 @@
 			/* flex is enabled only if each admin can have its own admin dashboard adminpref = false */
 			if ($this->canEditLayout()) {
 				e107::css('inline', '.draggable-panels .panel-heading { cursor: move; }');
+				e107::css('inline', '.draggable-panels[id^="menu-area-"] { position: relative; min-height: 60px !important; margin-bottom: 15px !important; padding-top: 18px; border: 1px dashed #999 !important; }');
+				e107::css('inline', '.draggable-panels[id^="menu-area-"]::before { content: attr(id); position: absolute; top: 2px; left: 6px; font-size: 10px; line-height: 1; opacity: 0.7; }');
 				e107::js('core', 'core/admin.flexpanel.js', 'jquery', 4);
 
 				if (varset($_GET['mode']) == 'customize') {
@@ -219,6 +221,24 @@
 					->set('core-flexpanel-order', $stored)
 					->save();
 			}
+		}
+
+		/**
+		 * @param string $id
+		 * @param string $perm
+		 * @return string
+		 */
+		protected function panelInfo($id, $perm)
+		{
+			if (!getperms('1')) {
+				return '';
+			}
+
+			$tp = e107::getParser();
+			$perm = (string) $perm;
+			$permLabel = ($perm === '') ? '(none) = all admins' : $tp->toAttribute($perm, true);
+
+			return '<!-- dashboard-panel: ' . $tp->toAttribute($id, true) . ' | perm: ' . $permLabel . " -->\n";
 		}
 
 		/**
@@ -377,7 +397,7 @@
 			$ns->setStyle($dashboardStyle);
 			$ns->setUniqueId($dashboardUniqueId);
 
-			$coreInfoPanelAdmin = $ns->tablerender($dashboardCaption, $adminPanel, $dashboardUniqueId, true);
+			$coreInfoPanelAdmin = $ns->tablerender($dashboardCaption, $this->panelInfo($dashboardUniqueId, varset($options['perm'], '')) . $adminPanel, $dashboardUniqueId, true);
 
 			return $coreInfoPanelAdmin;
 		}
@@ -420,7 +440,7 @@
 					$id = $val['mode'];
 					$id = str_replace('_', '-', $id); // TODO fix this if they solve #4940 different way
 					$ns->setUniqueId($id);
-					$inc = $ns->tablerender($val['caption'], $val['text'], $val['mode'], true);
+					$inc = $ns->tablerender($val['caption'], $this->panelInfo($id, varset($options['perm'], '')) . $val['text'], $val['mode'], true);
 					$this->addToPosition($id, $inc);
 				}
 			};
@@ -469,7 +489,7 @@
 			$ns->setStyle($dashboardStyle);
 			$ns->setUniqueId($dashboardUniqueId);
 
-			$coreInfoPanelAdmin = $ns->tablerender($dashboardCaption, $adminPanel, $dashboardUniqueId, true);
+			$coreInfoPanelAdmin = $ns->tablerender($dashboardCaption, $this->panelInfo($dashboardUniqueId, varset($options['perm'], '')) . $adminPanel, $dashboardUniqueId, true);
 
 			return $coreInfoPanelAdmin;
 		}
@@ -494,7 +514,7 @@
 					$id = $val['mode'];
 					$id = str_replace('_', '-', $id); // TODO fix this if they solve #4940 different way
 					$ns->setUniqueId($id);
-					$inc = $ns->tablerender($val['caption'], $val['text'], $val['mode'], true);
+					$inc = $ns->tablerender($val['caption'], $this->panelInfo($id, varset($options['perm'], '')) . $val['text'], $val['mode'], true);
 					$this->addToPosition($id, $inc);
 				}
 			}
