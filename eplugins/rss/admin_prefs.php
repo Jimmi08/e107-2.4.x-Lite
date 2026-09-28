@@ -20,7 +20,7 @@ Notes:
 
 require_once(__DIR__ . '/../../class2.php');
 
-if (!getperms("P") || !e107::isInstalled('rss'))
+if(!getperms("P") || !e107::isInstalled('rss'))
 {
 	e107::redirect('admin');
 	exit;
@@ -67,7 +67,7 @@ class rss_admin extends e_admin_dispatcher
 	function init()
 	{
 
-		if (E107_DEBUG_LEVEL > 0)
+		if(E107_DEBUG_LEVEL > 0)
 		{
 			$this->adminMenu['main/create'] = array('caption' => LAN_CREATE, 'perm' => 'P');
 		}
@@ -115,7 +115,7 @@ class rss_ui extends e_admin_ui
 	public function init()
 	{
 
-		if (!empty($_POST['importid']))
+		if(!empty($_POST['importid']))
 		{
 			$this->dbrssImport();
 		}
@@ -128,7 +128,7 @@ class rss_ui extends e_admin_ui
 		$sql = e107::getDb();
 		$tp = e107::getParser();
 
-		foreach ($_POST['importid'] as $key => $value)
+		foreach($_POST['importid'] as $key => $value)
 		{
 			$rssVals = array();
 			$rssVals['rss_topicid'] = $tp->toDB(varset($_POST['topic_id'][$key], ''));
@@ -219,18 +219,18 @@ class rss_ui extends e_admin_ui
 		// Plugin rss feeds, using e_rss.php in each plugin folder
 		$feedlist = array_merge($feedlist, rss_addons::feeds());
 
-		//		print_a($feedlist);
+//		print_a($feedlist);
 
 		$render = false;
 		$i = 0;
 		$text = $RSS_ADMIN_IMPORT_HEADER;
-		foreach ($feedlist as $k => $feed)
+		foreach($feedlist as $k => $feed)
 		{
 			$feed['topic_id'] = $tp->toDB($feed['topic_id']);
 			$feed['url'] = $tp->toDB($feed['url']);
 
 			// Check if feed is not yet present
-			if (!$sql->createQueryBuilder()->select('*')->from('rss')->where('rss_path', $feed['path'])->where('rss_url', $feed['url'])->where('rss_topicid', $feed['topic_id'])->execute())
+			if(!$sql->createQueryBuilder()->select('*')->from('rss')->where('rss_path', $feed['path'])->where('rss_url', $feed['url'])->where('rss_topicid', $feed['topic_id'])->execute())
 			{
 				$render = true;
 				$rss_shortcodes->setVars($feed);
@@ -241,7 +241,7 @@ class rss_ui extends e_admin_ui
 
 		$text .= $tp->parseTemplate($RSS_ADMIN_IMPORT_FOOTER, false, $rss_shortcodes);
 
-		if (!$render)
+		if(!$render)
 		{
 			e107::getMessage()->addWarning(RSS_LAN_ERROR_6);
 		}
@@ -251,6 +251,8 @@ class rss_ui extends e_admin_ui
 			return $text;
 		}
 	}
+
+
 }
 
 
@@ -263,7 +265,7 @@ class rss_form_ui extends e_admin_form_ui
 	{
 
 
-		switch ($mode)
+		switch($mode)
 		{
 			case 'read': // List Page
 
@@ -288,6 +290,7 @@ class rss_form_ui extends e_admin_form_ui
 				break;
 		}
 	}
+
 }
 
 
@@ -297,3 +300,11 @@ require_once(e_ADMIN . "auth.php");
 e107::getAdminUI()->runPage();
 
 require_once(e_ADMIN . "footer.php");
+
+
+
+
+
+
+
+
