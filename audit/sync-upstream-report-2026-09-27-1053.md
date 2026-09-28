@@ -50,6 +50,8 @@ still carries an `e107_*` literal in code (e.g. `ehandlers/file_class.php:3448â€
 | `567b8f9d8` | audit: close plugin phase |
 | `f45c11c30` | feat(eplugins/pm): add from upstream (correction) |
 | `2b3810658` | fix(ecore): e107 external links in the admin user menu for main admin only |
+| `de3f33c84` | audit: section 9 |
+| `c74261262` | fix(ecore): e107 external links hidden for all admins (change of section 9) |
 
 ---
 
@@ -470,6 +472,11 @@ Instruction: in the `enav_logout` submenu of `{ADMIN_NAVIGATION}` show the four 
 - The submenu is used by `ecore/templates/admin_template.php:198, 215` and `ethemes/backend/templates/admin_template.php:203`
   (`{ADMIN_NAVIGATION=enav_logout}`); both only supply the button template.
 - `php -l`: no errors.
+- **Change by later instruction (`c74261262`):** the links are now hidden for all admins. The `if` block is kept, its
+  condition is `if(false /* getperms('0') */)` (restore `getperms('0')` to show them to the main admin again), and the
+  marker text above it reads `// LITE MODIFICATION: e107 external links hidden for all admins (restore getperms('0') to
+  show them to main admin)`. Nothing else in the method changed; the gap check above applies unchanged (keys 5â€“8 are now
+  absent for everyone, so the `$tmp[4]` divider is the last item of the submenu for all admins). Marker count unchanged.
 
 ---
 
