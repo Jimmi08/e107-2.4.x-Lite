@@ -2254,8 +2254,8 @@ Inverse 	10 	<span class="badge badge-inverse">10</span>
 
 			
 							
-			// LITE MODIFICATION: e107 external links only for main admin (getperms('0'))
-			if(getperms('0'))
+			// LITE MODIFICATION: e107 external links hidden for all admins (restore getperms('0') to show them to main admin)
+			if(false /* getperms('0') */)
 			{
 				$tmp[5]['text'] 			= 'e107 Website';
 				$tmp[5]['description'] 		= '';
