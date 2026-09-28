@@ -9,7 +9,7 @@
 | Branch | `sync-upstream-2026-09-26` (name as requested, created from `main`) |
 | Tag note | Tag `2.4.0.4` points to `b80ad923e` — it was created on `main` before this sync. |
 
-Scope: `elanguages/`, `ehandlers/`, `eadmin/`, `eweb/`, repo root, and (scope extensions by instruction) `ecore/`, `ethemes/`.
+Scope: `elanguages/`, `ehandlers/`, `eadmin/`, `eweb/`, repo root, and (scope extensions by instruction) `ecore/`, `ethemes/`, `eplugins/`.
 
 Directory mapping (§2) applied only to code; comments keep the upstream `e107_*` form (instruction). Where Lite
 still carries an `e107_*` literal in code (e.g. `ehandlers/file_class.php:3448–3458`, `ehandlers/secure_img_handler.php:166`,
@@ -33,6 +33,16 @@ still carries an `e107_*` literal in code (e.g. `ehandlers/file_class.php:3448�
 | `d8738ecbf` | audit: this report (first version) |
 | `bafac1c07` | sync(ethemes): bootstrap3/bootstrap5 from upstream |
 | `22483dbcb` | fix(ethemes/backend): logout link carries e-token |
+| `bb196796d` | audit: ethemes section |
+| `4094b346a` | sync(eplugins/download) |
+| `0e51e84b0` | sync(eplugins/navigation) |
+| `aefe503ae` | sync(eplugins/news) |
+| `ce4f6adef` | sync(eplugins/page) |
+| `29d352f18` | sync(eplugins/siteinfo) |
+| `9ea8d6966` | sync(eplugins/login_menu) |
+| `9546b7962` | feat(eplugins/featurebox): add from upstream |
+| `1785df0a6` | feat(eplugins/forum): add from upstream |
+| `036241118` | sync(eplugins/login_menu): f1e3452ce registry guards |
 
 ---
 
@@ -292,9 +302,80 @@ still carries an `e107_*` literal in code (e.g. `ehandlers/file_class.php:3448�
   `e_HTTP.'index.php?logout'` to `e_HTTP.'index.php?logout&amp;e-token='.defset('e_TOKEN')` (form used by upstream
   bootstrap3). Marker **added by instruction**; it is placed on its own line directly above the `$text .= '`
   statement that holds the link, because the link line is inside a PHP string (a `//` there would be output as HTML).
-  - Finding (not changed, out of scope): `eplugins/login_menu/login_menu.php:52` and
-    `eplugins/login_menu/login_menu_shortcodes.php:319, 324` still build `index.php?logout` without an e-token.
+  - Finding at the time (out of scope then): `eplugins/login_menu/login_menu.php:52` and
+    `eplugins/login_menu/login_menu_shortcodes.php:319, 324` built `index.php?logout` without an e-token — fixed in
+    the plugin phase by taking upstream (see section 8, `9ea8d6966`).
 - `php -l` on changed PHP files: no errors.
+
+## 8. eplugins/ (← e107_plugins/) — scope extension
+
+Marker count at the start of the plugin phase (whole tree): `LITE MODIFICATION` 67 (php/js/css) + 1 (xml),
+`LITE FEATURE` 3, `LITE-SKIP` 57 (xml 0 for both).
+
+### A. Plugins in both Lite and upstream
+
+| Plugin | One-sided files | Result |
+|---|---|---|
+| download | none | Replaced (unmarked): `e_list.php`, `plugin.xml` (version 1.2 → 1.3). Marked, no upstream change outside protected code: `e_url.php`, `request.php` (Lite id+SEF gate). |
+| login_menu | none | Replaced (unmarked): `config.php`, `login_menu.php` (e-token on logout). Merged around markers: `login_menu_shortcodes.php` (Remember-Me shortcode removed, `allowEmailLogin` via `varset`, e-token on `sc_lm_logout` / `sc_lm_logout_href`, empty-stats trim; the four "label: count" markers kept), `login_menu_template.php` (`LM_REMEMBERME` removed, CHAP condition without `user_tracking`, `$LM_STATITEM_SEPARATOR` theme-overridable per `15354bb17`; `LM_STATS` and `LOGIN_MENU_STATITEM` markers kept), `login_menu_class.php` (`f1e3452ce` fixes outside markers: `$list_ord` init, `isInstalled()` gate, `call_user_func($this, …)`, `$lbox_stats[0]` keys, `defset('USERLV', 0)`, `$get_stats` parameter). |
+| navigation | none | Replaced (unmarked): `navigation_menu.php`. |
+| news | none | Replaced (unmarked): `e_search.php` (upstream `633bfb032` dropped `$res['image']`, `6abf15197` label spacing), `news.php`. |
+| page | none | Replaced (unmarked): `e_search.php`. |
+| siteinfo | none | Replaced (unmarked): `e_shortcode.php` (`@getimagesize`). |
+| tinymce4 | none | Identical to upstream — no change. |
+| user | none | Identical to upstream — no change. |
+| rss ↔ rss_menu | `languages/English_admin_rss_menu.php` (upstream-only); `languages/English_admin.php`, `README.md` (Lite-only) | **Pending instruction (STOP).** Not processed. |
+
+**STOP — `login_menu_class.php` (instruction):** both markers **removed by instruction — fixed upstream in `f1e3452ce`**:
+- `parse_external_list()`: upstream cache guard taken (per-`$active` key `loginbox_elist_<0|1>`, `getRegistry(..., FALSE)`).
+- `get_plugin_data()`: upstream body taken (`e107::getPlug()->load()`).
+The `get_coreplugs()` marker (empty core list) is unchanged.
+
+### B. Taken fully from upstream (added)
+
+- `featurebox` (22 files) — identical to upstream.
+- `forum` (225 files) — identical to upstream apart from the directory mapping in two user-facing strings:
+  `forum_update.php:899` (`efiles/public`) and `languages/English/English_global.php:9` (`eplugins/forum/…` example URLs).
+
+#### forum: dependencies (nothing changed)
+
+Root files missing in Lite (calling code read; none of these links is guarded):
+| file:line | target | context |
+|---|---|---|
+| `eplugins/forum/shortcodes/batch/view_shortcodes.php:948` | `email.php?plugin:forum.N` | post options dropdown, always rendered |
+| `eplugins/forum/shortcodes/batch/view_shortcodes.php:949` | `print.php?plugin:forum.N` | post options dropdown, always rendered (upstream `// FIXME`) |
+| `eplugins/forum/shortcodes/batch/forum_shortcodes.php:210` | `search.php` (form action) | `{SEARCH}` on the forum index |
+| `eplugins/forum/shortcodes/batch/viewforum_shortcodes.php:315` | `search.php` (form action) | `{SEARCH}` in a forum view |
+| `eplugins/forum/shortcodes/batch/forum_shortcodes.php:126` | `top.php?0.top.forum.10`, `top.php?0.active` | `{USERINFO}`, always rendered |
+| `eplugins/forum/shortcodes/batch/forum_shortcodes.php:129` | `userposts.php?0.forums.USERID` | `{USERINFO}`, logged-in users |
+| `eplugins/forum/e_user.php:35` | `userposts.php?0.forums.N` | profile statistics link when the user has posts |
+| `eplugins/forum/templates/forum_template.php:39` | `online.php` | `$SC_WRAPPER['USERLIST']` unless the theme sets its own |
+
+Plugins not in Lite:
+| plugin | file:line | guarded? |
+|---|---|---|
+| pm | `shortcodes/batch/view_shortcodes.php:524`, `:897`; `forum_viewtopic.php:148` | yes — `e107::isInstalled('pm')` |
+| poll | `shortcodes/batch/post_shortcodes.php:424`; `forum_viewtopic.php:197`; `forum_admin.php:241`; `e_meta.php:6`, `:17` | yes — `e107::isInstalled('poll')` |
+| poll | `forum_post.php:239` → `submitPoll()` (`:302` `require_once(e_PLUGIN.'poll/poll_class.php')`) | **no** — runs on any POST with `submitpoll` |
+| poll | `forum_post.php:1135–1137` (preview with `poll_title`) | **no** — only `check_class($prefs->get('poll'))`; pref default `255` (nobody) in `plugin.xml:19` / `forum_class.php:1098` |
+| poll | `forum_post.php:1349–1351` (new thread with `poll_title` + two options) | **no** |
+| rss_menu | `templates/forum_viewtopic_template.php:185`; `templates/forum_viewforum_template.php:183–185` | inside comments — not rendered |
+
+The poll form itself is only rendered when `poll` is installed, so the unguarded `require_once` calls are reached only by a
+crafted POST; without `eplugins/poll/poll_class.php` that request ends in a fatal error.
+
+Other: the forum's `online` table queries (`forum_viewforum.php:490`, `forum_shortcodes.php:368/374`) use the core
+`online` table, which Lite has. Lite `login_menu` keeps an empty core-plugin list (marker), so the forum count in the
+login menu stays off.
+
+### C. Skipped (report only)
+
+- `githubSyncLite` (Lite-only) — skipped by instruction.
+- Upstream-only plugins skipped by instruction: `_blank`, `admin_menu`, `alt_auth`, `banner`, `blogcalendar_menu`,
+  `chatbox_menu`, `comment_menu`, `contact`, `faqs`, `gallery`, `gsitemap`, `hero`, `import`, `linkwords`, `list_new`,
+  `newforumposts_main`, `newsfeed`, `newsletter`, `online`, `pm`, `poll`, `search_menu`, `signin`, `social`, `tagcloud`.
+
+`php -l` on all changed PHP files of the plugin phase: no errors.
 
 ---
 
@@ -304,12 +385,13 @@ Counted in `*.php`, `*.js`, `*.css` and, per instruction, also `*.xml`.
 
 | Marker | before (php/js/css) | before (xml) | after (php/js/css) | after (xml) |
 |---|---|---|---|---|
-| `LITE MODIFICATION` | 62 | 0 | 67 | 1 |
+| `LITE MODIFICATION` | 62 | 0 | 65 | 1 |
 | `LITE FEATURE` | 3 | 0 | 3 | 0 |
 | `LITE-SKIP` | 57 | 0 | 57 | 0 |
 
-`LITE MODIFICATION` php/js/css 62 → 67 = −2 + 7:
-- **Removed by instruction:** `ehandlers/online_class.php` (defensive init of `$members_online`); `login.php` (Refs #78 guard).
+`LITE MODIFICATION` php/js/css 62 → 65 = −4 + 7:
+- **Removed by instruction:** `ehandlers/online_class.php` (defensive init of `$members_online`); `login.php` (Refs #78 guard);
+  `eplugins/login_menu/login_menu_class.php` ×2 (`parse_external_list()`, `get_plugin_data()` — fixed upstream in `f1e3452ce`).
 - **Added by instruction:** `eadmin/auth.php`; `eadmin/ver.php`; `install.php` ×3 (min PHP/MySQL, default admincss,
   installer look); `ecore/url/user/url.php`; `ethemes/backend/theme_shortcodes.php`.
 - xml 0 → 1, **added by instruction:** `ecore/xml/default_install.xml`.
@@ -317,7 +399,7 @@ Counted in `*.php`, `*.js`, `*.css` and, per instruction, also `*.xml`.
 ## Checks
 
 - `php -l` on all 166 added/modified PHP files: no errors (PHP 8.4.19).
-- `git diff --name-only main..HEAD`: only `elanguages/`, `ehandlers/`, `eadmin/`, `eweb/`, `ecore/`, `ethemes/`, root files
-  (`LICENSE`, `class2.php`, `fpw.php`, `install.php`, `login.php`, `page.php`, `rate.php`) — plus this report in `audit/`.
+- `git diff --name-only main..HEAD`: only `elanguages/`, `ehandlers/`, `eadmin/`, `eweb/`, `ecore/`, `ethemes/`, `eplugins/`, root files
+  (`LICENSE`, `class2.php`, `fpw.php`, `install.php`, `login.php`, `page.php`, `rate.php`) — plus `audit/`.
 - `git status` clean, no `.rej` / `.orig`.
 - Branch pushed; no merge, no PR, nothing pushed to `main`.
