@@ -1,16 +1,8 @@
 <?php
 
 /**
- * githubSyncLite — admin/admin_config.php  (mode: config)
- *
- * Source repository settings, using e107's NATIVE e_admin_ui prefs system:
- * the $prefs array declares the fields, and the core renders the form, the
- * Save button, CSRF, and persistence (etrigger_save). No manual $_POST
- * handling. Values are read elsewhere via e107::getPlugConfig('githubSyncLite').
- *
- * Set once; the day-to-day screen is Core Sync (admin_sync.php).
- * Uses its own dispatcher; no dependency on the full githubSync plugin;
- * no database table.
+ * Source screen (mode: config): the repository Core Sync pulls from, its
+ * layout, and the token for a private repo. Prefs only, no table.
  */
 
 require_once('../../../class2.php');
@@ -26,7 +18,7 @@ e107_require_once('admin_menu.php'); // shared dispatcher
 
 class githubSyncLite_config_ui extends e_admin_ui
 {
-	protected $pluginTitle = 'Github Sync Lite';
+	protected $pluginTitle = 'GitHub Sync Lite';
 	protected $pluginName  = 'githubSyncLite';
 	protected $table       = ''; // prefs only — no table
 	protected $pid         = '';
@@ -151,7 +143,7 @@ class githubSyncLite_config_ui extends e_admin_ui
 
 	public function renderHelp()
 	{
-		$text  = 'The <strong>source repository</strong> is where Core Sync pulls the Lite core from.';
+		$text  = 'The <strong>source repository</strong> is where Core Sync pulls the core from. It can be a Lite fork or an upstream e107 repository — the layout settings below say which.';
 		$text .= '<ul>';
 		$text .= '<li><strong>Organization / Repository / Branch</strong> — the GitHub location, '
 			. 'e.g. <em>Jimmi08 / e107-2.4.x-Lite / main</em>.</li>';
