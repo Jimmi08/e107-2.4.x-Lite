@@ -324,7 +324,25 @@ Marker count at the start of the plugin phase (whole tree): `LITE MODIFICATION` 
 | siteinfo | none | Replaced (unmarked): `e_shortcode.php` (`@getimagesize`). |
 | tinymce4 | none | Identical to upstream — no change. |
 | user | none | Identical to upstream — no change. |
-| rss ↔ rss_menu | `languages/English_admin_rss_menu.php` (upstream-only); `languages/English_admin.php`, `README.md` (Lite-only) | **Pending instruction (STOP).** Not processed. |
+| rss ↔ rss_menu | `languages/English_admin_rss_menu.php` (upstream) ↔ `languages/English_admin.php` (Lite); `README.md` (Lite-only) | See below (`1c1c6f593`). |
+
+**rss ↔ rss_menu mapping (instruction):** the plugin name difference is treated like the §2 mapping, including path
+literals (`rss_menu/` → `rss/`, `e107::url('rss_menu', …)` → `e107::url('rss', …)`, `isInstalled('rss_menu')` →
+`isInstalled('rss')`, class `rss_menu_url` → `rss_url`); the menu file name `rss_menu.php` is the same on both sides.
+- `languages/English_admin.php` (Lite) ↔ `languages/English_admin_rss_menu.php` (upstream): treated as the same file,
+  content updated from upstream (only difference was the final newline), Lite file name kept; the upstream file was not added.
+  Consequently the upstream `e107::includeLan(e_PLUGIN."rss_menu/languages/".e_LANGUAGE."_admin_rss_menu.php")` calls stay
+  in the Lite form `e107::lan("rss", true)` (`rss_menu.php`, `admin_prefs.php`, and unchanged `rss.php`, `rss_setup.php`,
+  `rss_addons.php`, which carries a `// LITE:` note — not one of the three marker variants).
+- `README.md`: kept (Lite document).
+- Replaced from upstream (with the mapping): `e_meta.php` (single query refactor), `e_url.php` (final newline),
+  `rss_menu.php` (upstream formatting; only functional difference was the LAN load).
+- Merged around marker: `admin_prefs.php` (upstream formatting taken; `target='_blank'` marker kept).
+- Marked, no upstream change outside protected code: `rss.php` (6 markers), `rss_setup.php` (news-guard marker).
+- Identical: images, `English_global.php`, `rss_resolver.php`, `rss_shortcodes.php`, `rss_sql.php`, `templates/rss_template.php`.
+- **Pending instruction:** `plugin.xml` — unmarked Lite values `version="2.1"`, `date="2026-08-01"`, `compatibility="2.4"`,
+  author `Jimmi` / `https://www.e107sk.com`; upstream has `version="1.3"`, `date="2012-08-01"`, `compatibility="2.0"`,
+  author `e107 Inc.`. Not replaced.
 
 **STOP — `login_menu_class.php` (instruction):** both markers **removed by instruction — fixed upstream in `f1e3452ce`**:
 - `parse_external_list()`: upstream cache guard taken (per-`$active` key `loginbox_elist_<0|1>`, `getRegistry(..., FALSE)`).
