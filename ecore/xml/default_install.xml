@@ -117,7 +117,7 @@
 		<core name="e_jslib_plugin"><![CDATA[array ()]]></core>
 		<core name="e_jslib_theme"><![CDATA[array ()]]></core>
 		<core name="e_meta_list"><![CDATA[array (
-  'rss_menu' => 'rss_menu',
+  'rss' => 'rss',
 )]]></core>
 	<core name="e_module_list"><![CDATA[array ()]]></core>
 		<core name="e_related_list"><![CDATA[array (
@@ -126,7 +126,7 @@
 )]]></core>
 		<core name="e_rss_list"><![CDATA[array (
   'news' => 'news',
-  'rss_menu' => 'rss_menu',
+  'rss' => 'rss',
 )]]></core>
 		<core name="e_search_list"><![CDATA[array (
   'news' => 'news',
@@ -145,11 +145,11 @@
 )]]></core>
 		<core name="e_sql_list"><![CDATA[array (
   'featurebox' => 'featurebox_sql',
-  'rss_menu' => 'rss_sql',
+  'rss' => 'rss_sql',
 )]]></core>
 		<core name="e_url_list"><![CDATA[array (
   'news' => 'news',
-  'rss_menu' => 'rss_menu',
+  'rss' => 'rss',
 )]]></core>
 		<core name="e_user_list"><![CDATA[array (
   'user' => 'user',
@@ -251,7 +251,7 @@
   'social' => '1.0',
   'tinymce4' => '1.0',
 
-  'rss_menu' => '1.4',
+  'rss' => '1.4',
   'contact' => '1.0',
   'user' => '1.0',
 
