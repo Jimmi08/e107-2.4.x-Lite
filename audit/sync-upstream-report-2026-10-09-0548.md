@@ -183,13 +183,20 @@ the previous upstream version (or differed only by the directory mapping), so a 
 | `3e5c368d9` | sync(eplugins/pm) |
 | `03af147da` | sync(eplugins/rss) |
 | `0ff03efc3` | sync(eplugins/user) |
-| (this commit) | audit: this report |
+| `fedcaf673` | audit: this report (first version) |
+| `ca2a6385a` | sync(ehandlers): add `Storage/*`, delete legacy search handlers (STOP 1) |
+| `ff0d62173` | sync(eweb): delete `chap_script.js` (STOP 2) |
+| `7b36243f3` | sync(root): `page.php` 404 block uses `notFound()` below the Lite redirect (STOP 3) |
+| `6742ea64d` | sync(eplugins/download): mirror branch guarded by `$resolved` too (STOP 4) |
+| `64403a8c2` | sync(eplugins/rss): add `e_rss.php` comments feed addon, mapped (STOP 5) |
+| `bb6977c7b` | sync(ecore): `default_install.xml` `rss_menu` entries mapped to `rss` (instruction 6) |
+| (this commit) | audit: report updated (STOP resolutions, XML check, PHP 7.4 check) |
 
-### Open STOPs (waiting for instruction)
+### STOPs and their resolution
 
-The run is autonomous, so each STOP below was left untouched (the one-sided file was neither added nor deleted; the
-colliding hunk was not applied) and everything else in the directory was processed and committed. A resolution will be
-a new commit. Details are in the directory sections.
+The run is autonomous, so each STOP below was first left untouched (the one-sided file was neither added nor deleted;
+the colliding hunk was not applied) and everything else in the directory was processed and committed. The instructions
+came in a second step and each resolution is a new commit (see the commits table). Details are in the directory sections.
 
 | # | Where | What |
 |---|---|---|
@@ -199,10 +206,10 @@ a new commit. Details are in the directory sections.
 | 4 | `eplugins/download/request.php` | upstream `13cc97123` changes the mirror-branch condition that the Lite marker at line 110 protects |
 | 5 | `eplugins/rss/` | upstream-only `e_rss.php` (comments feed moved out of `rss.php`) |
 
-**Important:** until STOP 1 is resolved the admin dashboard fatals: the synced `eadmin/admin.php` calls
-`\e107\Storage\SiteFolderScan::ofThisSite()` in `checkSiteFolders()` on every dashboard load, and the autoloader
-(`e107::autoload_namespaced()`) resolves it to `ehandlers/Storage/SiteFolderScan.php`, which is not in Lite.
-`eadmin/db.php?mode=multisite` needs all three files.
+Between `d8ee0e5df` and `ca2a6385a` the branch had no `ehandlers/Storage/`, so the admin dashboard would have fataled:
+the synced `eadmin/admin.php` calls `\e107\Storage\SiteFolderScan::ofThisSite()` in `checkSiteFolders()` on every
+dashboard load, and the autoloader (`e107::autoload_namespaced()`) resolves it to `ehandlers/Storage/SiteFolderScan.php`.
+Resolved by STOP 1. Instruction 6 (`default_install.xml` `rss_menu` → `rss`) came with the STOP decisions.
 
 ---
 
@@ -221,12 +228,15 @@ a new commit. Details are in the directory sections.
   - Upstream-only (added in `f70107574` "merge a stray site folder into the site's own from the Multi-Site page"):
     `Storage/SiteFolder.php`, `Storage/SiteFolderMerge.php`, `Storage/SiteFolderScan.php`. Used by `eadmin/admin.php`
     (`checkSiteFolders()`, called unconditionally after the upgrade check — dashboard fatal without them) and
-    `eadmin/db.php` (`mode=multisite`, merge/remove site folder). Proposal: add (last round's ehandlers instruction was
-    "1:1 with upstream").
+    `eadmin/db.php` (`mode=multisite`, merge/remove site folder). **Instruction: add** — added in `ca2a6385a` as
+    `ehandlers/Storage/{SiteFolder,SiteFolderMerge,SiteFolderScan}.php`, identical to upstream (the only `e107_*` literal
+    is the `e107_media/ … e107_system/` doc comment in `SiteFolder.php:14`, kept per §2).
   - Lite-only (deleted upstream in `b17902de0` "delete six legacy search handlers nothing can load"):
     `search/advanced_news.php`, `search/advanced_pages.php`, `search/advanced_user.php`, `search/search_news.php`,
     `search/search_pages.php`, `search/search_user.php`. Nothing in Lite references them (grep for `search/(advanced_|search_)`
-    finds only their own CVS headers; `search_class.php:599` loads only `search/comments_*.php`). Proposal: delete.
+    finds only their own CVS headers; `search_class.php:599` loads only `search/comments_*.php`). **Instruction: delete** —
+    deleted in `ca2a6385a`. `ehandlers/search/` keeps `advanced_comment.php`, `comments_{download,news,page,user}.php`,
+    `search_comment.php`, `index.html` (all present upstream).
 - **Replaced (unmarked), 30 files:** `Database/ConnectionTrait.php`, `Database/QueryBuilder.php` (new
   `decrementNotBelowZero()`), `Database/Schema/SchemaBuilder.php`, `admin_ui.php`, `application.php`, `comment_class.php`,
   `core_functions.php`, `e_db_pdo_class.php`, `e_marketplace.php`, `e_parse_class.php`, `file_class.php`,
@@ -270,7 +280,8 @@ a new commit. Details are in the directory sections.
 
 - **One-sided file — STOP 2 (new):** Lite-only `js/chap_script.js`, deleted upstream in `4b59c0708` "discontinue CHAP
   login". After this round nothing in Lite references it any more (the two loaders, `eadmin/header.php:349–361` and
-  `ecore/templates/header_default.php:431–443`, were removed by the same upstream commit and are synced). Proposal: delete.
+  `ecore/templates/header_default.php:431–443`, were removed by the same upstream commit and are synced).
+  **Instruction: delete** — deleted in `ff0d62173`.
 - **Replaced (unmarked):** `css/e107.css` (required-field marker), `js/core/admin.jquery.css`.
 - Marked files: none.
 
@@ -325,10 +336,42 @@ a new commit. Details are in the directory sections.
       return;                                 // the trailing e107::title() call is gone
   }
   ```
-  Proposal: keep the Lite redirect block and, below it, use `$this->notFound()` for the title/text (it also sets the
-  404 status and the document title), i.e. replace `header("HTTP/1.0 404 Not Found")`, the commented `$ret` block,
-  `LAN_PAGE_12` / `LAN_PAGE_3` and the trailing `e107::title()` with the upstream lines, keeping the marker and the
-  redirect `if` above them.
+  **Instruction (= proposal), `7b36243f3`:** marker and Lite redirect `if` kept; below them `$this->notFound()` as
+  upstream (it sets the 404 status and the document title), replacing `header("HTTP/1.0 404 Not Found")`, the commented
+  `$ret` block, `LAN_PAGE_12` / `LAN_PAGE_3` and the trailing `e107::title()`. The file now differs from upstream only
+  by the ten marked lines. Final block (`page.php:733–766`):
+  ```php
+  if(!$pageRow)
+  {
+      /* LITE MODIFICATION  fix for 404 page */
+      $r = eFront::instance()->getRouter();
+
+      if (e107::getPref('url_error_redirect', false) && $r->notFoundUrl)
+      {
+          $redirect = $r->assemble($r->notFoundUrl, '', 'encode=0&full=1');
+          //echo $redirect; exit;
+          e107::getRedirect()->redirect($redirect, true, 404);
+      }
+
+      $notFound = $this->notFound();
+
+      $this->page['page_title'] = $notFound['caption'];
+      $this->page['sub_title'] = '';
+      $this->page['page_text'] = $notFound['text'];
+      $this->page['comments'] = '';
+      $this->page['rating'] = '';
+      $this->page['np'] = '';
+      $this->page['err'] = TRUE;
+      $this->page['cachecontrol'] = false;
+
+      $this->authorized = 'nf';
+      $this->template = e107::getCoreTemplate('page', 'default');
+      $this->batch = e107::getScBatch('page',null,'cpage')->setVars($this->page)->wrapper('page/'.$this->templateID);
+      $this->batch->breadcrumb();
+
+      return;
+  }
+  ```
 - **§7 — `install.php`:** Lite version kept, nothing taken. Upstream changes in this range not taken:
   - `81fa05026` (2026-09-19): `LANINS_037 . ' ' . LANINS_038` — a space between the stage title and "(create database)".
 - **Marked, no upstream change:** `thumb.php`. Unchanged: `e107.htaccess`.
@@ -353,11 +396,13 @@ a new commit. Details are in the directory sections.
     `plug_installed['rss_menu']` `1.3 → 1.4` taken; the Lite admin prefs (`admintheme=backend`, `adminstyle=dashboard`,
     `admincss=css/admin-exas-core.css`, `admin_navbar_labels=1`) and the XML marker kept. **Check:** both files parse
     with `simplexml`; 253 `core` prefs on both sides; the only differing keys are the four Lite admin prefs.
-    **Note (not changed, question):** this file carries the upstream plugin folder `rss_menu` in `e_url_list`,
-    `e_sql_list`, `e_rss_list` and `plug_installed` (lines 120, 127–130, 147, 151, 254) although the Lite folder is
-    `rss`; the previous round left the existing entries in the upstream form, and the new `e_rss_list` entry was applied
-    the same way. With `rss_menu` in `e_rss_list`, `rss_addons::folders()` finds no `eplugins/rss_menu/e_rss.php` and
-    skips it; it adds its own folder `rss` anyway (see section 8).
+    **Instruction 6 — `bb6977c7b`:** every `rss_menu` entry mapped to `rss`, the same rule as the plugin mapping:
+    `e_meta_list` (line 120), `e_rss_list` (129), `e_sql_list` (148, value `rss_sql` unchanged), `e_url_list` (152),
+    `plug_installed` (254, version `1.4` unchanged). The previous round had left these entries in the upstream form.
+    Markers kept. **XML check:** `xmlClass::loadXMLfile(…, 'advanced')` (Lite `ehandlers/xml_class.php`, with a stub
+    `e107` class providing `getParser()` / `getLog()`) on the file before (`64403a8c2`) and after (`bb6977c7b`): both
+    give 3 top-level keys (`@attributes`, `prefs`, `database`), no `comment` key anywhere; `var_export` of the two
+    arrays differs only in the five `rss_menu` → `rss` keys (`md5(serialize())` `cb32175fc9…` → `cf93428b76…`).
 - **Marked, no upstream change:** `shortcodes/batch/user_shortcodes.php`, `shortcodes/single/custom.php`,
   `templates/admin_icons_template.php`, `url/user/url.php`.
 
@@ -411,7 +456,8 @@ if(!$resolved && strpos(e_QUERY, "mirror") !== false)
 ```
 `$resolved` exists in Lite too (`request.php:82`, set at `:103` when a by-name request resolved to an id) and Lite's
 file-name test at `:204` already combines both guards (`if(!$resolved && empty($_GET['id']) && preg_match(…))`).
-Proposal: `if(!$resolved && empty($_GET['id']) && strpos(e_QUERY, "mirror") !== false)`, marker kept.
+**Instruction (= proposal), `6742ea64d`:** `if(!$resolved && empty($_GET['id']) && strpos(e_QUERY, "mirror") !== false)`,
+marker kept. The file now differs from upstream only by the five marked regions (lines 110–111, 203–204, 223–230, 500–551).
 
 **rss ↔ rss_menu (mapping as last round):** path literals `rss_menu/` → `rss/`, `e107::url('rss_menu', …)` →
 `e107::url('rss', …)`, `isInstalled('rss_menu')` → `isInstalled('rss')`, class names `rss_menu_*` → `rss_*`,
@@ -431,9 +477,17 @@ LAN load `e107::lan('rss', true)`.
   With the synced `rss.php`, `admin_prefs.php` and `rss_resolver.php`, the comments feed has no provider until this
   file exists: `rss_addons::folders()` adds `'rss'` and `includeAddon('rss')` returns `false` (file not readable), so
   nothing fatals, but the comments feed is not listed in the admin and `rss.php?comments` / legacy key `5` serve nothing.
-  Proposal: add it as `eplugins/rss/e_rss.php` with the class renamed to `rss_rss` (it is loaded by
-  `e107::callMethod($plugin.'_rss', …)` with `$plugin = 'rss'`); the `@see rss_menu_rss::commentParents()` doc comment
-  would be mapped too, as the class name is code.
+  **Instruction: add with the mapping — `64403a8c2`:** `eplugins/rss/e_rss.php`, class `rss_menu_rss` → `rss_rss`
+  (line 22) and the `@see rss_rss::commentParents()` doc comment (line 170); no other `rss_menu` literal, path literal,
+  `e107::url()` or `isInstalled()` call exists in the file. **Verified by reading the code path** (`admin_prefs.php:208`
+  → `rss_addons::feeds()`): `folders()` (`rss_addons.php:162–171`) takes the keys of `e_rss_list` and appends `'rss'` when
+  missing; `includeAddon('rss')` (`:184–196`) finds `e_PLUGIN.'rss/e_rss.php'` readable, `include_once`s it and returns
+  `array()` (not `false`), so the loop continues; `e107::callMethod('rss_rss', 'config')` (`e107_class.php:3183–3212`:
+  `class_exists()` → `new rss_rss` → `method_exists('config')` → call) returns the one comments feed (`name` `LAN_COMMENTS`,
+  `url` `comments`, `description` `RSS_PLUGIN_LAN_9` — defined in `languages/English_admin.php:37`, loaded by
+  `rss_addons::loadLan()`); `feeds()` sets `$feed['path'] = 'rss'` and `admin_prefs.php:216–230` renders it in the import
+  list unless an `rss` row with `rss_url = 'comments'` already exists. `rss_setup::upgrade_post()` writes `rss_path = 'rss'`
+  for such a row, which `rss_resolver` then matches against the owning folder `rss`.
 - Identical / unchanged: `e_meta.php`, `e_url.php`, images, `languages/English_admin.php`, `languages/English_global.php`,
   `rss_menu.php`, `rss_shortcodes.php`, `rss_sql.php`, `templates/rss_template.php`.
 - Remaining `rss_menu` literal in the plugin: only the Lite `// LITE:` note in `rss_addons.php:206` (unchanged).
@@ -475,13 +529,22 @@ Note: the previous report's "after" value for `LITE MODIFICATION` (66) does not 
 | `LITE FEATURE` | 3 | 0 | 3 | 0 |
 | `LITE-SKIP` | 57 | 0 | 57 | 0 |
 
-- Removed: none. Added: none. (No marker instruction was given in this round.)
+- Removed: none. Added: none. (No marker instruction was given in this round.) Recounted after the STOP commits: unchanged.
 
 ## Checks
 
-- `php -l` on all 84 changed PHP files (`git diff --name-only main..HEAD`, `*.php`): no errors (PHP 8.3.6).
-- `git diff --name-only main..HEAD`: `elanguages/` (4), `ehandlers/` (31), `eadmin/` (17), `eweb/` (2), root
-  (`class2.php`, `comment.php`, `fpw.php`, `login.php`, `page.php`, `signup.php`), `ecore/` (7), `ethemes/` (2),
-  `eplugins/` (22) — plus `audit/` (this report).
+- `php -l` (PHP 8.3.6) on all 88 added/modified PHP files of the branch (`git diff --name-only --diff-filter=AM main..HEAD`,
+  `*.php`; 94 changed PHP paths including the 6 deleted search handlers): no errors.
+- **PHP 7.4 check:** PHP 7.4 could not be installed — no `php7.4` package for this Ubuntu (apt), no docker daemon, and the
+  network policy refuses the static builds (`dl.static-php.dev`, GitHub releases: 403 / no route) and the ondrej PPA.
+  Fallback: every added line of the branch's PHP diff (`git diff -U0 main..HEAD -- '*.php'`, 2178 added lines, block
+  comments skipped, `//` comments stripped) scanned for `match(`, `?->`, named arguments, constructor property promotion,
+  union types in parameters and return types, `mixed` / `static` / `never` types, `#[...]` other than
+  `#[\ReturnTypeWillChange]`, `str_contains` / `str_starts_with` / `str_ends_with` / `array_is_list` / `get_debug_type` /
+  `fdiv`, and `throw` as an expression. The patterns were self-tested on one positive sample each. **0 hits.**
+  This is a syntax scan, not a PHP 7.4 lint.
+- `git diff --name-only main..HEAD`: `elanguages/` (4), `ehandlers/` (40: 31 modified, 3 added, 6 deleted), `eadmin/` (17),
+  `eweb/` (3: 2 modified, 1 deleted), root (`class2.php`, `comment.php`, `fpw.php`, `login.php`, `page.php`, `signup.php`),
+  `ecore/` (7), `ethemes/` (2), `eplugins/` (23: 22 modified, 1 added) — plus `audit/` (this report).
 - `git status` clean, no `.rej` / `.orig`.
 - Branch `sync-upstream-2026-10-09` pushed; no merge, no PR, nothing pushed to `main`.
