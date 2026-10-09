@@ -213,6 +213,23 @@ else
 
 class rssCreate
 {
+	/** Every key {@see rssCreate::buildRss()} interpolates or tests, so a feed may carry only the ones it has; custom and media are not among them because it iterates those, and reaches custom through isset(). */
+	const ITEM = array(
+		'author'          => '',
+		'author_email'    => '',
+		'title'           => '',
+		'link'            => '',
+		'description'     => '',
+		'content_encoded' => '',
+		'comment'         => '',
+		'category_name'   => '',
+		'category_link'   => '',
+		'enc_url'         => '',
+		'enc_leng'        => '',
+		'enc_type'        => '',
+		'pubdate'         => 0,
+	);
+
 	protected $e107;
 
 	var $contentType;
@@ -257,7 +274,7 @@ class rssCreate
 
 		// Feed keys a plugin serves are resolved from the row above. What is left
 		// here is what core still answers to itself: three content types from 0.7
-		// that never became plugins, and the inline comments feed.
+		// that never became plugins and have nothing to serve.
 		switch ($content_type)
 		{
 			case 2:
@@ -271,10 +288,6 @@ class rssCreate
 			case 4:
 				$path='';
 				$this -> contentType = "content";
-				break;
-			case 'comments' : //TODO Eventually move to e107_plugins/comments
-				$path='';
-				$this -> rssItems = $this->commentItems((int) $this -> limit);
 				break;
 		}
 
@@ -301,11 +314,11 @@ class rssCreate
 				{
 					foreach($rs as $k=>$row)
 					{
-						$this -> rssItems[$k]['author'] = $row['author'];
-						$this -> rssItems[$k]['author_email'] = $row['author_email'];
-						$this -> rssItems[$k]['title'] = $row['title'];
+						$this -> rssItems[$k]['author'] = varset($row['author']);
+						$this -> rssItems[$k]['author_email'] = varset($row['author_email']);
+						$this -> rssItems[$k]['title'] = varset($row['title']);
 
-						if($row['link'])
+						if(!empty($row['link']))
 						{
 							if(stripos($row['link'], 'http') !== FALSE)
 							{
@@ -317,14 +330,16 @@ class rssCreate
 							}
 						}
 
-						$this -> rssItems[$k]['description'] = $row['description'];
+						$this -> rssItems[$k]['description'] = varset($row['description']);
+						$this -> rssItems[$k]['content_encoded'] = varset($row['content_encoded']);
+						$this -> rssItems[$k]['comment'] = varset($row['comment']);
 
-						if($row['enc_url'])
+						if(!empty($row['enc_url']))
 						{
-							$this -> rssItems[$k]['enc_url'] = SITEURLBASE.e_PLUGIN_ABS.$row['enc_url'].$row['item_id'];
+							$this -> rssItems[$k]['enc_url'] = SITEURLBASE.e_PLUGIN_ABS.$row['enc_url'].varset($row['item_id']);
 						}
 
-						if($row['enc_leng'])
+						if(!empty($row['enc_leng']))
 						{
 							$this -> rssItems[$k]['enc_leng'] = $row['enc_leng'];
 						}
@@ -333,14 +348,14 @@ class rssCreate
 						{
 							$this -> rssItems[$k]['enc_type'] = $this->getmime($eplug_rss['enc_type']);
 						}
-						elseif($row['enc_type'])
+						elseif(!empty($row['enc_type']))
 						{
 							$this -> rssItems[$k]['enc_type'] = $row['enc_type'];
 						}
 
-						$this -> rssItems[$k]['category_name'] = $row['category_name'];
+						$this -> rssItems[$k]['category_name'] = varset($row['category_name']);
 
-						if($row['category_link'])
+						if(!empty($row['category_link']))
 						{
 							if(stripos($row['category_link'], 'http') !== FALSE)
 							{
@@ -361,12 +376,12 @@ class rssCreate
 							$this -> rssItems[$k]['pubdate'] = time();
 						}
 
-						if($row['custom'])
+						if(!empty($row['custom']))
 						{
 							$this -> rssItems[$k]['custom'] = $row['custom'];
 						}
 
-						if($row['media'])
+						if(!empty($row['media']))
 						{
 							$this -> rssItems[$k]['media'] = $row['media'];
 						}
@@ -374,180 +389,11 @@ class rssCreate
 				}
 			}
 		}
-	}
 
-	/**
-	 * The things a comment in this feed can be attached to.
-	 *
-	 * A type this list does not describe is one whose visibility the feed has no
-	 * way to establish, so comments of that type are not served. Comments of type
-	 * 'profile' are among them: they belong to a member's profile page, which is
-	 * not public, so the feed has no version of them it could publish.
-	 *
-	 * @return array
-	 */
-	private function commentParents()
-	{
-		return array(
-			'news' => array(
-				'types'  => array('0', 'news'),
-				'table'  => 'news',
-				'key'    => 'news_id',
-				'plugin' => '',
-			),
-			'download' => array(
-				'types'  => array('2', 'download'),
-				'table'  => 'download',
-				'key'    => 'download_id',
-				'plugin' => 'download',
-			),
-			'poll' => array(
-				'types'  => array('4', 'poll'),
-				'table'  => 'polls',
-				'key'    => 'poll_id',
-				'plugin' => 'poll',
-			),
-			'page' => array(
-				'types'  => array('page'),
-				'table'  => 'page',
-				'key'    => 'page_id',
-				'plugin' => '',
-			),
-		);
-	}
-
-	/**
-	 * Comments the visitor could have reached through the page they were left on.
-	 *
-	 * comment_blocked is a property of the comment. Whether the item it belongs
-	 * to has been published, and who may read it, are properties of that item, so
-	 * the feed joins to it and asks there.
-	 *
-	 * @param int $limit
-	 * @return array rss items
-	 */
-	private function commentItems($limit)
-	{
-		$http = !empty($_SERVER['HTTPS']) ? 'https://' : 'http://';
-		$base = $http.$_SERVER['HTTP_HOST'].e_HTTP."comment.php?comment.";
-
-		$items = array();
-
-		foreach($this->commentParents() as $name => $parent)
+		foreach($this -> rssItems as $k => $item)
 		{
-			if(!empty($parent['plugin']) && !e107::isInstalled($parent['plugin']))
-			{
-				continue;
-			}
-
-			foreach($this->visibleComments($name, $parent, $limit) as $row)
-			{
-				$author = varset($row['comment_author'], '');
-
-				$items[] = array(
-					'title'       => $row['comment_subject'],
-					'pubdate'     => $row['comment_datestamp'],
-					'link'        => $base.$name.".".$row['comment_item_id'],
-					'description' => $row['comment_comment'],
-					'author'      => (string) substr($author, (strpos($author, ".") + 1)),
-				);
-			}
+			$this -> rssItems[$k] = array_merge(self::ITEM, $item);
 		}
-
-		usort($items, array($this, 'byNewestFirst'));
-
-		return array_slice($items, 0, $limit);
-	}
-
-	/**
-	 * @param array $left
-	 * @param array $right
-	 * @return int
-	 */
-	private function byNewestFirst($left, $right)
-	{
-		if($left['pubdate'] == $right['pubdate'])
-		{
-			return 0;
-		}
-
-		return ($left['pubdate'] > $right['pubdate']) ? -1 : 1;
-	}
-
-	/**
-	 * The userclass predicate core states for a comma separated class column.
-	 *
-	 * The column holds a list, so it is matched as one: an IN () would make
-	 * MySQL read '254,0' as the number 254, and would admit a list that names
-	 * both a class the visitor holds and e_UC_NOBODY.
-	 *
-	 * @param \e107\Database\QueryBuilder $qb
-	 * @param string $column
-	 * @return void
-	 */
-	private function whereClassPermits($qb, $column)
-	{
-		$qb->where($qb->expr()->regexp($column, e_CLASS_REGEXP))
-			->where($qb->expr()->not($qb->expr()->regexp($column, e_NOBODY_REGEXP)));
-	}
-
-	/**
-	 * @param string $name key from commentParents()
-	 * @param array $parent its description
-	 * @param int $limit
-	 * @return array comment rows
-	 */
-	private function visibleComments($name, $parent, $limit)
-	{
-		$now = time();
-		$userclass = array_map('intval', explode(',', USERCLASS_LIST));
-
-		$qb = e107::getDb()->createQueryBuilder();
-		$qb->select('c.*')
-			->from('comments', 'c')
-			->innerJoin($parent['table'], 'p', $qb->expr()->compareColumns('p.'.$parent['key'], 'c.comment_item_id'))
-			->where('c.comment_blocked', 0)
-			->whereIn('c.comment_type', $parent['types']);
-
-		switch($name)
-		{
-			case 'news':
-				$this->whereClassPermits($qb, 'p.news_class');
-				$qb->where('p.news_start', '<', $now)
-					->where($qb->expr()->anyOf(
-						$qb->expr()->eq('p.news_end', 0),
-						$qb->expr()->gt('p.news_end', $now)
-					));
-				break;
-
-			case 'download':
-				// download_visible is who may see the item listed, which is what
-				// a feed is; download_class is who may then fetch the file.
-				$qb->innerJoin('download_category', 'dc',
-						$qb->expr()->compareColumns('dc.download_category_id', 'p.download_category'))
-					->whereIn('p.download_visible', $userclass)
-					->whereIn('p.download_class', $userclass)
-					->whereIn('dc.download_category_class', $userclass)
-					->where('p.download_active', '!=', 0);
-				break;
-
-			case 'poll':
-				$qb->where('p.poll_start_datestamp', '<=', $now)
-					->where($qb->expr()->anyOf(
-						$qb->expr()->eq('p.poll_end_datestamp', 0),
-						$qb->expr()->gt('p.poll_end_datestamp', $now)
-					));
-				break;
-
-			case 'page':
-				$this->whereClassPermits($qb, 'p.page_class');
-				$qb->where('p.page_password', '');
-				break;
-		}
-
-		return $qb->orderBy('c.comment_datestamp', 'DESC')
-			->setFirstResult(0)->setMaxResults($limit)
-			->fetchAll();
 	}
 
 	/**
@@ -634,14 +480,8 @@ class rssCreate
 							<item>
 							<title>".$tp->toRss($value['title'])."</title>
 							<description>".substr($tp->toRss($value['description']),0,150);
-						if($pref['rss_shownewsimage'] == 1 && strlen(trim($value['news_thumbnail'])) > 0)
-						{
-							$news_thumbnail = SITEURLBASE.e_IMAGE_ABS."newspost_images/".$tp->toRss($value['news_thumbnail']);
-							echo "&lt;a href=&quot;".$link."&quot;&gt;&lt;img src=&quot;".$news_thumbnail."&quot; height=&quot;50&quot; border=&quot;0&quot; hspace=&quot;10&quot; vspace=&quot;10&quot; align=&quot;right&quot;&gt;&lt;/a&gt;";
-							unset($news_thumbail);
-						}
 						echo "</description>
-							<author>".$value['author']."&lt;".$this->nospam($value['author_email'])."&gt;</author>
+							<author>".$tp->toRss($value['author'])."&lt;".$this->nospam($value['author_email'])."&gt;</author>
 							<link>".$link."</link>
 							</item>";
 					}
@@ -746,7 +586,7 @@ class rssCreate
 
 					if($value['author'])
 					{
-						echo "<dc:creator>".$value['author']."</dc:creator>\n"; // correct tag for author without email.
+						echo "<dc:creator>".$tp->toRss($value['author'])."</dc:creator>\n"; // correct tag for author without email.
 					}
 
 					// Enclosure support for podcasting etc.
@@ -837,7 +677,7 @@ class rssCreate
 						<title>".$tp->toRss($value['title'])."</title>
 						<link>".$link."</link>
 						<dc:date>".$this->get_iso_8601_date($time)."</dc:date>
-						<dc:creator>".$value['author']."</dc:creator>
+						<dc:creator>".$tp->toRss($value['author'])."</dc:creator>
 						<dc:subject>".$tp->toRss($value['category_name'])."</dc:subject>
 						<description>".$tp->toRss($value['description']). "</description>
 						</item>";
@@ -902,7 +742,8 @@ class rssCreate
 						<updated>".$this->get_iso_8601_date($value['pubdate'])."</updated>\n";
 
 						// Recommended
-                        $author = ($value['author']) ? $value['author'] : "unknown";
+                        $author = $tp->toRss($value['author']);
+                        $author = ($author !== '') ? $author : "unknown";
 
 						echo "
 						<author>\n";
