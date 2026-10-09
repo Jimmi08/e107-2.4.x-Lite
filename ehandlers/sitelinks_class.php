@@ -32,6 +32,9 @@ class sitelinks
 	const LINK_DISPLAY_OTHER    = 3;
 	const LINK_DISPLAY_SLIDER   = 4;
 
+	/** The spelling an administrator writes into a stored link_url for {@see sitelinks::fillToken()} to replace */
+	const TOKEN_PLACEHOLDER     = '{E_TOKEN}';
+
 
 	/**
 	 * Build the shared sitelink query: all links visible to the current user's
@@ -164,7 +167,7 @@ class sitelinks
 			return $data;
 		}
 
-		if(LINKDISPLAY == self::LINK_DISPLAY_SLIDER)
+		if(defset('LINKDISPLAY') == self::LINK_DISPLAY_SLIDER)
 		{
 			$sliderMenu = e_PLUGIN . 'ypslide_menu/ypslide_menu.php';
 
@@ -407,6 +410,18 @@ class sitelinks
 
 
 	/**
+	 * Fill the {E_TOKEN} placeholder a stored link URL may carry with this session's CSRF token
+	 *
+	 * @param string $url a link_url, after {@see e_parse::replaceConstants()} has run over it
+	 * @return string
+	 */
+	public static function fillToken($url)
+	{
+		return str_replace(self::TOKEN_PLACEHOLDER, defset('e_TOKEN'), $url);
+	}
+
+
+	/**
 	 * @param $linkInfo
 	 * @param $submenu
 	 * @param $style
@@ -453,6 +468,7 @@ class sitelinks
 
 		// Convert any {e_XXX} to absolute URLs (relative ones sometimes get broken by adding e_HTTP at the front)
 		$linkInfo['link_url'] = $tp -> replaceConstants($linkInfo['link_url'], TRUE, TRUE); // replace {e_xxxx}
+		$linkInfo['link_url'] = self::fillToken($linkInfo['link_url']);
 
 		if(strpos($linkInfo['link_url'],"{") !== false)
 		{
@@ -620,7 +636,7 @@ class sitelinks
 	//	global $pref;
 		$pref = e107::pref();
 
-		if (($link_slf == e_HTTP."index.php") && count($pref['frontpage']))
+		if (($link_slf == e_HTTP."index.php") && !empty($pref['frontpage']) && is_array($pref['frontpage']))
 		{	// Only interested if the displayed page is index.php - see whether its the user's home (front) page
 			$full_url = 'news.php';					// Set a default in case
 			$uc_array = explode(',', USERCLASS_LIST);

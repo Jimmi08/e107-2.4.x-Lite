@@ -59,5 +59,5 @@ class githubSyncLite_adminArea extends e_admin_dispatcher
 		),
 	);
 
-	protected $menuTitle = 'Github Sync Lite';
+	protected $menuTitle = 'GitHub Sync Lite';
 }

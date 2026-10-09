@@ -1,24 +1,15 @@
 <?php
 
 /**
- * githubSyncLite — admin/admin_sync.php  (mode: sync, default)
+ * Core Sync screen (mode: sync, default).
  *
- * The everyday screen:
- *   (1) Core sync — downloads the Lite core from the configured repo and
- *       extracts it over this installation. From the SAME archive it also
- *       extracts the SELECTED plugin folders (see below); every other entry
- *       under the repo's plugins folder is skipped by the LITE-modified
- *       engine copy. The source repo's layout (eplugins vs e107_plugins,
- *       'e' vs 'e107_' folder prefix) comes from the Source screen prefs.
- *   (2) Plugins — the repo's plugin folders (stored in the plugin prefs,
- *       one GitHub API call on "Refresh plugin list") as checkboxes. The
- *       selection is saved in the plugin prefs and used by the core sync.
- *
- * Source settings live on the separate "Source" screen (admin_config.php),
- * read here via e107::getPlugConfig('githubSyncLite'). Uses the e107 admin
- * dispatcher (e_admin_ui + runPage) so the admin header/footer and language
- * constants load correctly. No sync logic here — delegated to the bundled
- * engine copy. No table; no dependency on the full githubSync plugin.
+ * Downloads the core from the configured repo and extracts it over this
+ * installation; from the SAME archive it also extracts the selected plugin
+ * folders. Source settings come from the Source screen via
+ * e107::getPlugConfig('githubSyncLite'); the plugin list and the selection
+ * live in the plugin prefs (plugin_list.php). No sync logic here — it is
+ * delegated to the bundled engine copy. No table, no dependency on the full
+ * githubSync plugin.
  */
 
 require_once('../../../class2.php');
@@ -36,7 +27,7 @@ e107_require_once(e_PLUGIN . 'githubSyncLite/includes/plugin_list.php');        
 
 class githubSyncLite_ui extends e_admin_ui
 {
-	protected $pluginTitle = 'Github Sync Lite';
+	protected $pluginTitle = 'GitHub Sync Lite';
 	protected $pluginName  = 'githubSyncLite';
 	protected $table       = ''; // prefs only — no table
 	protected $pid         = '';
@@ -100,7 +91,7 @@ class githubSyncLite_ui extends e_admin_ui
 		// main-admin only: this overwrites core files on disk
 		if (!getperms('0'))
 		{
-			$mes->addError('Only the main admin can use Github Sync Lite.');
+			$mes->addError('Only the main admin can use GitHub Sync Lite.');
 			return $mes->render();
 		}
 
@@ -244,10 +235,8 @@ class githubSyncLite_ui extends e_admin_ui
 	}
 
 	/**
-	 * Delegates the work to the bundled engine (type 'core'). The LITE-
-	 * modified engine copy extracts the core folders plus ONLY the plugin
-	 * folders passed in 'plugins' (the stored selection); everything else
-	 * under the repo's plugins folder is skipped.
+	 * Delegates to the bundled engine (type 'core'), which extracts the core
+	 * folders plus ONLY the plugin folders passed in 'plugins'.
 	 *
 	 * @return void
 	 */
@@ -258,7 +247,7 @@ class githubSyncLite_ui extends e_admin_ui
 
 		if (version_compare(PHP_VERSION, '7.4', '<'))
 		{
-			$mes->addError('Github Sync Lite requires PHP 7.4 or newer. You are on PHP ' . PHP_VERSION . '.');
+			$mes->addError('GitHub Sync Lite requires PHP 7.4 or newer. You are on PHP ' . PHP_VERSION . '.');
 			return;
 		}
 
@@ -330,15 +319,11 @@ class githubSyncLite_ui extends e_admin_ui
 	}
 
 	/**
-	 * The buttons placed right above the plugin table: "Run core sync",
-	 * "Save selection" and the check/uncheck-all helpers. Buttons only — the
-	 * caller (renderPluginSelection()) wraps them in the form that also
-	 * contains the checkbox table, so the checkboxes are posted with them.
-	 * The check/uncheck-all buttons are type="button", so they can never
-	 * submit. They touch only .gsl-plugin-select checkboxes; base plugins
-	 * (.gsl-plugin-base) keep their state and are handled manually.
+	 * The buttons above the plugin table. The caller wraps them in the form
+	 * that also holds the checkboxes, so they post together. The check/uncheck
+	 * buttons are type="button" and skip .gsl-plugin-base.
 	 *
-	 * @param bool $withCheckButtons  FALSE when there is no plugin table yet.
+	 * @param bool $withCheckButtons  FALSE when there is no plugin list yet.
 	 * @return string
 	 */
 	protected function renderRunToolbar($withCheckButtons = true)
@@ -506,17 +491,17 @@ class githubSyncLite_ui extends e_admin_ui
 	 */
 	public function renderHelp()
 	{
-		$text  = '<strong>Core Sync</strong> downloads the Lite core from the configured repo and '
+		$text  = '<strong>Core Sync</strong> downloads the core from the configured repo and '
 			. 'overwrites core files. From the same archive it also writes the <strong>selected</strong> '
 			. 'plugin folders into the local plugins directory; everything else under the repo\'s plugins '
 			. 'folder is skipped. With nothing selected, nothing is written there at all. The source repo\'s '
 			. 'layout (plugins folder name and core-folder prefix) is set on the <strong>Source</strong> screen.';
 		$text .= '<br><br><strong>Plugins</strong> lists the repo\'s plugin folders from a stored copy '
 			. '(kept in the plugin settings, so it survives cache clears). Tick the folders you want and click '
-			. '<em>Save selection</em>; the six base plugins are always included. Use <em>Refresh plugin list</em> '
+			. '<em>Save selection</em>; the base plugins are always included. Use <em>Refresh plugin list</em> '
 			. 'to re-read the list from GitHub (one API call) — your selection is kept, and folders that no '
 			. 'longer exist in the repo are dropped and reported.';
-		$text .= '<br><br>Set the repo on the <strong>Source</strong> screen. Main admin only. Tested on Lite / PHP 7.4.';
+		$text .= '<br><br>Set the repo on the <strong>Source</strong> screen. Main admin only. Requires PHP 7.4 or newer.';
 
 		return array(
 			'caption' => LAN_HELP,

@@ -33,7 +33,7 @@ class core_user_url extends eUrlConfig
 	/**
 	 * Query mapping in format route?params:
 	 * - profile/view?id=xxx -> user.php?id.xxx
-	 * - profile/list?page=xxx -> user.php?xxx
+	 * - profile/list?page=xxx&records=yyy&order=zzz -> user.php?xxx.yyy.zzz
 	 * - myprofile/view -> user.php
 	 * - profile/edit?id=xxx -> usersettings.php?xxx
 	 * - myprofile/edit -> usersettings.php
@@ -53,12 +53,10 @@ class core_user_url extends eUrlConfig
 		if(isset($params['user_id']) && !empty($params['user_id'])) $params['id'] = $params['user_id'];
 		
 		$url = 'user.php';
-		$page = vartrue($params['page']) ? intval($params['page']) : '0';
- 	
+		
 		if($route[0] == 'profile')
 		{
-			// Params required for user view, list & edit
-			if(!$params) return 'user.php';
+			if(!$params || (empty($params['id']) && $route[1] !== 'list')) return 'user.php';
 
 			switch ($route[1]) 
 			{
@@ -68,12 +66,16 @@ class core_user_url extends eUrlConfig
 				break;
 				
 				case 'list':
-					$url .= $page ? '?'.$page : '';
+					$page = preg_replace('/[^\w\-]/', '', (string) varset($params['page'], '0'));
+					$records = vartrue($params['records']) ? intval($params['records']) : 20;
+					$order = (varset($params['order']) === 'ASC') ? 'ASC' : 'DESC';
+					$url .= '?'.$page.'.'.$records.'.'.$order;
 				break;
 				
 				case 'edit':
 					//$url = e_ADMIN_ABS."user.php?mode=main&action=edit&id=".$params['id'];// 'usersettings.php?'.$params['id'];
 					//$url = e_ADMIN."users.php?mode=main&action=edit&id=".$params['id'];// 'usersettings.php?'.$params['id'];
+					// LITE MODIFICATION: usersettings.php?ID link format
 					$url = 	'usersettings.php?' . $params['id'];
 				break;
 			}
@@ -89,7 +91,6 @@ class core_user_url extends eUrlConfig
 				
 				case 'edit':
 					$url = 'usersettings.php';
-				 
 				break;
 			}
 		}

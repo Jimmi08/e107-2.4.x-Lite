@@ -25,25 +25,22 @@ class theme implements e_theme_render
     {
 
         e107::meta('viewport',"width=device-width, initial-scale=1.0");
-     
+
+        // Load CDN provider for Bootswatch.
+        if($bootswatch = e107::pref('theme', 'bootswatch', false))
+        {
+            e107::css('url', 'https://cdnjs.cloudflare.com/ajax/libs/bootswatch/3.4.0/' . $bootswatch . '/bootstrap.min.css');
+        }
+
         e107::js("footer-inline", 	"$('.e-tip').tooltip({container: 'body'});"); // activate bootstrap tooltips.
- 
+
+        /* @example prefetch  */
+        //e107::link(array('rel'=>'prefetch', 'href'=>THEME.'images/browsers.png'));
+
     }
 
 
-	/**
-	 * Override how THEME_STYLE is loaded. Duplicates will be automatically removed.
-	 * @return void
-	 */
-	function css()
-	{
 
-
-		e107::css('theme', 'style.css'); // always load style.css last.
-		e107::css('theme', THEME_STYLE);
-
-		e107::css('inline', '#carousel-hero.carousel {   margin-bottom: 80px; }');
-	}
 
     /**
      * @param string $caption
@@ -172,3 +169,6 @@ class theme implements e_theme_render
 
     
 }
+
+
+

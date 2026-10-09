@@ -1,33 +1,19 @@
 <?php
 /**
- * github_sync_engine — self-contained GitHub sync engine for the githubSync plugin.
+ * github_sync_engine — GitHub sync engine.
  *
- * Downloads a GitHub repository as a ZIP and extracts it into the e107 tree
- * (no shell, no `git` — works on shared hosting). Public repos use codeload;
- * private repos use the authenticated GitHub API (zipball) with a token.
+ * Downloads a repository as a ZIP and extracts it into the e107 tree (no
+ * shell, no git). Public repos use codeload, private repos the authenticated
+ * GitHub API zipball.
  *
- * Design:
- *   - Params-driven: sync() takes everything it needs as an explicit array.
- *     The data source (currently the `github_sync` DB table) lives in the
- *     controller, not here — so this class is reusable and testable.
- *   - Self-contained: does NOT call Lite core methods (e.g.
- *     file_class::unzipGithubArchive). It keeps its own copy so it survives a
- *     re-unification of Lite with upstream e107.
- *   - Does NOT touch the DB. The controller is responsible for updating
- *     `lastsynced` after a successful run.
+ * Self-contained by design: it never calls core file-class methods, so it
+ * survives a re-unification of Lite with upstream e107. It does not touch
+ * the database — the controller updates lastsynced itself.
  *
- * Ported from the tested Lite `unzipGithubArchive` logic; see project.md.
+ * One canonical version, copied verbatim into githubSync, githubSyncLite and
+ * githubFind. Keep the copies diffable: change all three together.
  *
- * LITE MODIFICATION (githubSyncLite bundled copy): a 'core' sync never
- * writes the whole plugins directory. It takes an optional 'plugins' array
- * (validated folder names) and extracts ONLY those folders from the repo's
- * configured plugins directory ({plugins_folder}/) — out of the SAME archive
- * the core comes from, no separate download. Everything else under either
- * plugins-directory spelling (eplugins/ and e107_plugins/) is skipped. With
- * an empty 'plugins' array nothing under the plugins directory is ever
- * written, exactly as before 0.4.0.
- *
- * @package githubSync
+ * @package githubSyncLite
  */
 
 if (!defined('e107_INIT'))
@@ -46,12 +32,7 @@ class github_sync_engine
 	/** The two whitelisted prefixes of the source repo's core directories. */
 	const FOLDER_PREFIXES = array('e', 'e107_');
 
-	/**
-	 * Core directory names WITHOUT their prefix. Combined with a folder prefix
-	 * ('e' or 'e107_') they give the top-level core folders a repo may carry
-	 * (eadmin / e107_admin, ehandlers / e107_handlers, …). Used by
-	 * detectLayout() only; buildFolderMap() keeps its explicit list.
-	 */
+	/** Core directory names without their prefix; used by detectLayout(). */
 	const CORE_DIRS = array('admin', 'core', 'docs', 'files', 'handlers', 'images', 'languages', 'media', 'system', 'themes', 'web');
 
 	/** Files at the repo root that should never be copied into the e107 tree. */
@@ -124,12 +105,9 @@ class github_sync_engine
 			return false;
 		}
 
-		// Layout guard: the row's folder_prefix / plugins_folder describe the
-		// SOURCE repo. When the extracted archive clearly uses the other
-		// spelling, every mapped prefix would match nothing and the entries
-		// would end up wherever the map's fallback sends them — so stop here,
-		// before anything is written, and say which value the archive needs.
-		// The detected value is only reported, never applied to the row.
+		// Stop before anything is written when the archive clearly uses the
+		// other spelling — otherwise every mapped prefix matches nothing and
+		// entries land wherever the map's fallback sends them.
 		$mismatches = $this->layoutMismatches($this->detectLayout($unarc, $zipBase), $p);
 		if (!empty($mismatches))
 		{
@@ -175,11 +153,9 @@ class github_sync_engine
 			'folder_prefix'  => trim((string) ($params['folder_prefix'] ?? '')),
 		);
 
-		// Source-repo layout. Whitelist strictly — these values become archive
-		// path prefixes in the folder map, so nothing outside the two known
-		// layouts is ever accepted; anything else falls back to the Lite
-		// defaults. The two settings are independent (a repo may combine
-		// e107_ core folders with an eplugins folder, or the other way round).
+		// SECURITY: these become archive path prefixes in the folder map, so
+		// only the two known layouts are accepted; anything else falls back to
+		// the defaults. The two settings are independent.
 		if (!in_array($p['plugins_folder'], self::PLUGINS_FOLDERS, true))
 		{
 			$p['plugins_folder'] = 'eplugins';
@@ -192,13 +168,9 @@ class github_sync_engine
 		$folder = trim((string) ($params['folder'] ?? ''), '/ ');
 		$p['folder'] = ($folder !== '') ? $folder : $p['repo'];
 
-		// LITE MODIFICATION (githubSyncLite): optional list of plugin folders
-		// a 'core' sync may extract from {plugins_folder}/. Each name becomes
-		// a path-segment comparison in relocate(), so it is re-validated here
-		// regardless of what the caller already checked: only plain segments
-		// (letters, digits, dot, underscore, hyphen; no '..', no '/') survive.
-		// Everything else is dropped silently. Default: empty array (= no
-		// plugin folder is written at all).
+		// SECURITY: each name becomes a path-segment comparison in relocate(),
+		// so it is re-validated here whatever the caller already checked — only
+		// plain segments survive. Empty = no plugin folder is written at all.
 		$p['plugins'] = array();
 		if (isset($params['plugins']) && is_array($params['plugins']))
 		{
@@ -250,10 +222,9 @@ class github_sync_engine
 	}
 
 	/**
-	 * Validate a single path segment (organization/repo/branch/folder).
-	 * Mirrors Lite e_marketplace::isValidSegment, with an explicit '..' reject.
-	 * Note: branch names containing '/' are not supported (same constraint as Lite).
-	 * Public+static so controllers (e.g. the add-repo form) can reuse it.
+	 * Validate a single path segment (organization/repo/branch/folder), with an
+	 * explicit '..' reject. Branch names containing '/' are not supported.
+	 * Public+static so controllers can reuse it.
 	 *
 	 * @param string $segment
 	 * @return bool
@@ -439,22 +410,12 @@ class github_sync_engine
 	}
 
 	/**
-	 * Detect which source layout the extracted archive actually uses, from
-	 * its top-level directories under {zipBase}/ (the entry list PclZip
-	 * already returned — the archive is not opened a second time).
-	 *
-	 * For each of the two layout settings the result lists every spelling
-	 * found, keyed by the whitelisted value, with the top-level folder(s)
-	 * that revealed it:
-	 *
-	 *   'plugins_folder' => array('e107_plugins' => array('e107_plugins/'))
-	 *   'folder_prefix'  => array('e107_' => array('e107_languages/', 'e107_themes/'))
-	 *
-	 * A spelling that is not present is simply absent from the list, so an
-	 * empty list means the archive carries no such folder at all (a
-	 * single-plugin repo, a theme repo, an 'other' row) — which is NOT a
-	 * mismatch, see layoutMismatches(). Only directories count: a folder
-	 * entry, or any entry with a further path segment below the top level.
+	 * Detect which layout the extracted archive actually uses, from its
+	 * top-level directories under {zipBase}/ (the entry list PclZip already
+	 * returned; the archive is not opened again). Each setting lists every
+	 * spelling found, keyed by the whitelisted value, with the folders that
+	 * revealed it. A spelling that is absent is simply not listed, which is
+	 * not a mismatch — see layoutMismatches().
 	 *
 	 * @param array  $unarc    PclZip entry list.
 	 * @param string $zipBase  Archive top-level folder.
@@ -515,16 +476,13 @@ class github_sync_engine
 	}
 
 	/**
-	 * Compare the detected layout with the declared one. A setting is a
-	 * mismatch only on a clear contradiction: the archive uses exactly ONE
-	 * spelling and it is not the one the row declares. Nothing found is not a
-	 * mismatch (the repo simply has no such folder), and both spellings found
-	 * is not one either (whatever the row says matches something).
+	 * Compare the detected layout with the declared one. A mismatch needs a
+	 * clear contradiction: the archive uses exactly one spelling and it is not
+	 * the declared one. Nothing found, or both found, is not a mismatch.
 	 *
 	 * @param array $detected  Result of detectLayout().
-	 * @param array $p         Validated sync params (folder_prefix, plugins_folder, …).
-	 * @return array  One entry per mismatched setting, keyed by setting name:
-	 *                array('declared' => string, 'detected' => string, 'folders' => array).
+	 * @param array $p         Validated sync params.
+	 * @return array  Per mismatched setting: array('declared', 'detected', 'folders').
 	 */
 	private function layoutMismatches(array $detected, array $p)
 	{
@@ -555,14 +513,9 @@ class github_sync_engine
 	}
 
 	/**
-	 * Report a layout mismatch that aborted the sync: which sync it was
-	 * (organization/repo, branch, type), which value is declared, which
-	 * spelling the archive contains (with the folders that show it) and the
-	 * value that would work — via e107::getMessage() and, identically, via
-	 * e107::getLog() so it can be diagnosed from the admin log. The detected
-	 * value is named for the admin to pick in the dropdown; it is never
-	 * written to the row. Archive paths are escaped before rendering;
-	 * nothing else from the sync params (in particular no token) is included.
+	 * Report a layout mismatch that aborted the sync, via e107::getMessage()
+	 * and e107::getLog(). Names the value that would work; never writes it to
+	 * the row. Archive paths are escaped; no token is ever included.
 	 *
 	 * @param array $mismatches  Result of layoutMismatches() (non-empty).
 	 * @param array $p           Validated sync params.
@@ -601,13 +554,8 @@ class github_sync_engine
 
 	/**
 	 * Build the {zip path prefix => destination path} remap for a sync type.
-	 *
-	 * NOTE: the folder names on the LEFT side depend on the SOURCE repo's
-	 * directory layout and come from two whitelisted params (see
-	 * validateParams()): $p['folder_prefix'] ('e' or 'e107_') for the
-	 * standard core directories, and $p['plugins_folder'] ('eplugins' or
-	 * 'e107_plugins') for the plugins directory. The former hardcoded mixed
-	 * convention was replaced by these preferences (v0.2.0).
+	 * The left-hand folder names describe the SOURCE repo and come from the
+	 * two whitelisted params $p['folder_prefix'] and $p['plugins_folder'].
 	 *
 	 * @param array  $p
 	 * @param string $zipBase
@@ -621,11 +569,10 @@ class github_sync_engine
 		switch ($p['type'])
 		{
 			case 'plugin':
-				// Folder-scoped single plugin. Extract ONLY {plugins_folder}/{folder}/
-				// from the repo zip into the LOCAL plugins dir. The folder stays in the
-				// path after str_replace, so it is NOT appended to the destination.
-				// relocate() additionally skips anything outside keepPrefix (see
-				// buildKeepPrefix()). Identical layout to the marketplace reference.
+				// Extract ONLY {plugins_folder}/{folder}/ into the local plugins
+				// dir. The folder stays in the path after str_replace, so it is
+				// not appended to the destination; relocate() also skips anything
+				// outside keepPrefix.
 				return array(
 					$zipBase . '/' . $plugDir . '/' => e_BASE . e107::getFolder('PLUGINS'),
 				);
@@ -652,15 +599,10 @@ class github_sync_engine
 					$zipBase . '/' . $px . 'web/'       => e_BASE . e107::getFolder('WEB'),
 				);
 
-				// LITE MODIFICATION (githubSyncLite): the plugins folder is mapped
-				// ONLY when the caller selected plugin folders, and relocate()
-				// then lets through just those folders (skipping the rest of
-				// the plugins directory, and the other spelling entirely). With
-				// nothing selected there is no mapping at all, and relocate()
-				// skips both spellings so the catch-all cannot pull them in.
-				// ORDER MATTERS: relocate() applies the map with str_replace()
-				// on ordered arrays, so this entry must come before the
-				// catch-all ($zipBase.'/' => e_BASE), which must stay last.
+				// Mapped only when the caller selected plugin folders; relocate()
+				// then lets through just those. ORDER MATTERS: the map is applied
+				// with str_replace() on ordered arrays, so this entry must come
+				// before the catch-all, which must stay last.
 				if (!empty($p['plugins']))
 				{
 					$map[$zipBase . '/' . $plugDir . '/'] = e_BASE . e107::getFolder('PLUGINS');
@@ -678,24 +620,17 @@ class github_sync_engine
 				);
 
 			case 'other':
-				// Root-layout grab for ad-hoc / manually-synced repos that do NOT
-				// follow the {plugins_folder}/{folder}/ standard: the whole repo root
-				// goes into one named LOCAL plugin folder. No plugins-folder remap
-				// and no pack-style catch-all into e_BASE, so it cannot overwrite
-				// core directories. hasTraversal() still guards every entry in
-				// relocate().
+				// Ad-hoc repos that do not follow {plugins_folder}/{folder}/: the
+				// whole repo root goes into one named local plugin folder. No
+				// catch-all into e_BASE, so it cannot overwrite core directories.
 				return array(
 					$zipBase => e_BASE . e107::getFolder('PLUGINS') . $p['folder'],
 				);
 
 			case 'language':
-				// A language pack has exactly three legitimate destinations:
-				// the languages folder, a plugin's folder and a theme's folder.
-				// There is deliberately NO catch-all ($zipBase.'/' => e_BASE):
-				// an entry matching none of these prefixes (e.g. when the
-				// row's folder_prefix does not match the repo layout) is
-				// skipped and reported by relocate(), never written to the
-				// site root.
+				// Three legitimate destinations only: languages, a plugin folder,
+				// a theme folder. Deliberately NO catch-all — an entry matching
+				// none of these is skipped and reported, never written to the root.
 				return array(
 					$zipBase . '/' . $px . 'languages/' => e_BASE . e107::getFolder('LANGUAGES'),
 					$zipBase . '/' . $plugDir . '/'     => e_BASE . e107::getFolder('PLUGINS'),
@@ -728,19 +663,17 @@ class github_sync_engine
 	}
 
 	/**
-	 * Move extracted entries from e_TEMP into their destinations.
-	 * Uses copy+unlink (the tested Lite pattern) and rejects any archive entry
-	 * containing a '..' path segment (zip-slip defence). For 'language',
-	 * skips (and reports) every entry that matches none of the mapped prefixes,
-	 * and skips translations for plugins/themes not present on this site. For
-	 * strict folder-scoped types a $keepPrefix skips everything outside the folder.
-	 * For 'core' (LITE), entries under the plugins directory are let through
-	 * only for the selected plugin folders — see skipCorePluginEntry().
+	 * Move extracted entries from e_TEMP into their destinations (copy+unlink).
+	 * Rejects any entry containing a '..' segment (zip-slip). For 'language',
+	 * skips and reports entries matching no mapped prefix, and translations for
+	 * plugins/themes absent from this site. For folder-scoped types $keepPrefix
+	 * skips everything outside the folder. For 'core', plugins-directory entries
+	 * pass only for the selected folders — see skipCorePluginEntry().
 	 *
 	 * @param array  $unarc
 	 * @param array  $folderMap
 	 * @param string $zipBase
-	 * @param array  $p           Validated sync params (type, plugins_folder, folder_prefix, …).
+	 * @param array  $p           Validated sync params.
 	 * @param string $keepPrefix
 	 * @return array ['success' => [...], 'error' => [...], 'skipped' => [...]]
 	 */
@@ -765,12 +698,9 @@ class github_sync_engine
 		{
 			$stored = $v['stored_filename'];
 
-			// language: the map has no catch-all (see buildFolderMap()), so an
-			// entry that starts with none of the mapped prefixes has nowhere
-			// legitimate to go. Skip it and remember it for the report instead
-			// of letting str_replace() below leave the path untouched and
-			// write it relative to the current directory. The archive root
-			// folder itself is skipped silently — it is not content.
+				// No catch-all for 'language', so an entry matching no mapped
+				// prefix has nowhere legitimate to go: skip it and report it
+				// instead of letting str_replace() leave the path untouched.
 			if ($type === 'language' && !$this->matchesPrefix($stored, $srch))
 			{
 				$skipped[] = $stored;
@@ -788,14 +718,9 @@ class github_sync_engine
 				continue;
 			}
 
-			// LITE MODIFICATION (githubSyncLite): for a core sync, the plugins
-			// directory is written SELECTIVELY. Entries under the non-configured
-			// spelling are always skipped; entries under the configured
-			// spelling ({plugins_folder}/) are kept only when their first path
-			// segment is one of the validated $p['plugins'] names. With an
-			// empty selection nothing under either spelling is ever written —
-			// the catch-all ($zipBase.'/' => e_BASE) would otherwise relocate
-			// plugin files, which is why the skip happens here explicitly.
+				// A core sync writes the plugins directory selectively. The skip
+				// happens here explicitly because the catch-all would otherwise
+				// relocate plugin files. See skipCorePluginEntry().
 			if ($type === 'core' && $this->skipCorePluginEntry($stored, $zipBase, $p))
 			{
 				$skipped[] = $stored;
@@ -883,15 +808,12 @@ class github_sync_engine
 	}
 
 	/**
-	 * Report archive entries a 'language' sync skipped because they matched
-	 * none of the mapped prefixes: a count plus the first few paths via
-	 * e107::getMessage(), and the same via e107::getLog() so a misconfigured
-	 * row (folder_prefix / plugins_folder not matching the repo layout) can be
-	 * diagnosed from the admin log. Paths are escaped before rendering;
-	 * nothing else from the sync params (in particular no token) is included.
+	 * Report entries a 'language' sync skipped for matching no mapped prefix:
+	 * a count and the first few paths, via e107::getMessage() and getLog(), so
+	 * a misconfigured row can be diagnosed. Paths are escaped; no token.
 	 *
 	 * @param array $unmatched  Skipped archive entry paths.
-	 * @param array $p          Validated sync params (folder_prefix, plugins_folder, …).
+	 * @param array $p          Validated sync params.
 	 * @return void
 	 */
 	private function reportUnmatched(array $unmatched, array $p)
@@ -976,24 +898,15 @@ class github_sync_engine
 	}
 
 	/**
-	 * LITE MODIFICATION (githubSyncLite): decide whether a 'core' sync must
-	 * skip an archive entry because of the plugins directory rules.
-	 *
-	 *   - entry under the NON-configured plugins spelling → always skip;
-	 *   - entry under the configured spelling ({plugins_folder}/) → keep only
-	 *     when the first path segment after it is in the validated
-	 *     $p['plugins'] array (exact, case-sensitive match); otherwise skip;
-	 *   - the plugins container folder entry itself → keep only when the
-	 *     array is non-empty;
-	 *   - anything else (core folders, root files) → not this method's
-	 *     business, never skipped here.
-	 *
-	 * An empty $p['plugins'] therefore reproduces the pre-0.4.0 behaviour:
-	 * nothing under either plugins directory is ever written.
+	 * Whether a 'core' sync must skip an entry because of the plugins rules:
+	 * the non-configured spelling is always skipped; the configured spelling
+	 * passes only when its first path segment is in $p['plugins']; the plugins
+	 * container folder passes only when that array is non-empty. An empty
+	 * array therefore writes nothing under either spelling.
 	 *
 	 * @param string $stored   Archive entry path.
 	 * @param string $zipBase  Archive top-level folder.
-	 * @param array  $p        Validated sync params (plugins_folder, plugins, …).
+	 * @param array  $p        Validated sync params.
 	 * @return bool  TRUE = skip this entry.
 	 */
 	private function skipCorePluginEntry($stored, $zipBase, array $p)

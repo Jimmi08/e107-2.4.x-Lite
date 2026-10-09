@@ -27,7 +27,7 @@ class e_search
 	var $text;
 	var $pos;
 	public $bullet;
-	private $keywords = [];
+	private $keywords = ['split' => [], 'wildcard' => [], 'boolean' => [], 'match' => [], 'exact' => []];
 	var $stopwords_php = "|a|about|an|and|are|as|at|be|by|com|edu|for|from|how|i|in|is|it|of|on|or|that|the|this|to|was|what|when|where|who|will|with|the|www|";
 	var $stopwords_mysql = "|a|a's|able|about|above|according|accordingly|across|actually|after|afterwards|again|against|ain't|all|allow|allows|almost|alone|along|already|also|although|always|am|among|amongst|an|and|another|any|anybody|anyhow|anyone|anything|anyway|anyways|anywhere|apart|appear|appreciate|appropriate|are|aren't|around|as|aside|ask|asking|associated|at|available|away|awfully|be|became|because|become|becomes|becoming|been|before|beforehand|behind|being|believe|below|beside|besides|best|better|between|beyond|both|brief|but|by|c'mon|c's|came|can|can't|cannot|cant|cause|causes|certain|certainly|changes|clearly|co|com|come|comes|concerning|consequently|consider|considering|contain|containing|contains|corresponding|could|couldn't|course|currently|definitely|described|despite|did|didn't|different|do|does|doesn't|doing|don't|done|down|downwards|during|each|edu|eg|eight|either|else|elsewhere|enough|entirely|especially|et|etc|even|ever|every|everybody|everyone|everything|everywhere|ex|exactly|example|except|far|few|fifth|first|five|followed|following|follows|for|former|formerly|forth|four|from|further|furthermore|get|gets|getting|given|gives|go|goes|going|gone|got|gotten|greetings|had|hadn't|happens|hardly|has|hasn't|have|haven't|having|he|he's|hello|help|hence|her|here|here's|hereafter|hereby|herein|hereupon|hers|herself|hi|him|himself|his|hither|hopefully|how|howbeit|however|i|i'd|i'll|i'm|i've|ie|if|ignored|immediate|in|inasmuch|inc|indeed|indicate|indicated|indicates|inner|insofar|instead|into|inward|is|isn't|it|it'd|it'll|it's|its|itself|just|keep|keeps|kept|know|knows|known|last|lately|later|latter|latterly|least|less|lest|let|let's|like|liked|likely|little|look|looking|looks|ltd|mainly|many|may|maybe|me|mean|meanwhile|merely|might|more|moreover|most|mostly|much|must|my|myself|name|namely|nd|near|nearly|necessary|need|needs|neither|never|nevertheless|new|next|nine|no|nobody|non|none|noone|nor|normally|not|nothing|novel|now|nowhere|obviously|of|off|often|oh|ok|okay|old|on|once|one|ones|only|onto|or|other|others|otherwise|ought|our|ours|ourselves|out|outside|over|overall|own|particular|particularly|per|perhaps|php|placed|please|plus|possible|presumably|probably|provides|que|quite|qv|rather|rd|re|really|reasonably|regarding|regardless|regards|relatively|respectively|right|said|same|saw|say|saying|says|second|secondly|see|seeing|seem|seemed|seeming|seems|seen|self|selves|sensible|sent|serious|seriously|seven|several|shall|she|should|shouldn't|since|six|so|some|somebody|somehow|someone|something|sometime|sometimes|somewhat|somewhere|soon|sorry|specified|specify|specifying|still|sub|such|sup|sure|t's|take|taken|tell|tends|th|than|thank|thanks|thanx|that|that's|thats|the|their|theirs|them|themselves|then|thence|there|there's|thereafter|thereby|therefore|therein|theres|thereupon|these|they|they'd|they'll|they're|they've|think|third|this|thorough|thoroughly|those|though|three|through|throughout|thru|thus|to|together|too|took|toward|towards|tried|tries|truly|try|trying|twice|two|un|under|unfortunately|unless|unlikely|until|unto|up|upon|us|use|used|useful|uses|using|usually|value|various|very|via|viz|vs|want|wants|was|wasn't|way|we|we'd|we'll|we're|we've|welcome|well|went|were|weren't|what|what's|whatever|when|whence|whenever|where|where's|whereafter|whereas|whereby|wherein|whereupon|wherever|whether|which|while|whither|who|who's|whoever|whole|whom|whose|why|will|willing|wish|with|within|without|won't|wonder|would|would|wouldn't|yes|yet|you|you'd|you'll|you're|you've|your|yours|yourself|yourselves|zero|";
 	var $params;
@@ -41,20 +41,7 @@ class e_search
 		$tp = e107::getParser();
 		$this->query = (string) $query;
 
-	/*	if(defined('GLYPH'))
-		{
-			$this->bullet = '<i class="'.GLYPH.'"></i>';
-		}
-		elseif(defined('BULLET'))
-		{
-			$this->bullet = '<img src="'.THEME_ABS.'images/'.BULLET.'" alt="" class="icon" />';
-		}
-		elseif(file_exists(THEME.'images/bullet2.gif'))
-		{
-			$this->bullet = '<img src="'.THEME_ABS.'images/bullet2.gif" alt="bullet" class="icon" />';
-		}*/
-
-		$this->bullet = ''; // Use CSS instead.
+		$this->bullet = '';
 
 		preg_match_all('/(\W?".*?")|(.*?)(\s|$)/', $this->query, $boolean_keys);
 		$this->keywords['split'] = array_unique(array_filter(str_replace('"', '', array_merge($boolean_keys[1], $boolean_keys[2]))));
@@ -120,7 +107,7 @@ class e_search
 	 */
 	public function parsesearch($table, $return_fields, $search_fields, $weights, $handler, $no_results, $where, $order)
 	{
-		global $query, $search_prefs, $pre_title, $search_chars, $search_res, $result_flag;
+		global $query, $search_prefs, $pre_title, $pre_title_alt, $search_chars, $search_res, $result_flag;
 		
 		
 		$sql = e107::getDb('search');
@@ -138,21 +125,24 @@ class e_search
 		
 		$this -> query = $tp -> toDB($query);
 
-		$match_query = '';
-
-		if (!$search_prefs['mysql_sort']) 
+		if (!$search_prefs['mysql_sort'])
 		{
 			if(e_DEBUG)
 			{
 				echo e107::getMessage()->addDebug("Using PHP Sort Method")->render();;
 			}
 
+			$qb = $sql->createQueryBuilder();
+			$expr = $qb->expr();
+			$match_condition = null;
 			$field_operator = 'AND ';
-			foreach ($this -> keywords['match'] as $k_key => $key) 
+			$nonWordChar = '[^[:alnum:]_]';
+			foreach ($this -> keywords['match'] as $k_key => $key)
 			{
-				$boolean_regex = '';
+				$negate = FALSE;
+				$is_wildcard = $this -> keywords['wildcard'][$k_key];
 
-				if ($this -> keywords['boolean'][$k_key] == '+') 
+				if ($this -> keywords['boolean'][$k_key] == '+')
 				{
 					$key_operator = 'OR ';
 					$break = TRUE;
@@ -165,9 +155,9 @@ class e_search
 						unset($this -> keywords[$unset_key][$k_key]);
 					}
 					$key_operator = 'AND ';
-					$boolean_regex = 'NOT';
+					$negate = TRUE;
 					$no_exact = TRUE;
-				} 
+				}
 				elseif (!isset($break))
 				{
 					$key_operator = 'OR ';
@@ -182,55 +172,69 @@ class e_search
 					break;
 				}
 
-				$match_query .= isset($uninitial_field) ? " ".$field_operator." (" : "(";
-				$uninitial_field = TRUE;
+				$wildcard = ($is_wildcard || !$search_prefs['boundary']) ? '' : '('.$nonWordChar.'|$)';
+				$quoted_key = $qb->quoteRegexpLiteral($key);
+				$regexp = $search_prefs['boundary'] ? '(^|'.$nonWordChar.')'.$quoted_key.$wildcard : $quoted_key;
 
-				if ($this -> keywords['wildcard'][$k_key] || !$search_prefs['boundary'])
-				{
-					$wildcard = '';
-				}
-				else
-				{
-					$wildcard = '[[:>:]]';
-				}
-
-				$key_count = 1;
+				$field_conditions = array();
 
 				foreach ($search_fields as $field)
 				{
-					$regexp = $search_prefs['boundary'] ? "[[:<:]]".$key.$wildcard : $key;
-					$match_query .= " ".$field." ".$boolean_regex." REGEXP '".$regexp."' ";
-					if ($key_count != count($search_fields)) {
-						$match_query .= $key_operator;
-					}
-					$key_count++;
+					$field_condition = $expr->regexp($field, $regexp);
+					$field_conditions[] = $negate ? $expr->not($field_condition) : $field_condition;
 				}
 
-				$match_query .= ")";
-			}
+				$key_group = ($key_operator == 'OR ') ? $expr->anyOf(...$field_conditions) : $expr->allOf(...$field_conditions);
 
-			if ($order)
-			{
-				$sql_order = 'ORDER BY ';
-				$order_count = count($order);
-				$i = 1;
-				foreach ($order as $sort_key => $sort_value)
+				if ($match_condition === null)
 				{
-					$sql_order .= $sort_key.' '.$sort_value;
-					if ($i != $order_count)
-					{
-						$sql_order .= ', ';
-					}
-					$i++;
+					$match_condition = $key_group;
 				}
-			} else
-			{
-				$sql_order = '';
+				else
+				{
+					$match_condition = ($field_operator == 'OR ')
+						? $expr->anyOf($match_condition, $key_group)
+						: $expr->allOf($match_condition, $key_group);
+				}
 			}
 
-			$limit = $search_prefs['php_limit'] ? ' LIMIT 0,'.$search_prefs['php_limit'] : '';
+			$qb->selectRaw($return_fields)->fromRaw('#'.$table);
 
-			$sql_query = "SELECT ".$return_fields." FROM #".$table." WHERE ".$where." (".$match_query.") ".$sql_order.$limit.";";
+			$where_clause = preg_replace('/\s+AND$/i', '', trim((string) $where));
+
+			if ($where_clause !== '')
+			{
+				$qb->where($qb->raw($where_clause));
+			}
+
+			if ($match_condition !== null)
+			{
+				$qb->where($match_condition);
+			}
+
+			foreach ($order as $sort_key => $sort_value)
+			{
+				$qb->addOrderBy($sort_key, $sort_value);
+			}
+
+			if ($search_prefs['php_limit'])
+			{
+				$qb->limit($search_prefs['php_limit']);
+			}
+
+			$sql_query = '';
+
+			if (E107_DBG_SQLQUERIES && $match_condition !== null)
+			{
+				$bound = array();
+
+				foreach ($qb->getParameters() as $name => $value)
+				{
+					$bound[':'.$name] = "'".(is_array($value) ? $value['value'] : $value)."'";
+				}
+
+				$sql_query = strtr($qb->getSQL(), $bound);
+			}
 
 			$keycount = !empty($this->keywords['split']) ? count($this->keywords['split']) : 0;
 
@@ -281,9 +285,22 @@ class e_search
 		}
 
 
-		// Intentionally raw (sqli boundary): a single gen() consumes both branches; the MySQL-sort branch uses SQL_CALC_FOUND_ROWS read via $sql->total_results (builder cannot express), and both use a dynamic table (#$table), dynamic $return_fields and a raw developer $where fragment.
-		if ($ps['results'] = $sql->gen($sql_query))
+		$ps = array('text' => '', 'results' => 0);
+
+		if (!$search_prefs['mysql_sort'])
 		{
+			$ps['results'] = ($match_condition === null) ? false : $qb->execute();
+		}
+		else
+		{
+			// Intentionally raw (sqli boundary): the MySQL-sort branch uses SQL_CALC_FOUND_ROWS read via $sql->total_results (builder cannot express), a dynamic table (#$table), dynamic $return_fields and a raw developer $where fragment.
+			$ps['results'] = $sql->gen($sql_query);
+		}
+
+		if ($ps['results'])
+		{
+			$display_row = array();
+
 			if (!$search_prefs['mysql_sort'])
 			 {
 				$x = 0;
@@ -295,6 +312,7 @@ class e_search
 				while ($row = $sql->fetch())
 				{
 					$weight = 0;
+					$endweight = FALSE;
 					foreach ($crop_fields as $field_key => $field) 
 					{
 						$this -> text = $row[$field];
@@ -337,12 +355,22 @@ class e_search
 				}
 
 			} else {
-				$x = 0;
 				while ($row = $sql ->fetch())
 				{
 					$display_row[] = $row;
-					$x++;
 				}
+			}
+
+			$output_array = array('text' => array());
+			$whole_word = !empty($search_prefs['boundary']);
+			$highlight_patterns = array();
+
+			foreach ($this -> keywords['match'] as $match_id => $keyword)
+			{
+				$match_wildcard = $this -> keywords['wildcard'][$match_id];
+				$boundary_start = $whole_word && preg_match('#^\w#', $keyword) ? '(?<!\w)' : '';
+				$boundary_end = $whole_word && ($match_wildcard || preg_match('#\w$#', $keyword)) ? '(?!\w)' : '';
+				$highlight_patterns[$match_id] = "#(".$boundary_start.preg_quote($keyword, '#').($match_wildcard ? ".*?" : "").$boundary_end.")#i";
 			}
 
 			foreach ($display_row as $row) 
@@ -361,15 +389,7 @@ class e_search
 
 						foreach ($matches as $this -> text) 
 						{
-							$this -> text = nl2br($this -> text);
-							$t_search = $tp->search;
-							$t_replace = $tp->replace;
-							$s_search = array('<br />', '[', ']');
-							$s_replace = array(' ', '<', '>');
-							$search = array_merge($t_search, $s_search);
-							$replace = array_merge($t_replace, $s_replace);
-
-							$this -> text = strip_tags(str_replace($search, $replace, $this -> text));
+							$this -> text = $this -> toExcerptText($this -> text);
 
 
 							if(!empty($this->keywords['match']))
@@ -378,21 +398,15 @@ class e_search
 
 								foreach ($this -> keywords['match'] as $match_id => $this -> query) 
 								{
-									$boundary = $search_prefs['boundary'] ? '\b' : '';
-									if ($this -> keywords['wildcard'][$match_id]) {
-										$regex_append = ".*?".$boundary.")";
-									} else {
-										$regex_append = $boundary.")";	
-									}
-									if (($match_start = $tp->ustristr($this -> text, $this -> query)) !== FALSE) 
+									$offset = $this->queryOffset($this -> text);
+									if ($offset !== FALSE) 
 									{
-										$this -> pos = $tp->ustrlen($this -> text) - $tp->ustrlen($match_start);
+										$this -> pos = $offset;
 										if (!$endcrop && !$title) {
 											$this -> parsesearch_crop();
 											$endcrop = TRUE;
 										}
-										$key = $tp->usubstr($this -> text, $this->pos, $tp->ustrlen($this -> query));
-										$this -> text = preg_replace("#(".$boundary.$this -> query.$regex_append."#i", "<mark>\\1</mark>", $this -> text);
+										$this -> text = preg_replace($highlight_patterns[$match_id], "<mark>\\1</mark>", $this -> text);
 									}
 								}
 							}
@@ -400,17 +414,18 @@ class e_search
 
 							if($title) 
 							{
-								if ($pre_title == 0) 
-								{
-									$pre_title_output = "";
-								} 
-								else if ($pre_title == 1) 
+								if ($pre_title == 1)
 								{
 									$pre_title_output = $res['pre_title'];
-								} 
-								else if ($pre_title == 2) 
+								}
+								elseif ($pre_title == 2)
 								{
-									$pre_title_output = $pre_title;
+									$custom = trim(varset($pre_title_alt, ''));
+									$pre_title_output = $custom !== '' ? $custom.' ' : '';
+								}
+								else
+								{
+									$pre_title_output = '';
 								}
 
 								$this -> text = $this -> bullet."<h4><a class='title visit' href='".$res['link']."'>".$pre_title_output.$this -> text."</a></h4>{DETAILS}<div>".$res['pre_summary'];
@@ -435,13 +450,7 @@ class e_search
 				}
 			}
 
-			$ps_limit = $output_array['text'];
-			$result_number = ($x < $search_res) ? $x : $search_res;
-			
-			for ($i = 0; $i < $result_number; $i++)
-			 {
-				$ps['text'] .= $ps_limit[$i];
-			}
+			$ps['text'] = implode('', $output_array['text']);
 		} 
 		else 
 		{
@@ -456,23 +465,61 @@ class e_search
 
 
 	/**
+	 * Reduce a matched database field to the plain text an excerpt is built from.
+	 *
+	 * @param string $text
+	 * @return string
+	 */
+	private function toExcerptText($text)
+	{
+		$text = e107::getParser()->toHTML((string) $text, true, 'emotes_off,scripts_off,no_make_clickable,no_hook,lb_nl');
+		$text = strip_tags(str_ireplace(array('<br', '<hr'), array(' <br', ' <hr'), $text));
+		$text = preg_replace('/\[\/?\w+(?:=[^\]]*)?\]/', ' ', $text);
+
+		return trim(preg_replace('/\s+/', ' ', $text));
+	}
+
+
+	/**
 	 * @return void
 	 */
 	function parsesearch_crop()
 	{
 		global $search_chars;
 		$tp = e107::getParser();
-		if (strlen($this -> text) > $search_chars) {
-			if ($this -> pos < ($search_chars - $tp->ustrlen($this -> query))) {
+		if ($tp->ustrlen($this -> text) > $search_chars) {
+			$offset = $this->queryOffset($this -> text);
+			$window = $search_chars - $tp->ustrlen($this -> query);
+			if ($offset === FALSE || $offset < $window) {
 				$this -> text = $tp->usubstr($this -> text, 0, $search_chars)."...";
-			} else if ($this -> pos > ($tp->ustrlen($this -> text) - ($search_chars - $tp->ustrlen($this -> query)))) {
-				$this -> text = "...".$tp->usubstr($this -> text, ($tp->ustrlen($this -> text) - ($search_chars - $tp->ustrlen($this -> query))));
+			} else if ($offset > ($tp->ustrlen($this -> text) - $window)) {
+				$this -> text = "...".$tp->usubstr($this -> text, ($tp->ustrlen($this -> text) - $window));
 			} else {
-				$this -> text = "...".$tp->usubstr($this -> text, ($this -> pos - round(($search_chars / 3))), $search_chars)."...";
+				$start = max(0, $offset - round(($search_chars / 3)));
+				$this -> text = ($start > 0 ? "..." : "").$tp->usubstr($this -> text, $start, $search_chars)."...";
 			}
-			$match_start = $tp->ustristr($this -> text, $this -> query);
-			$this -> pos = $tp->ustrlen($this -> text) - $tp->ustrlen($match_start);
+			$this -> pos = (int) $this->queryOffset($this -> text);
 		}
+	}
+
+
+	/**
+	 * Character offset of the first case-insensitive {@see e_search::$query} match in $text, or FALSE when the text does not carry one.
+	 *
+	 * @param string $text
+	 * @return int|bool
+	 */
+	private function queryOffset($text)
+	{
+		if ((string) $this -> query === '')
+		{
+			return FALSE;
+		}
+
+		$tp = e107::getParser();
+		$match_start = $tp->ustristr($text, $this -> query);
+
+		return $match_start === FALSE ? FALSE : $tp->ustrlen($text) - $tp->ustrlen($match_start);
 	}
 
 
@@ -484,6 +531,10 @@ class e_search
 	{
 		global $search_prefs;
 		$tp = e107::getParser();
+		if (trim($key, '+-*') === '') {
+			$this -> stop_keys[] = $key;
+			return TRUE;
+		}
 		if ($search_prefs['mysql_sort'] && ($key[0] == '+')) {
 			$key = $tp->usubstr($key, 1);
 		}

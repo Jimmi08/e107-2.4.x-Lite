@@ -166,6 +166,66 @@ var e107 = e107 || {'settings': {}, 'behaviors': {}};
 		}
 	};
 
+	/**
+	 * Fills a set of fields from the preset its chooser was set to.
+	 *
+	 * @type {{attach: e107.behaviors.presetFill.attach}}
+	 */
+	e107.behaviors.presetFill = {
+		attach: function (context, settings)
+		{
+			$(context).find('select[data-preset-fill]').once('preset-fill').each(function ()
+			{
+				var $chooser = $(this);
+				var presets = $chooser.data('preset-fill') || {};
+				var confirmation = $chooser.attr('data-preset-fill-confirm');
+
+				$chooser.on('change', function ()
+				{
+					var preset = presets[$chooser.val()];
+
+					if(preset === undefined)
+					{
+						return;
+					}
+
+					var targets = [];
+					var occupied = false;
+
+					$.each(preset, function (id, value)
+					{
+						var $target = $('#' + id);
+
+						if($target.length === 0)
+						{
+							return;
+						}
+
+						targets.push({field: $target, value: value});
+
+						if(!$target.is('select') && $target.val() !== '' && $target.val() !== String(value))
+						{
+							occupied = true;
+						}
+					});
+
+					if(occupied && confirmation !== undefined && !window.confirm(confirmation))
+					{
+						$chooser.val('');
+						return;
+					}
+
+					$.each(targets, function (i, target)
+					{
+						target.field.val(target.value).trigger('change');
+					});
+
+					$chooser.val('');
+				});
+			});
+		}
+	};
+
 })(jQuery);
 
 (function (jQuery)
@@ -462,7 +522,7 @@ $(document).ready(function()
 			var target = $($link.attr('data-target'));
 
 			// Initial state on page load
-			if (target.hasClass('in')) {
+			if (target.hasClass('in') || target.hasClass('show')) {
 				$caret.removeClass('fa-chevron-down').addClass('fa-chevron-up');
 			} else {
 				$caret.removeClass('fa-chevron-up').addClass('fa-chevron-down');
@@ -747,10 +807,20 @@ $(document).ready(function()
 				
 		
 		
-		// Admin Prefs Navigation
+		// Admin panel navigation: entries that switch an in-page panel, marked by e_navigation::admin().
 		
-		 $("#admin-prefs .plugin-navigation a").click(function () {
-		 	$(".plugin-navigation a").each(function(index) {
+		var panelLinks = ".plugin-navigation a.e-nav-pane";
+		
+		var showPanel = function (href) {
+			var panel = href ? document.getElementById(href.substring(1)) : null;
+		
+			if(panel) {
+				$(panel).removeClass('e-hideme').show();
+			}
+		};
+		
+		 $(panelLinks).click(function () {
+		 	$(panelLinks).each(function(index) {
     			var ot = $(this).attr("href");
     			if (ot.split('#')[1]) {
                     $(ot).hide().removeClass('e-hideme');
@@ -762,7 +832,7 @@ $(document).ready(function()
 
 
 
-	   		var id = $(this).attr("href"), hash = id.split('#')[1], form = $('.admin-menu')[0]; // FIXME - a better way to detect the page form
+	   		var id = $(this).attr("href"), hash = id.split('#')[1];
 	   		
 			$(this).switchClass( "link", "link-active", 30 );
 			$(this).closest("li").addClass("active");
@@ -773,17 +843,23 @@ $(document).ready(function()
                     effect: "slide"
                 });
 				window.location.hash = 'nav-' + hash;
-			  	if(form) {
-
-			  //  	$(form).attr('action', $(form).attr('action').split('#')[0] + '#nav-' + hash); // breaks menu-manager nav.
-			    }
 			    return false; 
 			}
 		}); 
 		
 		// plugin navigation hash
-		if(/^#nav-+/.test(window.location.hash)) {
-			$("a[href='" + window.location.hash.replace('nav-', '') + "']").click();
+		var rememberedPanel = /^#nav-+/.test(window.location.hash)
+			? $(panelLinks + "[href='" + window.location.hash.replace('nav-', '') + "']").first()
+			: $();
+		
+		if(rememberedPanel.length) {
+			rememberedPanel.click();
+		}
+		else {
+			// Nothing remembered, or a fragment naming a panel this page does not have.
+			var declaredPanel = $(panelLinks + ".link-active").first();
+		
+			showPanel((declaredPanel.length ? declaredPanel : $(panelLinks).first()).attr("href"));
 		}
 		
 		// backend 

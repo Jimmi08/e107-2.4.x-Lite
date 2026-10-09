@@ -122,14 +122,10 @@ class theme_shortcodes extends e_shortcode
 		}
 	}
 
-	//TODO: replace with {SIGNIN}
+
+
 	function sc_bootstrap_usernav($parm=null)
 	{
-		// Check if the login_menu plugin is installed
-		if (!e107::isInstalled('login_menu'))
-		{
-			return ''; // Returns an empty string if the plugin is not installed
-		}
 
 		$placement = e107::pref('theme', 'usernav_placement', 'top');
 
@@ -198,11 +194,6 @@ class theme_shortcodes extends e_shortcode
 				{LM_IMAGECODE_NUMBER}
 				{LM_IMAGECODE_BOX}
 				
-				<div class="checkbox">
-				
-				<label class="string optional" for="bs3-autologin"><input style="margin-right: 10px;" type="checkbox" name="autologin" id="bs3-autologin" value="1">
-				'.LAN_LOGINMENU_6.'</label>
-				</div>
 				<input class="btn btn-primary btn-block" type="submit" name="userlogin" id="bs3-userlogin" value="'.LAN_LOGINMENU_51.'">
 				';
 				
@@ -272,7 +263,7 @@ class theme_shortcodes extends e_shortcode
 		}
 		
 		$text .= '
-		<li><a href="'.e_HTTP.'index.php?logout">{GLYPH=fa-power-off} '.LAN_LOGOUT.'</a></li>
+		<li><a href="'.e_HTTP.'index.php?logout&amp;e-token='.defset('e_TOKEN').'">{GLYPH=fa-power-off} '.LAN_LOGOUT.'</a></li>
 		</ul>
 		</li>
 		</ul>
@@ -351,3 +342,4 @@ class theme_shortcodes extends e_shortcode
  
 }
  
+

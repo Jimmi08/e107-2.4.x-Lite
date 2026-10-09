@@ -28,6 +28,7 @@ $ret =  array(
 
 
 // minimal software version
+// LITE MODIFICATION: Lite minimum PHP 7.4 / MySQL 5.1.2
 define('MIN_PHP_VERSION',   '7.4');
 define('MIN_MYSQL_VERSION', '5.1.2');
 define('MAKE_INSTALL_LOG', true);
@@ -1674,6 +1675,7 @@ return [
 		}
 		else // empty
 		{
+			// LITE MODIFICATION: Lite admin theme (backend/admin-exas-core.css), no admin skin choice
 			$this->previous_steps['prefs']['admincss'] = 'css/admin-exas-core.css';
 		}
 
@@ -3104,6 +3106,7 @@ class SimpleTemplate
 function template_data()
 {
 
+	// LITE MODIFICATION: installer uses Lite admin theme look
 	return '<!DOCTYPE html>
 	<html lang="en">
 	  <head>

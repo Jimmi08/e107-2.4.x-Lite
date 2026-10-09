@@ -161,25 +161,25 @@ $DASHBOARD_TEMPLATE['positions']['menu-area-10'] = array();	 	// full bottom row
 
 */
 
-//$caption = e107::getParser()->lanVars(LAN_CONTROL_PANEL, ucwords(USERNAME));
+$caption = e107::getParser()->lanVars('LAN_CONTROL_PANEL', htmlspecialchars(ucwords((string) defset('USERNAME', '')), ENT_QUOTES, 'UTF-8', false));
 
 if(getperms('1')) {
 	//icons by admin categories  
 	$DASHBOARD_TEMPLATE['panels']['core-multi-icons-category'] = array(
 		'method_name' => 'core_categories_icons', 'links' => 'core', 'style' => 'flexpanel', 'caption' => 'flexpanel',  'multi' => true,  
-		'perm' => '0', 'personalize' => true
+		'perm' => '1', 'personalize' => true
 	);
 }
 else {
 
 	//all icons like before not not limited numbers - core version
 	// --------------------- Personalized Panel -----------------------
-	$DASHBOARD_TEMPLATE['panels']['core-infopanel-mye107'] = array('method_name' => 'core_infopanel_icons', 'links' => 'core', 'caption' => $caption);
+	$DASHBOARD_TEMPLATE['panels']['core-infopanel-mye107'] = array('method_name' => 'core_infopanel_icons', 'links' => 'core', 'caption' => $caption, 'perm' => '');
 }
 
 //only plugins icons, personalization off - not possible
 $DASHBOARD_TEMPLATE['panels']['core-infopanel-icons-plugins'] =  array(
-	'method_name' => 'core_infopanel_icons', 'links' => 'plugin', 'style' => 'flexpanel', 'caption' => $caption . ' - Plugins'
+	'method_name' => 'core_infopanel_icons', 'links' => 'plugin', 'style' => 'flexpanel', 'caption' => $caption . ' - Plugins', 'perm' => ''
 );
 
 /*
@@ -195,15 +195,15 @@ $DASHBOARD_TEMPLATE['panels']['core-infopanel-icons-admin'] = array(
 $DASHBOARD_TEMPLATE['panels']['core-infopanel-news'] = array('perm' => '0');
 
 /* comments for approval  */
-$DASHBOARD_TEMPLATE['panels']['plug-infopanel-comments'] = array('method_name' => 'core_infopanel_comments',  'caption' => LAN_LATEST_COMMENTS);
+$DASHBOARD_TEMPLATE['panels']['plug-infopanel-comments'] = array('method_name' => 'core_infopanel_comments',  'caption' => LAN_LATEST_COMMENTS, 'perm' => '');
 
 
 /* core version renders only chart let plugin to decide how they want the dashboard to look */
-$DASHBOARD_TEMPLATE['panels']['addons-single-info-chart'] = array('method_name' => 'addon_single_panel', 'key'=>'chart');  //legacy
-$DASHBOARD_TEMPLATE['panels']['addons-single-info-panel'] = array('method_name' => 'addon_single_panel', 'key'=>'panel'); 
+$DASHBOARD_TEMPLATE['panels']['addons-single-info-chart'] = array('method_name' => 'addon_single_panel', 'key'=>'chart', 'perm' => '4');  //legacy
+$DASHBOARD_TEMPLATE['panels']['addons-single-info-panel'] = array('method_name' => 'addon_single_panel', 'key'=>'panel', 'perm' => '');
 
 /* custom panel for grouped plugin's icons */
 $DASHBOARD_TEMPLATE['panels']['addons-single-icons-modules'] =  array(
 	'method_name' => 'addon_group_icons', 'key' => 'modules_panel', 'style' => 'flexpanel',
-	'caption' => SITENAME . " modules"
+	'caption' => SITENAME . " modules", 'perm' => ''
 );

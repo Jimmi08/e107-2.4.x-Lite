@@ -1,29 +1,12 @@
 <?php
 
 /**
- * githubSyncLite — admin/admin_debug.php  (mode: debug)
+ * Diagnostics screen (mode: debug).
  *
- * Read-only diagnostics for the sync connection. Nothing here changes the
- * sync itself — this page only inspects the environment and runs isolated
- * test requests, so a broken sync can be analysed without touching it.
- *
- * What it shows / tests:
- *   (A) Environment — PHP, cURL, and the CA-bundle settings
- *       (curl.cainfo / openssl.cafile) with existence checks.
- *   (B) DNS + SSRF-guard check — dns_get_record() for the GitHub hosts and
- *       the core handler's isUrlSafe() verdict for the exact ZIP URL. The
- *       guard resolves hosts via dns_get_record(), which fails on some
- *       Windows/WAMP stacks and then produces the "Refused to fetch URL
- *       with non-HTTP(S) scheme or private/reserved IP" refusal even for
- *       public hosts.
- *   (C) Connection tests (buttons) — small direct cURL requests with SSL
- *       verification ON and OFF (isolates a missing CA bundle from network
- *       problems), plus the same download path the sync really uses
- *       (e107::getFile()->getRemoteFile()) on a tiny file. A separate heavy
- *       button repeats it with the full repo ZIP.
- *
- * No token is ever used or displayed on this page — all tests go to public
- * GitHub endpoints only.
+ * Inspects why a sync download fails without touching the sync itself:
+ * environment (CA bundle), the core handler's isUrlSafe() guard, direct cURL
+ * with and without SSL verification, and the sync's real download path.
+ * Read-only — nothing here writes to the site.
  */
 
 require_once('../../../class2.php');
@@ -40,7 +23,7 @@ e107_require_once(e_PLUGIN . 'githubSyncLite/includes/github_sync_engine.php'); 
 
 class githubSyncLite_debug_ui extends e_admin_ui
 {
-	protected $pluginTitle = 'Github Sync Lite';
+	protected $pluginTitle = 'GitHub Sync Lite';
 	protected $pluginName  = 'githubSyncLite';
 	protected $table       = ''; // prefs only — no table
 	protected $pid         = '';

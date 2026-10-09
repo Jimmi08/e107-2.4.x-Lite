@@ -15,19 +15,21 @@
 if (!defined('e107_INIT')) { exit; }
 
 
-if(USER_AREA)
+$rssMetaRows = USER_AREA
+	? e107::getDb()->createQueryBuilder()
+		->select('*')->from('rss')
+		->where('rss_class', '0')
+		->where('rss_limit', '>', 0)
+		->orderBy('rss_name')
+		->fetchAll()
+	: array();
+
+if($rssMetaRows)
 {
 
     $tp = e107::getParser();
-    $sql = e107::getDb();
 
-	$rows = $sql->createQueryBuilder()->select('*')->from('rss')
-		->where('rss_class', 0)
-		->where('rss_limit', '>', 0)
-		->orderBy('rss_name')
-		->fetchAll();
-
-	foreach($rows as $row)
+	foreach($rssMetaRows as $row)
 	{
 		if(strpos($row['rss_topicid'], "*") === false) // Wildcard topic_id's should not be listed
 		{
@@ -53,3 +55,4 @@ if(USER_AREA)
 
 	unset($name, $title);
 }
+

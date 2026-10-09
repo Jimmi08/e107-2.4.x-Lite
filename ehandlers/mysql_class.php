@@ -329,6 +329,7 @@ class e_db_mysql implements e_db
 		$db_mySQLQueryCount++;
 
 		$this->mySQLlastQuery = $query;
+		$this->forgetTableListFor($query);
 
 		if ($debug == 'now')
 		{
@@ -1384,11 +1385,8 @@ class e_db_mysql implements e_db
 	}
 
 	/**
-	* @return string relating to error (empty string if no error)
-	* @param string $from
-	* @desc Calling method from within this class
-	* @access private
-	*/
+	 * @inheritDoc
+	 */
 	function dbError($from)
 	{
 		if ($this->mySQLlastErrNum === 0)
@@ -1398,7 +1396,7 @@ class e_db_mysql implements e_db
 			if ($this->mySQLlastErrNum === 0)
 			{
 				$this->mySQLlastErrText = '';
-				return '';
+				return null;
 			}
 
 			$this->mySQLlastErrText = mysqli_error($this->mySQLaccess);		// Get the error text.
@@ -1408,7 +1406,7 @@ class e_db_mysql implements e_db
 		{
 			message_handler('ADMIN_MESSAGE', '<b>mySQL Error!</b> Function: '.$from.'. ['.$this->mySQLlastErrNum.' - '.$this->mySQLlastErrText.']', __LINE__, __FILE__);
 		}
-		return $this->mySQLlastErrText;
+		return $from.' :: '.$this->mySQLlastErrText;
 	}
 
 
