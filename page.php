@@ -742,33 +742,16 @@ class pageClass
 				e107::getRedirect()->redirect($redirect, true, 404);
 			}
 
-		 	header("HTTP/1.0 404 Not Found");
-		 //	exit; 
-			/*
+			$notFound = $this->notFound();
 
-			$ret['title'] = LAN_PAGE_12;			// ***** CHANGED
-			$ret['sub_title'] = '';
-			$ret['text'] = LAN_PAGE_3;
-			$ret['comments'] = '';
-			$ret['rating'] = '';
-			$ret['np'] = '';
-			$ret['err'] = TRUE;
-			$ret['cachecontrol'] = false;
-			*/
-
-			// ---------- New (to replace values above) ----
-
-			$this->page['page_title'] = LAN_PAGE_12;			// ***** CHANGED
+			$this->page['page_title'] = $notFound['caption'];
 			$this->page['sub_title'] = '';
-			$this->page['page_text'] = LAN_PAGE_3;
+			$this->page['page_text'] = $notFound['text'];
 			$this->page['comments'] = '';
 			$this->page['rating'] = '';
 			$this->page['np'] = '';
 			$this->page['err'] = TRUE;
 			$this->page['cachecontrol'] = false;
-
-
-			// -------------------------------------
 
 			$this->authorized = 'nf';
 			$this->template = e107::getCoreTemplate('page', 'default');
@@ -780,9 +763,6 @@ class pageClass
 
 			$this->batch = e107::getScBatch('page',null,'cpage')->setVars($this->page)->wrapper('page/'.$this->templateID);
 			$this->batch->breadcrumb();
-
-
-			e107::title($this->page['page_title']);
 
 			return;
 		}
