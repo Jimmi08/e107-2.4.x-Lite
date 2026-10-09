@@ -110,7 +110,7 @@ class download_request
 		// LITE MODIFICATION: an id+sef request never enters the mirror branch - the SEF slug may contain "mirror".
 		if(empty($_GET['id']) && strpos(e_QUERY, "mirror") !== false)
 		{    // Download from mirror
-			list($action, $download_id, $mirror_id) = explode(".", e_QUERY);
+			list($action, $download_id, $mirror_id) = array_pad(explode(".", e_QUERY), 3, '');
 			$download_id = intval($download_id);
 			$mirror_id = intval($mirror_id);
 			$qb = $sql->createQueryBuilder();
