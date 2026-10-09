@@ -441,6 +441,8 @@ class UserHandler
 	 *	@param string $stored_hash - password hash as stored in DB
 	 *
 	 *	@return bool|string
+	 *	@deprecated v2.3.13 CHAP login is discontinued (issue #6653) and core no longer calls this. Check the password as
+	 *	            typed with {@see UserHandler::CheckPassword()} instead.
 	 */
 	public function CheckCHAP($challenge, $response, $login_name, $stored_hash )
 	{
@@ -2230,11 +2232,6 @@ class e_userperms
 				'icon_16' => 'E_16_INSPECT',
 				'icon_32' => 'E_32_INSPECT',
 			],
-			'7'   => [
-				'title'   => 'LAN_HISTORY',           // History/Undo
-				'icon_16' => 'E_16_UNDO',
-				'icon_32' => 'E_32_UNDO',
-			],
 			'9'   => [
 				'title'   => 'ADLAN_40',              // Take Down site for Maintenance
 				'icon_16' => 'E_16_MAINTAIN',
@@ -2287,10 +2284,9 @@ class e_userperms
 				'icon_32'   => 'E_32_IMAGES',
 			],
 			'TMP' => [
-				'title'     => ['ADLAN_140', 'LAN_PREFS'],
-				'separator' => ' (',                // Theme preferences
-				'icon_16'   => 'E_16_THEMEMANAGER',
-				'icon_32'   => 'E_32_THEMEMANAGER',
+				'title'   => 'ADLAN_140',             // Theme Manager
+				'icon_16' => 'E_16_THEMEMANAGER',
+				'icon_32' => 'E_32_THEMEMANAGER',
 			],
 			'2'   => [
 				'title'   => 'ADLAN_6',               // Alter Menus
@@ -2753,7 +2749,7 @@ class e_userperms
 		}
 
 		e107::getMessage()->addAuto($sysuser->set('user_perms', $perm)->save(), 'update', sprintf(LAN_UPDATED, $tp->toDB($_POST['ad_name'])), false, false);
-		$logMsg = str_replace(array('[x]', '[y]'),array($modID, $a_name),ADMSLAN_72).$perm;
+		$logMsg = str_replace(array('[x]', '[y]'),array($modID, $a_name),ADMSLAN_72).' '.$perm;
 		e107::getLog()->add('ADMIN_01',$logMsg,E_LOG_INFORMATIVE,'');
 	}
 

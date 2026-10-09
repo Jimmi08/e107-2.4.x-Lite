@@ -137,7 +137,7 @@ class e_db_mysql implements e_db
 		$this->mySQLuser        = isset($config['mySQLuser']) ? $config['mySQLuser'] : '';
 		$this->mySQLpassword    = isset($config['mySQLpassword']) ? $config['mySQLpassword'] : '';
 		$this->mySQLdefaultdb   = isset($config['mySQLdefaultdb']) ? $config['mySQLdefaultdb'] : '';
-		$this->mySQLport        = varset($config['port'], 3306);
+		$this->mySQLport        = varset($config['mySQLport'], 3306);
 		$this->mySQLPrefix      = varset($config['mySQLprefix'], MPREFIX);
 
 		/*$langid = (isset($pref['cookie_name'])) ? 'e107language_'.$pref['cookie_name'] : 'e107language_temp';
@@ -200,7 +200,7 @@ class e_db_mysql implements e_db
 			list($this->mySQLserver,$this->mySQLport) = explode(':',$mySQLserver,2);
 		}
 
-		if (!$this->mySQLaccess = @mysqli_connect($this->mySQLserver, $this->mySQLuser, $this->mySQLpassword, $newLink))
+		if (!$this->mySQLaccess = @mysqli_connect($this->mySQLserver, $this->mySQLuser, $this->mySQLpassword, null, (int) $this->mySQLport))
 		{
 			$this->mySQLlastErrNum = mysqli_connect_errno();
 			$this->mySQLlastErrText = mysqli_connect_error();
@@ -354,9 +354,7 @@ class e_db_mysql implements e_db
 		// already returns false for an empty string, but an array whose PREPARE
 		// is empty or absent fails the branch below and reaches mysqli_query() as
 		// an array, which is a TypeError the @ does not suppress.
-		$statement = is_array($query)
-			? (isset($query['PREPARE']) ? $query['PREPARE'] : null)
-			: $query;
+		$statement = $this->_statementText($query);
 
 		if(!is_string($statement) || trim($statement) === '')
 		{
@@ -396,7 +394,7 @@ class e_db_mysql implements e_db
 
 
 
-		if (!is_array($query) && (strpos($query,'EXPLAIN') !==0) && (strpos($query,'SQL_CALC_FOUND_ROWS') !== false) && (strpos($query,'SELECT') !== false))
+		if ($this->_countsFoundRows($query))
 		{
 
 			$fr = mysqli_query($this->mySQLaccess, 'SELECT FOUND_ROWS()');
@@ -1242,76 +1240,6 @@ class e_db_mysql implements e_db
 			return in_array($table,$this->mySQLtableList);
 		}
 
-	}
-
-	/**
-	 * Populate mySQLtableList and mySQLtableListLanguage
-	 * TODO - better runtime cache - use e107::getRegistry() && e107::setRegistry()
-	 * @return array
-	 */
-	protected function _getTableList($language='')
-	{
-
-		$database = !empty($this->mySQLdefaultdb) ? "FROM  `".$this->mySQLdefaultdb."`" : "";
-		$prefix = $this->mySQLPrefix;
-
-		if(strpos($prefix, ".") !== false) // eg. `my_database`.$prefix
-		{
-			$tmp = explode(".",$prefix);
-			$prefix = $tmp[1];
-		}
-
-		// $prefix is interpolated into SHOW TABLES ... LIKE patterns below; escape LIKE
-		// wildcards/metacharacters so a config prefix cannot match unintended tables
-		// or break out of the string literal.
-		$prefixLike = str_replace(array('\\', '%', '_'), array('\\\\', '\\%', '\\_'), $prefix);
-
-		if($language)
-		{
-			// $language is interpolated into the LIKE pattern below; only accept a
-			// plain identifier so it cannot break out of the string literal.
-			if(!preg_match('/^[A-Za-z0-9_]+$/D', (string) $language))
-			{
-				return array();
-			}
-
-			if(!isset($this->mySQLtableListLanguage[$language]))
-			{
-				$table = array();
-				if($res = $this->db_Query("SHOW TABLES ".$database." LIKE '".$prefixLike."lan_".strtolower($language)."%' "))
-				{
-					while($rows = $this->fetch('num'))
-					{
-						$table[] = str_replace($prefix,"",$rows[0]);
-					}
-				}
-
-				return array($language =>$table);
-			}
-			else
-			{
-				return $this->mySQLtableListLanguage[$language];
-			}
-		}
-
-		if(!$this->mySQLtableList)
-		{
-			$table = array();
-
-			if($res = $this->db_Query("SHOW TABLES ".$database." LIKE '".$prefixLike."%' "))
-			{
-				$length = strlen($prefix);
-				while($rows = $this->fetch('num'))
-				{
-					$table[] = (string) substr($rows[0],$length);
-				}
-			}
-			return $table;
-		}
-		else
-		{
-			return $this->mySQLtableList;
-		}
 	}
 
 	/**

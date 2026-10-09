@@ -645,7 +645,7 @@ class e107
 
 		if(empty($e107_config_override['site_path']))
 		{
-			$this->site_path = $this->makeSiteHash($e107_config_mysql_info['defaultdb'], $e107_config_mysql_info['prefix']);
+			$this->site_path = $this->makeSiteHash(self::getMySQLConfig('defaultdb'), self::getMySQLConfig('prefix'));
 		}
 
 		// Set default folder (and override paths) if missing from e107_config.php
@@ -1421,7 +1421,9 @@ class e107
 	 */
 	public static function getPlugConfig($plug_name, $multi_row = '', $load = true)
 	{
-		if(!isset(self::$_plug_config_arr[$plug_name.$multi_row]))
+		$key = self::configKey($plug_name, $multi_row);
+
+		if(!isset(self::$_plug_config_arr[$key]))
 		{
 			e107_require_once(e_HANDLER.'pref_class.php');
 			$override_id = $plug_name.($multi_row ? "_$multi_row" : '');
@@ -1435,15 +1437,27 @@ class e107
 				//PHPVER: string parameter for is_subclass_of require PHP 5.0.3+
 				if(class_exists($class_name, false) && is_subclass_of('e_plugin_pref', $class_name)) //or e_pref ?
 				{
-					self::$_plug_config_arr[$plug_name.$multi_row] = new $class_name($load);
-					return self::$_plug_config_arr[$plug_name.$multi_row];
+					self::$_plug_config_arr[$key] = new $class_name($load);
+					return self::$_plug_config_arr[$key];
 				}
 			}
 
-			self::$_plug_config_arr[$plug_name.$multi_row] = new e_plugin_pref($plug_name, $multi_row, $load);
+			self::$_plug_config_arr[$key] = new e_plugin_pref($plug_name, $multi_row, $load);
 		}
 
-		return self::$_plug_config_arr[$plug_name.$multi_row];
+		return self::$_plug_config_arr[$key];
+	}
+
+	/**
+	 * The key {@see e107::getPlugConfig()} and {@see e107::getThemeConfig()} keep a preference object under, the bare folder name for the base row.
+	 *
+	 * @param string $folder plugin folder or theme name
+	 * @param string $multi_row
+	 * @return string
+	 */
+	private static function configKey($folder, $multi_row)
+	{
+		return $multi_row ? $folder.'/'.$multi_row : $folder;
 	}
 
 
@@ -1521,14 +1535,16 @@ class e107
 			$theme_name = self::getPref('sitetheme');
 		}
 
-		if(!isset(self::$_theme_config_arr[$theme_name.$multi_row]))
+		$key = self::configKey($theme_name, $multi_row);
+
+		if(!isset(self::$_theme_config_arr[$key]))
 		{
 			e107_require_once(e_HANDLER.'pref_class.php');
 
-			self::$_theme_config_arr[$theme_name.$multi_row] = new e_theme_pref($theme_name, $multi_row, $load);
+			self::$_theme_config_arr[$key] = new e_theme_pref($theme_name, $multi_row, $load);
 		}
 
-		return self::$_theme_config_arr[$theme_name.$multi_row];
+		return self::$_theme_config_arr[$key];
 	}
 
 
@@ -5374,11 +5390,6 @@ class e107
 		{
 			$_e107vars = array('forceuserupdate', 'online', 'menus', 'prunetmp');
 			$GLOBALS['_E107']['minimal'] = true;
-			// lame but quick - allow online when ajax request only, additonal checks are made in e_online class
-			if(e_AJAX_REQUEST && !isset($GLOBALS['_E107']['online']) && !isset($GLOBALS['_E107']['minimal']))
-			{
-				unset($_e107vars[1]);
-			}
 
 			foreach($_e107vars as $v)
 			{
@@ -5943,6 +5954,26 @@ class e107
 	}
 
 	/**
+	 * Percent-encode the characters that let a request-derived URL break out of the markup or shortcode parameter list it is pasted into.
+	 *
+	 * @param string $url
+	 * @param boolean $no_cbrace encode curly brackets as well as the rest
+	 * @return string
+	 */
+	private static function encodeRequestUrl($url, $no_cbrace = true)
+	{
+		$encode = array("'" => '%27', '"' => '%22', '<' => '%3C', '>' => '%3E');
+
+		if($no_cbrace)
+		{
+			$encode['{'] = '%7B';
+			$encode['}'] = '%7D';
+		}
+
+		return str_replace(array_keys($encode), array_values($encode), $url);
+	}
+
+	/**
 	 * Define e_PAGE, e_SELF, e_ADMIN_AREA and USER_AREA;
 	 * The following files are assumed to use admin theme:
 	 * 1. Any file in the admin directory (check for non-plugin added to avoid mismatches)
@@ -5951,7 +5982,7 @@ class e107
 	 * 4. any file that specifies $eplug_admin = TRUE; or ADMIN_AREA = TRUE;
 	 * NOTE: USER_AREA = true; will force e_ADMIN_AREA to FALSE
 	 *
-	 * @param boolean $no_cbrace remove curly brackets from the url
+	 * @param boolean $no_cbrace percent-encode curly brackets in the request urls
 	 * @return e107
 	 */
 	public function set_urls($no_cbrace = true)
@@ -6022,17 +6053,6 @@ class e107
 			}
 		}
 
-		$check = rawurldecode($requestUri); // urlencoded by default
-
-		// a bit aggressive XSS protection... convert to e.g. htmlentities if you are not a bad guy
-		$checkregx = $no_cbrace ? '[<>\{\}]' : '[<>]';
-		if(preg_match('/'.$checkregx.'/', $check))
-		{
-			// header('HTTP/1.1 403 Forbidden');
-			$requestUri = filter_var($requestUri, FILTER_SANITIZE_URL);
-			// exit;
-		}
-
 		// e_MENU fix
 		if(deftrue('e_MENU'))
 		{
@@ -6044,7 +6064,10 @@ class e107
 			}
 		}
 
-		define('e_REQUEST_URL', str_replace(array("'", '"'), array('%27', '%22'), $requestUrl)); // full request url string (including domain)
+		$requestUri = self::encodeRequestUrl($requestUri, $no_cbrace);
+		$requestUrl = self::encodeRequestUrl($requestUrl, $no_cbrace);
+
+		define('e_REQUEST_URL', $requestUrl); // full request url string (including domain)
 
 		$tmp = explode('?', e_REQUEST_URL);
 		$requestSelf =  array_shift($tmp);
@@ -6057,7 +6080,7 @@ class e107
 		// the last anti-XSS measure, XHTML compliant URL to be used in forms instead e_SELF
 
 		define('e_REQUEST_SELF', filter_var($requestSelf, FILTER_SANITIZE_URL)); // full URL without the QUERY string
-		define('e_REQUEST_URI', str_replace(array("'", '"'), array('%27', '%22'), $requestUri)); // absolute http path + query string
+		define('e_REQUEST_URI', $requestUri); // absolute http path + query string
 		$tmp2 = explode('?', e_REQUEST_URI);
 		define('e_REQUEST_HTTP', array_shift($tmp2)); // SELF URL without the QUERY string and leading domain part
 
@@ -6072,7 +6095,7 @@ class e107
 
 
 			define('e_PAGE', $page);
-			define('e_SELF', filter_var($_self, FILTER_SANITIZE_URL));
+			define('e_SELF', self::encodeRequestUrl(filter_var($_self, FILTER_SANITIZE_URL), $no_cbrace));
 		}
 		else
 		{
@@ -7132,16 +7155,14 @@ class e107
 	 */
 	private function setMySQLConfig($sqlinfo)
 	{
-		if(!empty($sqlinfo['server']))
+		foreach($sqlinfo as $key=>$val)
 		{
-			foreach($sqlinfo as $key=>$val)
+			if(strpos($key, 'mySQL') !== 0)
 			{
-				$newKey = 'mySQL'.$key;
-				$sqlinfo[$newKey] = $val;
+				$sqlinfo['mySQL'.$key] = $val;
 				unset($sqlinfo[$key]);
 			}
 		}
-
 
 		$this->e107_config_mysql_info = $sqlinfo;
 	}

@@ -75,15 +75,8 @@ class e_db_pdo implements e_db
 		$this->mySQLuser        = isset($config['mySQLuser']) ? $config['mySQLuser'] : '';
 		$this->mySQLpassword    = isset($config['mySQLpassword']) ? $config['mySQLpassword'] : '';
 		$this->mySQLdefaultdb   = isset($config['mySQLdefaultdb']) ? $config['mySQLdefaultdb'] : '';
-		$this->mySQLport        = varset($config['port'], 3306);
+		$this->mySQLport        = varset($config['mySQLport'], 3306);
 		$this->mySQLPrefix      = varset($config['mySQLprefix'], 'e107_');
-
-		/*
-
-		if($port = e107::getMySQLConfig('port'))
-		{
-			$this->mySQLport = intval($port);
-		}*/
 
 		// Detect is already done in language handler, use it if not too early
 		if(defined('e_LANGUAGE'))
@@ -307,9 +300,7 @@ class e_db_pdo implements e_db
 		// directly; an array whose PREPARE is empty or absent fails the branch
 		// below and lands in the string path, where preg_match() is handed an
 		// array and raises a TypeError of its own.
-		$statement = is_array($query)
-			? (isset($query['PREPARE']) ? $query['PREPARE'] : null)
-			: $query;
+		$statement = $this->_statementText($query);
 
 		if(!is_string($statement) || trim($statement) === '')
 		{
@@ -402,7 +393,7 @@ class e_db_pdo implements e_db
 
 
 
-		if (!is_array($query) && (strpos($query,'EXPLAIN') !==0) && (strpos($query,'SQL_CALC_FOUND_ROWS') !== false) && (strpos($query,'SELECT') !== false))
+		if ($this->_countsFoundRows($query))
 		{
 
 			$rc = $this->mySQLaccess->query('SELECT FOUND_ROWS();')->fetch(PDO::FETCH_COLUMN);
@@ -1068,64 +1059,6 @@ class e_db_pdo implements e_db
 			return in_array($table,$this->mySQLtableList);
 		}
 
-	}
-
-	/**
-	 * Populate mySQLtableList and mySQLtableListLanguage
-	 * TODO - better runtime cache - use e107::getRegistry() && e107::setRegistry()
-	 * @return array
-	 */
-	protected function _getTableList($language='')
-	{
-
-		$database = !empty($this->mySQLdefaultdb) ? "FROM  `".$this->mySQLdefaultdb."`" : "";
-		$prefix = $this->mySQLPrefix;
-
-		if(strpos($prefix, ".") !== false) // eg. `my_database`.$prefix
-		{
-			$tmp = explode(".",$prefix);
-			$prefix = $tmp[1];
-		}
-
-		if($language)
-		{
-			if(!isset($this->mySQLtableListLanguage[$language]))
-			{
-				$table = array();
-				if($res = $this->db_Query("SHOW TABLES ".$database." LIKE '".$prefix."lan_".strtolower($language)."%' "))
-				{
-					while($rows = $this->fetch('num'))
-					{
-						$table[] = str_replace($prefix,"",$rows[0]);
-					}
-				}
-
-				return array($language =>$table);
-			}
-			else
-			{
-				return $this->mySQLtableListLanguage[$language];
-			}
-		}
-
-		if(!$this->mySQLtableList)
-		{
-			$table = array();
-
-			if($res = $this->db_Query("SHOW TABLES ".$database." LIKE '".$prefix."%' "))
-			{
-				$length = strlen($prefix);
-				while($rows = $this->fetch('num'))
-				{
-					$table[] = (string) substr($rows[0],$length);
-				}
-			}
-			return $table;
-		}
-		else
-		{
-			return $this->mySQLtableList;
-		}
 	}
 
 	/**
