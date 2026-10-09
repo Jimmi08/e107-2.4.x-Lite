@@ -199,6 +199,9 @@ class admin_start
 		e107::getDebug()->logTime('Check Timezone');
 		$this->checkTimezone();
 
+		e107::getDebug()->logTime('Check Site URL');
+		$this->checkSiteUrl();
+
 		e107::getDebug()->logTime('Check Writable');
 		$this->checkWritable();
 
@@ -213,6 +216,9 @@ class admin_start
 
 		e107::getDebug()->logTime('Check Deprecated');
 		$this->checkDeprecated();
+
+		e107::getDebug()->logTime('Check Site Folders');
+		$this->checkSiteFolders();
 
 		e107::getDebug()->logTime('Check HTMLArea');
 		$this->checkHtmlarea();
@@ -306,6 +312,19 @@ class admin_start
 			$this->refresh = true;
 		}
 
+	}
+
+
+	private function checkSiteUrl()
+	{
+		$host = parse_url((string) e107::pref('core', 'siteurl'), PHP_URL_HOST);
+
+		if((string) $host !== '')
+		{
+			return;
+		}
+
+		e107::getMessage()->addWarning(defset('ADLAN_SITEURL_NO_HOST', 'Your Site URL does not include a web address.'));
 	}
 
 
@@ -704,7 +723,7 @@ TMPO;
 		$us = e107::getUserSession();
 		$mes = e107::getMessage();
 
-		if($us->passwordAPIExists() === true && $us->getDefaultHashType() !== PASSWORD_E107_PHP && e107::pref('core','password_CHAP')==0)
+		if($us->passwordAPIExists() === true && $us->getDefaultHashType() !== PASSWORD_E107_PHP)
 		{
 			$message = LAN_PASSWORD_WARNING;
 			$srch = array('[',']');
@@ -794,6 +813,38 @@ TMPO;
 			e107::getMessage()->addWarning($text);
 		}
 
+	}
+
+	/**
+	 * Points at the Multi-Site page when files sit in the folder e107 v2.3.4 to v2.3.12 used for a site whose configuration carried no site_path.
+	 *
+	 * @return void
+	 */
+	private function checkSiteFolders()
+	{
+		if($this->upgradeRequiredFirst)
+		{
+			return;
+		}
+
+		$scan = \e107\Storage\SiteFolderScan::ofThisSite();
+
+		if($scan === null)
+		{
+			return;
+		}
+
+		$folder = $scan->knownBad();
+
+		if(!$folder->exists() || !$folder->holdsFiles())
+		{
+			return;
+		}
+
+		$link = "<a href='".e_ADMIN."db.php?mode=multisite'>".defset('ADLAN_SITE_FOLDER_NOTICE_LINK', "Multi-Site")."</a>";
+		$notice = defset('ADLAN_SITE_FOLDER_NOTICE', "Files were saved under the wrong site folder, [x], while this site ran an affected e107 version. Merge them into this site's folder on the [y] page.");
+
+		e107::getMessage()->addWarning(e107::getParser()->lanVars($notice, array('x' => "<code>".$folder->hash()."</code>", 'y' => $link)));
 	}
 
 	private function deleteDeprecated()

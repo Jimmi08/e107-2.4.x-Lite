@@ -561,7 +561,7 @@ function update_core_prefs($type='')
 	{
 		//save_prefs();
 		e107::getConfig()->save(false,true);
-		$admin_log->logMessage(LAN_UPDATE_14.$e107info['e107_version'], E_MESSAGE_NODISPLAY, E_MESSAGE_INFO);
+		$admin_log->logMessage(LAN_UPDATE_14.' '.$e107info['e107_version'], E_MESSAGE_NODISPLAY, E_MESSAGE_INFO);
 		$admin_log->flushMessages('UPDATE_03');
 		//e107::getLog()->add('UPDATE_03',LAN_UPDATE_14.$e107info['e107_version'].'[!br!]'.implode(', ',$accum),E_LOG_INFORMATIVE,'');	// Log result of actual update
 	}
@@ -720,6 +720,18 @@ function update_core_database($type = '')
 			{
 				e107::getConfig()->set('ban_durations_login_default_applied', 1)->save(false, true, false);
 			}
+		}
+
+		if(!empty($pref['password_CHAP']))
+		{
+			if($just_check)
+			{
+				return update_needed("The login templates are still told to use CHAP, which is discontinued.");
+			}
+
+			e107::getConfig()->set('password_CHAP', 0)->save(false, true, false);
+			e107::getLog()->addEvent(4, __FILE__, "UPDATE", 'LAN_UPDATE',
+				"CHAP login is discontinued; password_CHAP reset to plaintext.", false, LOG_TO_ROLLING);
 		}
 
 		if(!isset($pref['admin_navbar_debug']))
@@ -1078,7 +1090,7 @@ function update_706_to_800($type='')
 
 	if (!$just_check)
 	{
-		$log->logMessage(LAN_UPDATE_14.$e107info['e107_version'], E_MESSAGE_NODISPLAY);
+		$log->logMessage(LAN_UPDATE_14.' '.$e107info['e107_version'], E_MESSAGE_NODISPLAY);
 	}
 
 
@@ -1112,7 +1124,7 @@ function update_706_to_800($type='')
 				->set('e107_value', convert_serialized($row['e107_value']))
 				->where('e107_name', $row['e107_name'])->execute() ? E_MESSAGE_SUCCESS : E_MESSAGE_ERROR;
 
-			$log->addDebug(LAN_UPDATE_22.$row['e107_name'].": ". $status);
+			$log->addDebug(LAN_UPDATE_22.' '.$row['e107_name'].": ". $status);
 		}
 	}
 
@@ -1215,7 +1227,7 @@ function update_706_to_800($type='')
 						$q->where('menu_path', $oldpath)->orWhere('menu_path', $oldpath.'/');
 					})
 					->execute() ? E_MESSAGE_DEBUG : E_MESSAGE_ERROR;
-				$log->logMessage(LAN_UPDATE_23.'<b>'.$val['menu'].'</b> : '.$val['oldpath'].' => '.$val['newpath'], $status); // LAN_UPDATE_25;
+				$log->logMessage(LAN_UPDATE_23.' <b>'.$val['menu'].'</b> : '.$val['oldpath'].' => '.$val['newpath'], $status); // LAN_UPDATE_25;
 				// catch_error($sql);
 			}
 		}
@@ -1239,7 +1251,7 @@ function update_706_to_800($type='')
 				->set('menu_name', 'online_menu')->set('menu_path', 'online/')
 				->where('menu_path', 'online_extended_menu')->orWhere('menu_path', 'online_extended_menu/')
 				->execute() ? E_MESSAGE_DEBUG : E_MESSAGE_ERROR;
-			$log->logMessage(LAN_UPDATE_23."<b>online_menu</b> : online/", $status);
+			$log->logMessage(LAN_UPDATE_23." <b>online_menu</b> : online/", $status);
 		}
 		else
 		{	//else if the menu is not active
@@ -1263,7 +1275,7 @@ function update_706_to_800($type='')
 			->set('menu_path', 'online/')
 			->where('menu_path', 'online_menu')->orWhere('menu_path', 'online_menu/')
 			->execute() ? E_MESSAGE_DEBUG : E_MESSAGE_ERROR;
-		$log->logMessage(LAN_UPDATE_23."<b>online_menu</b> : online/", $status);
+		$log->logMessage(LAN_UPDATE_23." <b>online_menu</b> : online/", $status);
 		catch_error($sql);
 	}
 
@@ -1314,7 +1326,7 @@ function update_706_to_800($type='')
 		{
 			// Flag error
 			// $commentMessage = LAN_UPDAXXTE_34;
-			$log->logMessage(LAN_UPDATE_21."comments", E_MESSAGE_ERROR);
+			$log->logMessage(LAN_UPDATE_21." comments", E_MESSAGE_ERROR);
 		}
 		else
 		{
@@ -1324,19 +1336,19 @@ function update_706_to_800($type='')
 				->execute())
 			{
 				// Flag error
-				$log->logMessage(LAN_UPDATE_21.'comments', E_MESSAGE_ERROR);
+				$log->logMessage(LAN_UPDATE_21.' comments', E_MESSAGE_ERROR);
 			}
 			else
 			{	// Delete superceded field - comment_author
 				if (!$sql->schema()->dropColumn('comments', 'comment_author'))
 				{
 					// Flag error
-					$log->logMessage(LAN_UPDATE_24.'comments - comment_author', E_MESSAGE_ERROR);
+					$log->logMessage(LAN_UPDATE_24.' comments - comment_author', E_MESSAGE_ERROR);
 				}
 			}
 		}
 
-		$log->logMessage(LAN_UPDATE_21.'comments', E_MESSAGE_DEBUG);
+		$log->logMessage(LAN_UPDATE_21.' comments', E_MESSAGE_DEBUG);
 	}
 
 	 
@@ -1350,7 +1362,7 @@ function update_706_to_800($type='')
 		
 		$pref['frontpage'] = array(e_UC_PUBLIC => $fpdef);
 		// $_pdateMessages[] = LAN_UPDATE_38; //FIXME
-		$log->logMessage(LAN_UPDATE_20."frontpage",E_MESSAGE_DEBUG);
+		$log->logMessage(LAN_UPDATE_20." frontpage",E_MESSAGE_DEBUG);
 
 		e107::getConfig()->add('frontpage_force', $pref['frontpage_force']);
 		e107::getConfig()->add('frontpage', $pref['frontpage']);
@@ -1420,7 +1432,7 @@ function update_706_to_800($type='')
 			if ($just_check) return update_needed("Delete table: ".$ot);
 			
 			$status = $sql->dropTable($ot) ? E_MESSAGE_DEBUG : E_MESSAGE_ERROR;
-			$log->logMessage(LAN_UPDATE_25.$ot, $status);
+			$log->logMessage(LAN_UPDATE_25.' '.$ot, $status);
 		}
 	}
 
@@ -1438,14 +1450,14 @@ function update_706_to_800($type='')
             if ($just_check) return update_needed('Update IP address field '.$f.' in table '.$t);
 			if($sql->quoteIdentifier($t) === false || $sql->quoteIdentifier($f) === false)
 			{
-				$log->logMessage(LAN_UPDATE_26.$t.' - '.$f, E_MESSAGE_ERROR);
+				$log->logMessage(LAN_UPDATE_26.' '.$t.' - '.$f, E_MESSAGE_ERROR);
 			}
 			else
 			{
 				// The schema builder validates the dynamic table and column
 				// identifiers fail-closed; the VARCHAR(45) type keeps its exact text.
 				$status = $sql->schema()->modifyColumn($t, $f, SqlFragment::raw("VARCHAR(45) NOT NULL DEFAULT ''")) ? E_MESSAGE_DEBUG : E_MESSAGE_ERROR;
-				$log->logMessage(LAN_UPDATE_26.$t.' - '.$f, $status);
+				$log->logMessage(LAN_UPDATE_26.' '.$t.' - '.$f, $status);
 			}
 			// catch_error($sql);
 		  }
@@ -1622,7 +1634,7 @@ function update_706_to_800($type='')
 		e107::getConfig()->add('signup_option_customtitle', $pref['forum_user_customtitle']);
 		e107::getConfig()->remove('forum_user_customtitle');
 
-		$log->logMessage(LAN_UPDATE_20.'customtitle', E_MESSAGE_SUCCESS);
+		$log->logMessage(LAN_UPDATE_20.' customtitle', E_MESSAGE_SUCCESS);
 		$do_save = true;
 	}
 	
@@ -2185,7 +2197,7 @@ function update_70x_to_706($type='')
 
 	// If we get to here, in checking mode no updates are required. In update mode, all done.
 	if ($just_check) return TRUE;
-	e107::getLog()->add('UPDATE_02',LAN_UPDATE_14.$e107info['e107_version']);	// Log result of actual update
+	e107::getLog()->add('UPDATE_02',LAN_UPDATE_14.' '.$e107info['e107_version']);	// Log result of actual update
 	return $just_check;		// TRUE if no updates needed, FALSE if updates needed and completed
 
 }
@@ -2336,7 +2348,7 @@ function theme_foot()
 	if(!empty($_POST['update_core']['706_to_800']) || !empty($_POST['update_core']['20x_to_latest']))
 	{
 		$data = array('name'=>SITENAME, 'theme'=>$pref['sitetheme'], 'language'=>e_LANGUAGE, 'url'=>SITEURL, 'type'=>'upgrade', 'version'=> defset('e_VERSION'), 'php'=>defset('PHP_VERSION'));
-		$base = base64_encode(http_build_query($data, null, '&'));
+		$base = base64_encode(http_build_query($data, '', '&'));
 		$url = "https://e107.org/e-install/".$base;
 		return "<img src='".$url."' style='width:1px; height:1px;border:0' />";
 	}

@@ -185,8 +185,6 @@ class system_tools
 
 	function __construct()
 	{
-		global $mySQLdefaultdb;
-		
 		$this->_utf8_exclude = array(MPREFIX."core");
 
 		$this->_options = array(
@@ -205,9 +203,14 @@ class system_tools
 			'backup'				=> array('diz'=>DBLAN_68,'label'=>DBLAN_69, 'icon'=>'fas-archive.glyph')
 		);
 		
+		$this->_options['multisite'] = array(
+			'diz' => defset('DBLAN_MULTISITE_HELP', "The site folders under e107_media/ and e107_system/: this site's own, and any left behind or shared with another site."),
+			'label' => defset('DBLAN_MULTISITE', "Multi-Site"),
+			'icon' => 'fas-clone.glyph',
+		);
+
 		if(deftrue('e_DEVELOPER'))
 		{
-		//	$this->_options['multisite'] = array('diz'=>"<span class='label label-warning'>".DBLAN_114."</span>", 'label'=> 'Multi-Site' , 'icon'=>'fas-clone.glyph');
 			$this->_options['github'] = array('diz'=>"<span class='label label-warning'>".DBLAN_114."</span> ".DBLAN_115."", 'label'=> DBLAN_112, 'icon'=>'fab-github.glyph' );
 		}
 
@@ -299,7 +302,7 @@ class system_tools
 
 		if(isset($_POST['optimize_sql']) || $_GET['mode']=='optimize_sql')
 		{
-			$this->optimizesql($mySQLdefaultdb);
+			$this->optimizesql();
 		}
 
 		if(isset($_POST['pref_editor']) || $_GET['mode']=='pref_editor' || isset($_POST['delpref']) || isset($_POST['delpref_checked']))
@@ -320,8 +323,18 @@ class system_tools
 		
 		if(!empty($_POST['create_multisite']))
 		{
-			$this->multiSiteProcess();	
-		}	
+			$this->multiSiteProcess();
+		}
+
+		if(!empty($_POST['merge_site_folder']) && is_string($_POST['merge_site_folder']))
+		{
+			$this->mergeSiteFolder($_POST['merge_site_folder']);
+		}
+
+		if(!empty($_POST['remove_site_folder']) && is_string($_POST['remove_site_folder']))
+		{
+			$this->removeSiteFolder($_POST['remove_site_folder']);
+		}
 
 		if(!empty($_POST['perform_utf8_convert']))
 		{
@@ -669,15 +682,247 @@ class system_tools
 	 */
 	private function multiSite()
 	{
+		$text = $this->siteFoldersForm();
 
-	//	if(!deftrue('e_DEVELOPER'))
+		if(deftrue('e_DEVELOPER'))
 		{
-			return false;
+			$text .= $this->multiSiteCreateForm();
+		}
+
+		e107::getRender()->tablerender(DBLAN_10.SEP.defset('DBLAN_MULTISITE', "Multi-Site"), e107::getMessage()->render().$text);
+	}
+
+	/**
+	 * @return string this site's folder pair and every other pair beside it, each with a merge or remove action
+	 */
+	private function siteFoldersForm()
+	{
+		$scan = \e107\Storage\SiteFolderScan::ofThisSite();
+
+		if($scan === null)
+		{
+			return "<div class='alert alert-info'>".defset('DBLAN_SITE_FOLDER_CUSTOM_LAYOUT', "This site keeps its media outside the hashed folder layout, so there are no site folders to compare.")."</div>";
+		}
+
+		$frm = e107::getForm();
+		$active = $scan->active();
+		$candidates = $scan->candidates();
+
+		$text = "<h4>".defset('DBLAN_SITE_FOLDERS', "Site folders")."</h4>";
+		$text .= "<p>".defset('DBLAN_SITE_FOLDERS_HELP', "e107 keeps each site's uploads and runtime files in a folder named by a hash of its database name and table prefix, so several sites can share one copy of e107. The folders below sit beside this site's own.")."</p>";
+		$text .= $frm->open('siteFolders', 'post', e_SELF.'?mode=multisite');
+		$text .= "<table class='table table-striped'>
+			<thead><tr>
+				<th>".defset('DBLAN_SITE_FOLDER_COLUMN_FOLDER', "Folder")."</th>
+				<th>".defset('DBLAN_SITE_FOLDER_COLUMN_STATUS', "Status")."</th>
+				<th class='text-right'>".defset('DBLAN_SITE_FOLDER_COLUMN_FILES', "Files")."</th>
+				<th>".defset('DBLAN_SITE_FOLDER_COLUMN_NEWEST', "Newest file")."</th>
+				<th class='text-right'>".defset('DBLAN_SITE_FOLDER_COLUMN_SIZE', "Size")."</th>
+				<th>&nbsp;</th>
+			</tr></thead>
+			<tbody>";
+		$text .= $this->siteFolderRow($active, $active);
+
+		foreach($candidates as $folder)
+		{
+			$text .= $this->siteFolderRow($folder, $active);
+		}
+
+		$text .= "</tbody></table>";
+
+		if(!empty($candidates))
+		{
+			$text .= "<p>".defset('DBLAN_SITE_FOLDER_MULTISITE_CAVEAT', "If several sites share this copy of e107, a folder listed here may belong to one of them. Leave it alone in that case.")."</p>";
+		}
+
+		$text .= $frm->close();
+
+		return $text;
+	}
+
+	/**
+	 * @param \e107\Storage\SiteFolder $folder
+	 * @param \e107\Storage\SiteFolder $active
+	 * @return string
+	 */
+	private function siteFolderRow(\e107\Storage\SiteFolder $folder, \e107\Storage\SiteFolder $active)
+	{
+		$frm = e107::getForm();
+		$tp = e107::getParser();
+		$summary = $folder->summary();
+		$help = '';
+		$action = '';
+
+		if($folder->hash() === $active->hash())
+		{
+			$badge = "<span class='label label-success'>".defset('DBLAN_SITE_FOLDER_ACTIVE', "In use by this site")."</span>";
+		}
+		elseif($folder->isKnownBad())
+		{
+			$badge = "<span class='label label-danger'>".defset('DBLAN_SITE_FOLDER_KNOWN_BAD', "Known bad")."</span>";
+			$help = defset('DBLAN_SITE_FOLDER_KNOWN_BAD_HELP', "e107 v2.3.4 to v2.3.12 saved files here when the configuration carried no site_path. No site uses this folder on purpose.");
+		}
+		else
+		{
+			$badge = "<span class='label label-default'>".defset('DBLAN_SITE_FOLDER_STRAY', "Not used by this site")."</span>";
+			$help = defset('DBLAN_SITE_FOLDER_STRAY_HELP', "Left behind by a database name or prefix change, a restore or an edited site_path, or in use by another site that shares this copy of e107.");
+		}
+
+		if($folder->hash() !== $active->hash())
+		{
+			$action = ($summary['files'] > 0)
+				? $frm->admin_button('merge_site_folder', $folder->hash(), 'submit', $tp->lanVars(defset('DBLAN_SITE_FOLDER_MERGE', "Merge into [x]"), array('x' => $active->hash())))
+				: $frm->admin_button('remove_site_folder', $folder->hash(), 'delete', defset('DBLAN_SITE_FOLDER_REMOVE', "Remove empty folder"));
+		}
+
+		return "<tr>
+			<td><code>".$folder->hash()."</code></td>
+			<td>".$badge.($help !== '' ? "<div class='field-help'>".$help."</div>" : '')."</td>
+			<td class='text-right'>".$summary['files']."</td>
+			<td>".($summary['newest'] > 0 ? e107::getDate()->convert_date($summary['newest'], 'short') : '')."</td>
+			<td class='text-right'>".e107::getFile()->file_size_encode($summary['bytes'])."</td>
+			<td>".$action."</td>
+		</tr>";
+	}
+
+	/**
+	 * @param string $hash a candidate the scan listed; anything else does nothing
+	 * @return void
+	 */
+	private function mergeSiteFolder($hash)
+	{
+		$scan = \e107\Storage\SiteFolderScan::ofThisSite();
+		$candidates = ($scan === null) ? array() : $scan->candidates();
+
+		if(!isset($candidates[$hash]))
+		{
+			return;
 		}
 
 		$mes = e107::getMessage();
+		$tp = e107::getParser();
+		$active = $scan->active();
+
+		@set_time_limit(0);
+
+		$merge = new \e107\Storage\SiteFolderMerge($candidates[$hash], $active);
+		$result = $merge->apply();
+
+		e107::getCache()->clearAll('content');
+		eRouter::clearCache();
+		e107::getIPHandler()->regenerateFiles();
+
+		$mes->addSuccess($tp->lanVars(defset('DBLAN_SITE_FOLDER_MERGED', "[x] file(s) moved from [y] into [z]."), array('x' => count($result['moved']), 'y' => $hash, 'z' => $active->hash())));
+
+		if(!empty($result['collisions']))
+		{
+			$mes->addWarning($tp->lanVars(defset('DBLAN_SITE_FOLDER_COLLISIONS', "These files stayed in [x] because [y] already holds a file of the same name:"), array('x' => $hash, 'y' => $active->hash()))
+				."<ul><li>".implode("</li><li>", array_map(array($tp, 'toHTML'), $result['collisions']))."</li></ul>");
+		}
+
+		if(!empty($result['failed']))
+		{
+			$failed = array();
+			foreach($result['failed'] as $relative => $reason)
+			{
+				$failed[] = $tp->toHTML($relative.': '.$reason);
+			}
+
+			$mes->addError(defset('DBLAN_SITE_FOLDER_FAILED', "These files could not be moved:")."<ul><li>".implode("</li><li>", $failed)."</li></ul>");
+		}
+
+		$references = $this->siteFolderReferences($hash);
+
+		if(!empty($references))
+		{
+			$mes->addWarning($tp->lanVars(defset('DBLAN_SITE_FOLDER_CONTENT_REFERENCES', "Content still refers to the old folder by its full path in: [x]. Those entries need editing by hand."), array('x' => implode(', ', $references))));
+		}
+	}
+
+	/**
+	 * @param string $hash a candidate the scan listed; anything else does nothing
+	 * @return void
+	 */
+	private function removeSiteFolder($hash)
+	{
+		$scan = \e107\Storage\SiteFolderScan::ofThisSite();
+		$candidates = ($scan === null) ? array() : $scan->candidates();
+
+		if(!isset($candidates[$hash]))
+		{
+			return;
+		}
+
+		$mes = e107::getMessage();
+		$tp = e107::getParser();
+
+		if($candidates[$hash]->tidy())
+		{
+			$mes->addSuccess($tp->lanVars(defset('DBLAN_SITE_FOLDER_REMOVED', "The folder [x] was removed."), array('x' => $hash)));
+		}
+		else
+		{
+			$mes->addError($tp->lanVars(defset('DBLAN_SITE_FOLDER_REMOVE_FAILED', "The folder [x] still holds files and was not removed."), array('x' => $hash)));
+		}
+	}
+
+	/**
+	 * @param string $hash
+	 * @return string[] 'table (rows)' for every content table with rows that still spell out a path under that hash
+	 */
+	private function siteFolderReferences($hash)
+	{
+		$sql = e107::getDb();
+		$columns = array(
+			'news' => array('news_body', 'news_extended'),
+			'page' => array('page_text'),
+			'comments' => array('comment_comment'),
+			'core' => array('e107_value'),
+			'forum_post' => array('post_entry'),
+			'private_msg' => array('pm_text'),
+		);
+		$needles = array(e107::getFolder('media_base').$hash.'/', e107::getFolder('system_base').$hash.'/');
+		$found = array();
+
+		foreach($columns as $table => $names)
+		{
+			if(!$sql->isTable($table))
+			{
+				continue;
+			}
+
+			$query = $sql->createQueryBuilder()->from($table);
+			$first = true;
+
+			foreach($names as $column)
+			{
+				foreach($needles as $needle)
+				{
+					$condition = $query->expr()->contains($column, $needle);
+					$first ? $query->where($condition) : $query->orWhere($condition);
+					$first = false;
+				}
+			}
+
+			$rows = $query->count();
+
+			if($rows > 0)
+			{
+				$found[] = $table.' ('.$rows.')';
+			}
+		}
+
+		return $found;
+	}
+
+	/**
+	 * @return string the developer-only form that creates a new site's tables under another prefix
+	 */
+	private function multiSiteCreateForm()
+	{
+		$mes = e107::getMessage();
 		$frm = e107::getForm();
-		
+
 		e107::lan('core','installer');
 
 		// Leave here until no longer experimental. - Should be placed inside lan_db.php and LANS renamed.
@@ -807,10 +1052,8 @@ class system_tools
 			\n";
 		
 		$text .= $frm->close();
-		
-			
-		e107::getRender()->tablerender(DBLAN_10.SEP."Multi-Site".SEP.$config['mySQLdefaultdb'], $mes->render().$text);
-		
+
+		return "<h4>".defset('DBLAN_MULTISITE_CREATE', "Create a new site")." <span class='label label-warning'>".DBLAN_114."</span> <small>".$config['mySQLdefaultdb']."</small></h4>".$text;
 	}
 
 
@@ -1569,29 +1812,63 @@ class system_tools
 
 	/**
 	 * Optimize SQL
-	 * @param $mySQLdefaultdb
 	 * @return null
 	 */
-	private function optimizesql($mySQLdefaultdb) 
+	private function optimizesql()
 	{
 		$mes = e107::getMessage();
-		$tables = e107::getDb()->tables();
-		
-		foreach($tables as $table)
+		$tp = e107::getParser();
+		$optimized = true;
+
+		foreach(e107::getDb()->tables() as $table)
 		{
-			// OPTIMIZE TABLE with a dynamic table-name identifier from tables().
-			// Left as raw DDL on purpose: tables() returns LOGICAL (un-prefixed)
-			// names, and this statement consumes them un-prefixed (a pre-existing
-			// quirk), whereas SchemaBuilder::optimizeTable() resolves the prefix.
-			// Routing it through the schema builder would silently change which
-			// tables are optimised, so the behaviour-preserving choice is to keep
-			// the raw statement; the name is introspected (not user input) and the
-			// backtick is escaped, so there is no injection surface.
-			e107::getDb()->gen("OPTIMIZE TABLE `".str_replace('`', '``', $table)."`");
+			if(($reason = $this->optimizeOne($table)) !== null)
+			{
+				$mes->addError($tp->lanVars(defset('DBLAN_OPTIMIZE_TABLE_FAILED', 'Table [x] was not optimized: [y]'),
+					array('x' => htmlspecialchars(MPREFIX.$table, ENT_QUOTES, 'UTF-8'), 'y' => htmlspecialchars($reason, ENT_QUOTES, 'UTF-8'))));
+				$optimized = false;
+			}
 		}
 
-		$mes->addSuccess(e107::getParser()->lanVars(DBLAN_11, $mySQLdefaultdb));
+		if($optimized)
+		{
+			$mes->addSuccess($tp->lanVars(DBLAN_11, e107::getMySQLConfig('defaultdb')));
+		}
+
 		e107::getRender()->tablerender(DBLAN_10.SEP.DBLAN_7, $mes->render());
+
+		return null;
+	}
+
+	/**
+	 * @param string $table logical table name, as {@see \e107\Database\ConnectionInterface::tables()} lists it
+	 * @return string|null why the table was not optimized, or null when it was
+	 */
+	private function optimizeOne($table)
+	{
+		$sql = e107::getDb();
+
+		try
+		{
+			$result = $sql->schema()->optimizeTable($table);
+		}
+		catch(InvalidArgumentException $e)
+		{
+			return $e->getMessage();
+		}
+
+		if($result === false)
+		{
+			return $sql->getLastErrorText();
+		}
+
+		foreach($sql->rows() as $row)
+		{
+			if(strcasecmp($row['Msg_type'], 'error') === 0)
+			{
+				return $row['Msg_text'];
+			}
+		}
 
 		return null;
 	}
