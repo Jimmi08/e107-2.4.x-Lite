@@ -504,7 +504,10 @@ in the STOP 1 / STOP 2 lists (e.g. `\e107\Userclass\Membership` from 47 files, t
 | `dda43b6bd` | sync(eplugins/forum): add forum_hidden_token.php (STOP 4) |
 | `164db4df6` | audit: STOP resolutions |
 | `38c16203e` | sync(eadmin): infopanel upstream constructor, e107.org feeds disabled (STOP 3) |
-| (this commit) | audit: STOP 3 resolution |
+| `3d2b7e50a` | audit: STOP 3 resolution |
+| `34cf524c8` | audit: fix line reference |
+| `9bd954018` | sync(eplugins/rss_menu): reapply three Lite rss.php modifications |
+| (this commit) | audit: rss_menu Lite modifications reapplied |
 
 ### STOPs and their resolution
 
@@ -918,6 +921,31 @@ newline, upstream does not.
   `rss_path` values of their feed rows, menu entries for `rss/rss_menu`). After this change the folder is `rss_menu`:
   the plugin has to be uninstalled as `rss` and installed again as `rss_menu`. **No migration is provided.**
 
+### rss_menu: Lite modifications reapplied
+
+Instruction after the STOPs: reapply inventory items #3, #4 and #6 (and no other) to the current upstream code in
+`eplugins/rss_menu/rss.php`, keeping every other upstream change (e.g. `toRssForAuthor()`, upstream `<link>`). The
+whole `case 2` (RSS 2.0, `:494–632`) and `case 4` (Atom, `:688–778`) blocks of `rssCreate::buildRss()` were read before
+editing. Commit `9bd954018`, `php -l` clean.
+
+| # | file:line | marker | upstream (`4367279f1`) | Lite now |
+|---|---|---|---|---|
+| #3 RSS 2.0 `<image>` | `rss.php:532–533` (and the removed lines after `:538`) | `// LITE MODIFICATION: channel image resized to 500px wide, no hardcoded 88x31 (Facebook needs a larger image)` | `$imgPath = …->thumbUrl($path, array(), false, true);` … `<width>88</width>` `<height>31</height>` | `$imgPath = …->thumbUrl($path, 'w=500&x=1', true, true);`, no `<width>` / `<height>`; `<link>".$pref['siteurl']."</link>` kept as upstream |
+| #4 RSS 2.0 item `<category>` | `rss.php:574–579` | `// LITE MODIFICATION: category emitted without domain when no category link is given (domain is optional in RSS 2.0)` | `if($value['category_name'] && $catlink) { echo "<category domain='".$catlink."'>".$tp->toRssForAuthor($value['category_name'], 0)."</category>\n"; }` | `if($value['category_name']) { $domain = $catlink ? " domain='".$tp->toAttribute($catlink, true)."'" : ''; echo "<category".$domain.">".$tp->toRssForAuthor($value['category_name'], 0)."</category>\n"; }` |
+| #6 Atom `<logo>` | `rss.php:722–726` | `// LITE MODIFICATION: Atom logo resized to 500px wide (Facebook needs a larger image)` | `<logo>".(strpos(SITEBUTTON, "http:") !== false ? SITEBUTTON : SITEURL.str_replace("../", "", SITEBUTTON))."</logo>` | `$path = e107::getConfig()->get('sitebutton'); $imgPath = e107::getParser()->thumbUrl($path, 'w=500&x=1', true, true);` … `<logo>".$imgPath."</logo>` |
+
+Notes:
+- #4: the domain value is escaped with `$tp->toAttribute($catlink, true)` — `$pure = true` is plain
+  `htmlspecialchars(…, ENT_QUOTES, 'UTF-8')` without constant expansion, so `&`, `<`, `>`, `'`, `"` become
+  `&amp;`, `&lt;`, `&gt;`, `&#039;`, `&quot;` (all valid in XML). Upstream wrote `$catlink` unescaped. The name keeps
+  upstream's `$tp->toRssForAuthor(…, 0)`.
+- #3 / #6: `thumbUrl()` joins its query parameters with `&amp;` (`ehandlers/e_parse_class.php`, `thumbUrl()`), so the
+  URL is valid inside an XML element; the third argument `true` (`$raw`) only changes how the source path constants
+  are resolved.
+- Not reapplied (per instruction): #1, #2, #5 (`SITEURL` instead of `$pref['siteurl']`), #7 (`target='_blank'`), #8
+  (news seed guard), #9 / #10 (LAN loading), #11 (plugin.xml metadata). The upstream `$sitebutton` dead assignment at
+  the start of `case 2` is left as upstream.
+
 ### §7.4 chatbox_menu
 
 `e3515e1bd`: upstream `e107_plugins/chatbox_menu` copied to `eplugins/chatbox_menu` (19 files), byte-identical to
@@ -1036,7 +1064,7 @@ Counted with `git grep` over the tracked `*.php`, `*.js`, `*.css` files (combine
 
 | Marker | before (php/js/css) | before (xml) | after (php/js/css) | after (xml) |
 |---|---|---|---|---|
-| `LITE MODIFICATION` | 61 | 2 | 52 | 1 |
+| `LITE MODIFICATION` | 61 | 2 | 55 | 1 |
 | `LITE FEATURE` | 3 | 0 | 3 | 0 |
 | `LITE-SKIP` | 57 | 0 | 86 | 0 |
 
@@ -1048,6 +1076,8 @@ Counted with `git grep` over the tracked `*.php`, `*.js`, `*.css` files (combine
 - **Removed by instruction (§7.5)** — 1 php: `eplugins/login_menu/login_menu_class.php:64` (coreplugs).
 - **Added by instruction (STOP 3)** — 29 `LITE-SKIP` lines in `eadmin/includes/infopanel.php`: `:103–106`, `:108–112`,
   `:116–122` (constructor, 16) and `:205–218` without the blank line `:216` (`renderFeedTabs()`, 13). 57 + 29 = 86.
+- **Added by instruction (rss_menu reapply)** — 3 `LITE MODIFICATION` lines in `eplugins/rss_menu/rss.php:532`, `:574`,
+  `:722`. 61 − 8 (rss plugin) − 1 (§7.5) + 3 = 55.
 
 ## Checks
 
