@@ -18,12 +18,13 @@ merge equals "replace". No added line of the synced code carries a new `e107_*` 
 directory diff).
 
 As in the previous round, each STOP was left untouched (the one-sided file neither added nor deleted, the colliding hunk
-not applied) and everything else was processed and committed. The STOPs are listed below and wait for an instruction.
+not applied) and everything else was processed and committed. The instructions came in a second step; each
+resolution is a separate commit (see the STOP table).
 
-**Note:** until STOP 1 and STOP 2 are resolved, the branch does not run. The synced code calls classes and files that
-exist only in the STOP lists (e.g. `\e107\Userclass\Membership` from 47 files, the new session handlers from
+Between `10204bf46` and `d0b504bcb` the branch did not run: the synced code called classes and files that existed only
+in the STOP 1 / STOP 2 lists (e.g. `\e107\Userclass\Membership` from 47 files, the new session handlers from
 `ehandlers/session_handler.php`, `\e107\Http\Request` and `\e107\User\LogoutConfirmation` from `class2.php`,
-`e_CORE.'dispatch.php'` from `index.php`).
+`e_CORE.'dispatch.php'` from `index.php`). Resolved by STOP 1 and STOP 2.
 
 ### Upstream commit range `7ce7a121c..4367279f1` (438 commits)
 
@@ -497,16 +498,20 @@ exist only in the STOP lists (e.g. `\e107\Userclass\Membership` from 47 files, t
 | `99bbd9837` | sync(eplugins/login_menu): align with upstream master 4367279f1 |
 | `30ee8b52c` | sync(eplugins/login_menu): restore upstream get_coreplugs(), remove marker (7.5) |
 | `25f0c519c` | sync(ecore): default_install.xml rss entries back to rss_menu (7.3) |
-| (this commit) | audit: full report |
+| `248ad545a` | audit: full report |
+| `d0b504bcb` | sync(ehandlers): add 22 upstream-only classes (STOP 1) |
+| `2887a564b` | sync(ecore): add dispatch.php, routes.php, logout_template.php (STOP 2) |
+| `dda43b6bd` | sync(eplugins/forum): add forum_hidden_token.php (STOP 4) |
+| (this commit) | audit: STOP resolutions |
 
-### STOPs (waiting for an instruction)
+### STOPs and their resolution
 
-| # | Where | What |
-|---|---|---|
-| 1 | `ehandlers/` | 22 upstream-only files (new classes the synced code uses) |
-| 2 | `ecore/` | upstream-only `dispatch.php`, `routes.php`, `templates/logout_template.php` |
-| 3 | `eadmin/includes/infopanel.php` | upstream e107.org feed rework (`DashboardFeed`) touches what the `LITE-SKIP` "no phone-home" marker protects |
-| 4 | `eplugins/forum/` | upstream-only `forum_hidden_token.php` |
+| # | Where | What | Instruction / resolution |
+|---|---|---|---|
+| 1 | `ehandlers/` | 22 upstream-only files (new classes the synced code uses) | add all 22 without changes — `d0b504bcb` |
+| 2 | `ecore/` | upstream-only `dispatch.php`, `routes.php`, `templates/logout_template.php` | add all three without changes — `2887a564b` |
+| 3 | `eadmin/includes/infopanel.php` | upstream e107.org feed rework (`DashboardFeed`) touches what the `LITE-SKIP` "no phone-home" marker protects | take upstream constructor, disable the feeds with `//LITE-SKIP`, keep `renderFeedTabs()` — **open: second STOP** (`renderFeedTabs()` breaks on the disabled `$this->feeds`), not committed |
+| 4 | `eplugins/forum/` | upstream-only `forum_hidden_token.php` | add without changes — `dda43b6bd` |
 
 Details are in the directory sections.
 
@@ -549,7 +554,8 @@ Details are in the directory sections.
   | `User/SignInToken.php` | `37d97d50b` feat(user): record each sign-in, check it on every request, end it at sign-out | `ehandlers/session_handler.php`, `user_handler.php`, `user_model.php` |
   | `Userclass/Membership.php` | `8e6e984ac` feat(userclass): express a userclass rule as a bound SQL predicate | 47 Lite files (`page.php`, `comment.php`, `media_class.php`, `login_menu.php`, `download/request.php`, `pm/pm_func.php`, …) |
 
-  Not added (STOP). Proposal: add all 22 identical to upstream (no `e107_*` literal in code), as `Storage/*` last round.
+  **Instruction: add all 22 without changes** — added in `d0b504bcb`, byte-identical to upstream (no `e107_*` directory
+  literal in them); `php -l` clean.
 - **Replaced (unmarked), 53 files:** `Flood/SourceGate.php`, `Security/SealedToken.php`, `Shims/Internal/StrftimeTrait.php`,
   `Shims/InternalShimsTrait.php`, `admin_ui.php`, `application.php`, `bbcode_handler.php`, `cache_handler.php`,
   `comment_class.php`, `core_functions.php`, `cron_class.php`, `db_debug_class.php`, `e_customfields_class.php`,
@@ -648,6 +654,31 @@ Context: Lite's admin style is `dashboard` (`eadmin/includes/dashboard.php`, for
 cached copy shown in the — commented-out — panel); (c) remove the three `.load()` calls too, consistent with the marker.
 Note that `eadmin/boot.php` (unmarked) is the endpoint that asks e107.org.
 
+**Instruction (STOP 3):** take the upstream constructor, then disable the e107.org feeds with `//LITE-SKIP` line by
+line (the `$this->feeds` array, the loop that builds `$feedRenewals`, every line that only exists to load the feeds),
+first line carrying the reason `//LITE-SKIP Lite removes the e107.org admin feeds entirely (no phone-home). See Lite #88.`;
+keep the `AddonUpdateStatus` check; keep `renderFeedTabs()` and the existing `//LITE-SKIP` panel block; STOP if
+`renderFeedTabs()` or anything else would reference the disabled `$this->feeds` and break.
+
+**Result — second STOP, nothing committed.** The prepared change (php -l clean) is: the upstream `$feeds` property,
+the constructor with 16 new `//LITE-SKIP` lines (reason line, `$cache` / `$xml` / `$tp` — used only by the feeds,
+the five-line `$this->feeds = array(…)`, the seven-line `foreach` loop), `$feedRenewals = '';` left active because the
+`$code` string below interpolates `".$feedRenewals."` (commenting it out would raise an undefined-variable warning on
+every infopanel load), and upstream `renderFeedTabs()`. With that change the file issues no e107.org feed request:
+the only active jQuery requests left are `admin.php?mode=core&type=update` (answered by `e107::coreUpdateAvailable()`,
+which returns `false` — "no phone-home" marker) and `admin.php?mode=addons&type=update` (the `AddonUpdateStatus` check
+kept by the instruction; `eadmin/boot.php` answers it through `admin_shortcodes::getUpdateable()` →
+`e_marketplace::getVersionList()`, an add-on version check, not a feed — unchanged from `main`).
+
+The collision: upstream `renderFeedTabs()` (would be `infopanel.php:208–217`) reads
+`$this->feeds['e-adminfeed']['feed']->copy()` (and the plugin / theme entries) and `ADMINFEEDMORE`. With the feeds
+disabled `$this->feeds` stays `array()`, so a call would raise "Undefined array key" warnings and then the fatal
+`Call to a member function copy() on null`; `ADMINFEEDMORE` is not defined either (its `define()` is under `LITE-SKIP`
+at `infopanel.php:19–21`; PHP 8 throws an `Error` for an undefined constant). Today nothing calls it: its only two call
+sites are the commented-out panel blocks (`infopanel.php:300–308` and `flexpanel.php:222–237`, both `LITE-SKIP`), and
+`git grep renderFeedTabs` finds no other caller. So it is dead code that breaks only when called. Waiting for an
+instruction.
+
 ## 4. eweb/ (← e107_web/)
 
 - One-sided files: none. Marked files: none.
@@ -695,7 +726,8 @@ Note that `eadmin/boot.php` (unmarked) is the endpoint that asks e107.org.
   - `templates/logout_template.php` — the "Are you sure you want to log out?" page (`LAN_LOGOUT_CONFIRM_QUESTION`,
     synced in `elanguages/`).
 
-  Not added (STOP). Proposal: add all three identical to upstream, together with STOP 1.
+  **Instruction: add without changes** — added in `2887a564b`, byte-identical to upstream (no `e107_*` directory
+  literal); `php -l` clean.
 - **Replaced (unmarked), 31 files:** `bbcodes/{bb_glyph,bb_img,bb_video}.php`, `bbcodes/{email,file,flash,hide,link,quote,sanitised,stream,url}.bb`,
   `controllers/system/xup.php`, `shortcodes/batch/{navigation,news_archive,news,page}_shortcodes.php`,
   `shortcodes/single/breadcrumb.sc`, `shortcodes/single/{iconpicker,imagepreview,imageselector,lan,nextprev,sitelinks_alt,sublinks,uploadfile,wmessage}.php`,
@@ -948,8 +980,8 @@ removed (`30ee8b52c`, **removed by instruction**). `login_menu_class.php` is now
 `null`). The synced `forum_class.php:3593–3602` (`hiddenToken()`) `require_once`s it; it is reached from
 `sealHidden()` (`post_shortcodes.php:259`, quoting a post that has `[hide]` blocks) and `unsealHidden()`
 (`forum_viewtopic.php:294`, `$e_hide_unseal` callback). Without the file those paths end in a fatal error.
-`\e107\Security\SealedToken` is present (`ehandlers/Security/SealedToken.php`). Not added (STOP). Proposal: add it
-identical to upstream.
+`\e107\Security\SealedToken` is present (`ehandlers/Security/SealedToken.php`). **Instruction: add without changes** —
+added in `dda43b6bd`, byte-identical to upstream; `php -l` clean.
 
 ### forum: dependencies (changes since the previous round only)
 
@@ -996,14 +1028,15 @@ Counted with `git grep` over the tracked `*.php`, `*.js`, `*.css` files (combine
   (RDF `SITEURL`), `:724` (Atom `<logo>`), `eplugins/rss/rss_setup.php:28` (news seed guard), and
   `eplugins/rss/plugin.xml:2` (Lite metadata). The `// LITE:` note in `rss_addons.php:205` is not a counted marker.
 - **Removed by instruction (§7.5)** — 1 php: `eplugins/login_menu/login_menu_class.php:64` (coreplugs).
-- Added: none.
+- Added: none. (The 16 `LITE-SKIP` lines of the STOP 3 instruction are not committed — second STOP; the counts above are
+  the committed state after the STOP 1 / 2 / 4 commits.)
 
 ## Checks
 
-- `php -l` (PHP 8.3.6) on all 201 added/modified PHP files of the branch (`git diff --name-only --diff-filter=AM
+- `php -l` (PHP 8.3.6) on all 227 added/modified PHP files of the branch (`git diff --name-only --diff-filter=AM
   main..HEAD -- '*.php'`): no errors. Done per directory before each commit as well.
-- `git diff --name-only main..HEAD`: `elanguages/` (10), `ehandlers/` (55), `eadmin/` (25), `eweb/` (4), root (6:
-  `class2.php`, `comment.php`, `fpw.php`, `index.php`, `page.php`, `usersettings.php`), `ecore/` (33), `ethemes/` (2),
-  `eplugins/` (134 paths with `--no-renames`: 22 `rss` deleted, 21 `rss_menu` added, 19 `chatbox_menu` added, 72 modified; 114 with rename detection) — plus `audit/` (this report).
+- `git diff --name-only main..HEAD`: `elanguages/` (10), `ehandlers/` (77: 55 modified, 22 added), `eadmin/` (25), `eweb/` (4), root (6:
+  `class2.php`, `comment.php`, `fpw.php`, `index.php`, `page.php`, `usersettings.php`), `ecore/` (36: 33 modified, 3 added), `ethemes/` (2),
+  `eplugins/` (135 paths with `--no-renames`: 22 `rss` deleted, 21 `rss_menu` added, 19 `chatbox_menu` added, 1 forum file added, 72 modified; 115 with rename detection) — plus `audit/` (this report).
 - `git status` clean, no `.rej` / `.orig`.
 - Branch `sync-upstream-2026-10-23` pushed; no merge, no PR, nothing pushed to `main`.
