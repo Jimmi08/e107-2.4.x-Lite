@@ -507,7 +507,9 @@ in the STOP 1 / STOP 2 lists (e.g. `\e107\Userclass\Membership` from 47 files, t
 | `3d2b7e50a` | audit: STOP 3 resolution |
 | `34cf524c8` | audit: fix line reference |
 | `9bd954018` | sync(eplugins/rss_menu): reapply three Lite rss.php modifications |
-| (this commit) | audit: rss_menu Lite modifications reapplied |
+| `6e7134d2d` | audit: rss_menu Lite modifications reapplied |
+| `83d7d9f86` | sync(root): add userposts.php from upstream |
+| (this commit) | audit: userposts.php |
 
 ### STOPs and their resolution
 
@@ -710,7 +712,8 @@ New marker lines: **29 `LITE-SKIP` lines, added by instruction** (16 in the cons
 
 - **One-sided files:** all decided in §7 — upstream-only `.editorconfig`, `banner.php`, `composer.json`, `composer.lock`,
   `contact.php`, `download.php`, `email.php`, `gsitemap.php`, `online.php`, `print.php`, `request.php`, `search.php`,
-  `submitnews.php`, `top.php`, `unsubscribe.php`, `upload.php`, `userposts.php` not added; Lite-only `README.sk.md`,
+  `submitnews.php`, `top.php`, `unsubscribe.php`, `upload.php` not added (`userposts.php`: added later by instruction, see
+  below); Lite-only `README.sk.md`,
   `README_links.md`, `REGISTRY-RULES.md` kept. `README.md` (changed upstream), `.gitignore`, `e107.robots.txt` kept as in
   Lite. `LICENSE`: unchanged upstream. `.gitmodules`: not in the new upstream tree, not in Lite.
 - **Replaced (unmarked):** `comment.php`, `fpw.php`, `index.php` (now `require_once(e_CORE.'dispatch.php')` with
@@ -723,6 +726,47 @@ New marker lines: **29 `LITE-SKIP` lines, added by instruction** (16 in the cons
   `[[PAGE]]` is substituted, `[newpage]` split with `e_parse::splitAtBBCodeTags()`; the 404 marker block untouched.
   The file differs from upstream only by the ten marked lines.
 - **Marked, no upstream change:** `thumb.php`. Unchanged upstream: `e107.htaccess` (Lite mapping kept).
+- **Added from upstream (instruction after the STOPs):** `userposts.php` — moved from "Pending". Commit `83d7d9f86`,
+  byte-identical to upstream `4367279f1` (the file has no `e107_*` path literal; the only directory reference, line 174,
+  is a comment using `$THEMES_DIRECTORY`). `php -l` clean. Whole file read.
+  - **Dependencies (code paths read), all present in Lite:**
+    - `e107::coreLan('userposts')` (`:20`) → `elanguages/English/lan_userposts.php` (identical to upstream; defines every
+      `UP_LAN_*` the page uses: 0, 1, 2, 7, 8, 11, 12, 15).
+    - `require_once(e_HANDLER.'comment_class.php')` (`:22`) → `ehandlers/comment_class.php`, `comment::getCommentData()`
+      (`:1760`) for the `comments` action.
+    - `e107::getCoreTemplate('userposts')` (`:71`, `:178`) → `e107::coreTemplatePath()` (`ehandlers/e107_class.php:3445`)
+      looks for a theme override (`THEME/templates/userposts_template.php`, `THEME/userposts_template.php`; none in Lite's
+      themes) and otherwise uses `ecore/templates/userposts_template.php` (identical to upstream; defines `np_table`,
+      `comments_table_start` / `comments_table` / `comments_table_end`, `forum_table_start` / `forum_table` /
+      `forum_table_end`).
+    - `forums` action (`:131–292`): `require_once(e_PLUGIN.'forum/forum_class.php')` → `eplugins/forum/forum_class.php`,
+      with `e107forum::getForumPermList()` (`:1113`), `getForumSef()` (`:215`), `getThreadSef()` (`:1576`),
+      `postGetPostNum()` (`:1991`), static `threadNameHtml()` (`:1252`), `$forum->prefs`.
+  - **`forums` action without the forum plugin installed (report only, not changed).** Upstream calls
+    `require_once(e_PLUGIN.'forum/forum_class.php')` with no `e107::isInstalled('forum')` check; the action is reached by
+    `?<from>.forums.<id>` or any POST with `fsearch`. Lite ships `eplugins/forum`, so the `require_once` succeeds even
+    when the plugin is not installed. Then:
+    - `new e107forum()` (`forum_class.php:96–130`): `loadPermList()` → `buildPermList()` → `forum_attachments::readableForumRows()`
+      and `getForumData()` query the `forum` table; when the table does not exist the PDO error is caught in
+      `e_db_pdo::db_Query()` (`ehandlers/e_db_pdo_class.php:374–379`) and `QueryBuilder::fetchAll()` returns `array()`
+      (`QueryBuilder.php:2673–2676`), so the permission list and forum data are empty. `setDefaults()` only sets the
+      forum prefs in memory (no `save()`).
+    - `whereIn('p.post_forum', array())` compiles to `1=0` (`QueryBuilder.php:855–858`); the query on the missing
+      `forum_post` table fails, `$qb->execute()` returns `false`, and `userposts.php:216` runs
+      `$ftext .= "…".UP_LAN_8."…"` on an undefined `$ftext` → PHP 8 **warning "Undefined variable $ftext"**, then the
+      page renders "No Posts". No fatal error.
+    - If the forum tables still exist (plugin uninstalled without dropping its tables), the query runs normally and lists
+      the user's posts in the forums the visitor may view.
+    - If `eplugins/forum` were removed from disk, the `require_once` would be fatal.
+  - **Lite places that link to `userposts.php`** (dead links until this commit):
+    - `ecore/shortcodes/batch/user_shortcodes.php:90` — comments count link (`?0.comments.<id>`).
+    - `ecore/shortcodes/batch/user_shortcodes.php:147` — comments percentage link (`?0.comments.<id>`).
+    - `ecore/shortcodes/batch/user_shortcodes.php:460` — "comments" link (`?0.comments.<id>`).
+    - `ecore/shortcodes/batch/user_shortcodes.php:469` — "forum posts" link (`?0.forums.<id>`, only when the user has
+      forum posts).
+    - `ecore/shortcodes/batch/comment_shortcodes.php:478` — admin-only link next to a commenter (`?0.comments.<id>`).
+    - `eplugins/forum/shortcodes/batch/forum_shortcodes.php:129` — `{USERINFO}` "my posts" link (`?0.forums.USERID`).
+    - `eplugins/forum/e_user.php:35` — profile statistics link (`?0.forums.<id>`, when the user has posts).
 - **§7 — `install.php`:** Lite version kept, nothing taken. Upstream changes in this range not taken:
   - `143b173f6` fix(install): accept PHP 5.6 again — `MIN_PHP_VERSION` `'8.0'` → `'5.6'`.
   - `0e85c7d7d` fix(install): stop naming E_STRICT in the installer's error handler — `case E_STRICT` removed from
@@ -1081,10 +1125,10 @@ Counted with `git grep` over the tracked `*.php`, `*.js`, `*.css` files (combine
 
 ## Checks
 
-- `php -l` (PHP 8.3.6) on all 227 added/modified PHP files of the branch (`git diff --name-only --diff-filter=AM
+- `php -l` (PHP 8.3.6) on all 228 added/modified PHP files of the branch (`git diff --name-only --diff-filter=AM
   main..HEAD -- '*.php'`): no errors. Done per directory before each commit as well.
-- `git diff --name-only main..HEAD`: `elanguages/` (10), `ehandlers/` (77: 55 modified, 22 added), `eadmin/` (25), `eweb/` (4), root (6:
-  `class2.php`, `comment.php`, `fpw.php`, `index.php`, `page.php`, `usersettings.php`), `ecore/` (36: 33 modified, 3 added), `ethemes/` (2),
+- `git diff --name-only main..HEAD`: `elanguages/` (10), `ehandlers/` (77: 55 modified, 22 added), `eadmin/` (25), `eweb/` (4), root (7:
+  `class2.php`, `comment.php`, `fpw.php`, `index.php`, `page.php`, `usersettings.php`, `userposts.php`), `ecore/` (36: 33 modified, 3 added), `ethemes/` (2),
   `eplugins/` (135 paths with `--no-renames`: 22 `rss` deleted, 21 `rss_menu` added, 19 `chatbox_menu` added, 1 forum file added, 72 modified; 115 with rename detection) — plus `audit/` (this report).
 - `git status` clean, no `.rej` / `.orig`.
 - Branch `sync-upstream-2026-10-23` pushed; no merge, no PR, nothing pushed to `main`.
