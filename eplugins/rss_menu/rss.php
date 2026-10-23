@@ -529,14 +529,13 @@ class rssCreate
 				if (trim(SITEBUTTON))
 				{
 					$path = e107::getConfig()->get('sitebutton');
-					$imgPath = e107::getParser()->thumbUrl($path, array(), false, true);					
+					// LITE MODIFICATION: channel image resized to 500px wide, no hardcoded 88x31 (Facebook needs a larger image)
+					$imgPath = e107::getParser()->thumbUrl($path, 'w=500&x=1', true, true);
 					echo "
 					<image>
 					<title>".$tp->toRss($rss_title)."</title>
 					<url>" . $imgPath . "</url>
 					<link>".$pref['siteurl']."</link>
-					<width>88</width>
-					<height>31</height>
 					<description>".$tp->toRss($pref['sitedescription'])."</description>
 					</image>\n";
 				}
@@ -572,9 +571,11 @@ class rssCreate
 						echo "<content:encoded>".$tp->toRssForAuthor($value['content_encoded'], (int) varset($value['author_id'], 0), true)."</content:encoded>\n";
 					}
 
-					if($value['category_name'] && $catlink)
+					// LITE MODIFICATION: category emitted without domain when no category link is given (domain is optional in RSS 2.0)
+					if($value['category_name'])
 					{
-						echo "<category domain='".$catlink."'>".$tp->toRssForAuthor($value['category_name'], 0)."</category>\n";
+						$domain = $catlink ? " domain='".$tp->toAttribute($catlink, true)."'" : '';
+						echo "<category".$domain.">".$tp->toRssForAuthor($value['category_name'], 0)."</category>\n";
 					}
 
 					if($value['comment'])
@@ -718,8 +719,11 @@ class rssCreate
 					</contributor>\n
 					<generator uri='https://e107.org/' version='".defset('e_VERSION')."'>e107</generator>\n";
 					//<icon>/icon.jpg</icon>\n
+					// LITE MODIFICATION: Atom logo resized to 500px wide (Facebook needs a larger image)
+					$path = e107::getConfig()->get('sitebutton');
+					$imgPath = e107::getParser()->thumbUrl($path, 'w=500&x=1', true, true);
 					echo "
-					<logo>".(strpos(SITEBUTTON, "http:") !== false ? SITEBUTTON : SITEURL.str_replace("../", "", SITEBUTTON))."</logo>\n
+					<logo>".$imgPath."</logo>\n
 					<rights type='html'>".$pref['siteadmin']." - ".$this->nospam($pref['siteadminemail'])."</rights>\n";
 					if($pref['sitedescription']){
 					echo "
