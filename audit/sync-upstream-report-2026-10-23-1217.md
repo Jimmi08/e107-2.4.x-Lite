@@ -502,7 +502,9 @@ in the STOP 1 / STOP 2 lists (e.g. `\e107\Userclass\Membership` from 47 files, t
 | `d0b504bcb` | sync(ehandlers): add 22 upstream-only classes (STOP 1) |
 | `2887a564b` | sync(ecore): add dispatch.php, routes.php, logout_template.php (STOP 2) |
 | `dda43b6bd` | sync(eplugins/forum): add forum_hidden_token.php (STOP 4) |
-| (this commit) | audit: STOP resolutions |
+| `164db4df6` | audit: STOP resolutions |
+| `38c16203e` | sync(eadmin): infopanel upstream constructor, e107.org feeds disabled (STOP 3) |
+| (this commit) | audit: STOP 3 resolution |
 
 ### STOPs and their resolution
 
@@ -510,7 +512,7 @@ in the STOP 1 / STOP 2 lists (e.g. `\e107\Userclass\Membership` from 47 files, t
 |---|---|---|---|
 | 1 | `ehandlers/` | 22 upstream-only files (new classes the synced code uses) | add all 22 without changes — `d0b504bcb` |
 | 2 | `ecore/` | upstream-only `dispatch.php`, `routes.php`, `templates/logout_template.php` | add all three without changes — `2887a564b` |
-| 3 | `eadmin/includes/infopanel.php` | upstream e107.org feed rework (`DashboardFeed`) touches what the `LITE-SKIP` "no phone-home" marker protects | take upstream constructor, disable the feeds with `//LITE-SKIP`, keep `renderFeedTabs()` — **open: second STOP** (`renderFeedTabs()` breaks on the disabled `$this->feeds`), not committed |
+| 3 | `eadmin/includes/infopanel.php` | upstream e107.org feed rework (`DashboardFeed`) touches what the `LITE-SKIP` "no phone-home" marker protects | take upstream constructor, disable the feeds with `//LITE-SKIP`, keep `renderFeedTabs()` — second STOP (`renderFeedTabs()` breaks on the disabled `$this->feeds`) → option (c): `renderFeedTabs()` also disabled with `//LITE-SKIP` — `38c16203e` |
 | 4 | `eplugins/forum/` | upstream-only `forum_hidden_token.php` | add without changes — `dda43b6bd` |
 
 Details are in the directory sections.
@@ -599,7 +601,7 @@ Details are in the directory sections.
     `main/upload`, `convert/main`) kept.
   - `update_routines.php` — 116/27 upstream lines taken; the three `admin-exas-core.css` markers kept.
   - `includes/infopanel.php` — taken: `AddonUpdateStatus` check for the addons-update notice, float classes on the
-    comment buttons. **STOP 3** for the rest, see below.
+    comment buttons. **STOP 3** for the feed rework, see below (resolved in `38c16203e`).
 - **Skipped, no target:** `includes/flexpanel.php` — upstream's only change (news tabs built by the new
   `renderFeedTabs()`) targets the e107.org feed panel that the `LITE-SKIP` block (lines 222–237) keeps commented out.
   The file is unchanged. Same for the `$text2 = …renderFeedTabs()…` line in `infopanel.php` (target in `LITE-SKIP`
@@ -660,24 +662,40 @@ first line carrying the reason `//LITE-SKIP Lite removes the e107.org admin feed
 keep the `AddonUpdateStatus` check; keep `renderFeedTabs()` and the existing `//LITE-SKIP` panel block; STOP if
 `renderFeedTabs()` or anything else would reference the disabled `$this->feeds` and break.
 
-**Result — second STOP, nothing committed.** The prepared change (php -l clean) is: the upstream `$feeds` property,
-the constructor with 16 new `//LITE-SKIP` lines (reason line, `$cache` / `$xml` / `$tp` — used only by the feeds,
-the five-line `$this->feeds = array(…)`, the seven-line `foreach` loop), `$feedRenewals = '';` left active because the
-`$code` string below interpolates `".$feedRenewals."` (commenting it out would raise an undefined-variable warning on
-every infopanel load), and upstream `renderFeedTabs()`. With that change the file issues no e107.org feed request:
-the only active jQuery requests left are `admin.php?mode=core&type=update` (answered by `e107::coreUpdateAvailable()`,
-which returns `false` — "no phone-home" marker) and `admin.php?mode=addons&type=update` (the `AddonUpdateStatus` check
-kept by the instruction; `eadmin/boot.php` answers it through `admin_shortcodes::getUpdateable()` →
-`e_marketplace::getVersionList()`, an add-on version check, not a feed — unchanged from `main`).
-
-The collision: upstream `renderFeedTabs()` (would be `infopanel.php:208–217`) reads
+**Result — second STOP.** The prepared constructor change was clean, but upstream `renderFeedTabs()` reads
 `$this->feeds['e-adminfeed']['feed']->copy()` (and the plugin / theme entries) and `ADMINFEEDMORE`. With the feeds
 disabled `$this->feeds` stays `array()`, so a call would raise "Undefined array key" warnings and then the fatal
 `Call to a member function copy() on null`; `ADMINFEEDMORE` is not defined either (its `define()` is under `LITE-SKIP`
-at `infopanel.php:19–21`; PHP 8 throws an `Error` for an undefined constant). Today nothing calls it: its only two call
-sites are the commented-out panel blocks (`infopanel.php:300–308` and `flexpanel.php:222–237`, both `LITE-SKIP`), and
-`git grep renderFeedTabs` finds no other caller. So it is dead code that breaks only when called. Waiting for an
-instruction.
+at `infopanel.php:19–21`). Nothing called it (its only call sites are the `LITE-SKIP` panel blocks in `infopanel.php`
+and `flexpanel.php`), so it was dead code that would break only when called.
+
+**Instruction: option (c)** — apply the prepared change and also comment out the whole `renderFeedTabs()` method line by
+line with `//LITE-SKIP` (signature, body, closing brace), first line carrying the reason
+`//LITE-SKIP renderFeedTabs() disabled with the e107.org admin feeds (no phone-home). See Lite #88.`; keep
+`$feedRenewals = '';` active.
+
+**Resolution — `38c16203e`** (`php -l` clean). `eadmin/includes/infopanel.php` now has:
+- the upstream `$feeds` property (`:32–33`, stays `array()`; nothing reads it);
+- the `AddonUpdateStatus` check as upstream (`:94`);
+- `:103–122` — 16 new `//LITE-SKIP` lines: reason line (`:103`), `$cache` / `$xml` / `$tp` (`:104–106`, used only by the
+  feeds), the five-line `$this->feeds = array(…)` (`:108–112`), the seven-line `foreach` that builds `$feedRenewals`
+  (`:116–122`); `$feedRenewals = '';` (`:114`) active, because the `$code` string interpolates `".$feedRenewals."`
+  (commenting it out would raise an undefined-variable warning on every infopanel load);
+- `:205–218` — 13 new `//LITE-SKIP` lines: reason line (`:205`) and the whole upstream `renderFeedTabs()` (doc
+  comment, signature, body, closing brace) — no executable code of it remains;
+- the existing `LITE-SKIP` panel block unchanged (now `:336–344`), the `ADMINFEEDMORE` block (`:19–21`) unchanged.
+
+**Checks.** `git grep -n "renderFeedTabs\|->feeds\|ADMINFEEDMORE" -- '*.php'`, filtered to lines without
+`//LITE-SKIP`: no hit (the property declaration `private $feeds` is not a `->feeds` reference). With adminstyle
+`infopanel` (or `flexpanel`, which extends it) this file issues **no request to the e107.org feeds**. The two active
+jQuery requests left in the file:
+- `admin.php?mode=core&type=update` (`:67`, `$.get`) — `eadmin/boot.php` answers with `e107::coreUpdateAvailable()`,
+  which returns `false` through the existing "no phone-home" marker (`ehandlers/e107_class.php`).
+- `admin.php?mode=addons&type=update` (`:96`, `.load`) — `eadmin/boot.php` answers through
+  `admin_shortcodes::getUpdateable()` → `e_marketplace::getVersionList()`, which asks e107.org for add-on versions.
+  Not a feed; kept by the instruction; unchanged from `main`.
+
+New marker lines: **29 `LITE-SKIP` lines, added by instruction** (16 in the constructor, 13 in `renderFeedTabs()`).
 
 ## 4. eweb/ (← e107_web/)
 
@@ -1020,7 +1038,7 @@ Counted with `git grep` over the tracked `*.php`, `*.js`, `*.css` files (combine
 |---|---|---|---|---|
 | `LITE MODIFICATION` | 61 | 2 | 52 | 1 |
 | `LITE FEATURE` | 3 | 0 | 3 | 0 |
-| `LITE-SKIP` | 57 | 0 | 57 | 0 |
+| `LITE-SKIP` | 57 | 0 | 86 | 0 |
 
 - **Removed with the plugin (§7.3)** — 8 php + 1 xml:
   `eplugins/rss/admin_prefs.php:264` (target `_blank`), `eplugins/rss/rss.php:463` (RSS 0.92 `SITEURL`), `:494`
@@ -1028,8 +1046,8 @@ Counted with `git grep` over the tracked `*.php`, `*.js`, `*.css` files (combine
   (RDF `SITEURL`), `:724` (Atom `<logo>`), `eplugins/rss/rss_setup.php:28` (news seed guard), and
   `eplugins/rss/plugin.xml:2` (Lite metadata). The `// LITE:` note in `rss_addons.php:205` is not a counted marker.
 - **Removed by instruction (§7.5)** — 1 php: `eplugins/login_menu/login_menu_class.php:64` (coreplugs).
-- Added: none. (The 16 `LITE-SKIP` lines of the STOP 3 instruction are not committed — second STOP; the counts above are
-  the committed state after the STOP 1 / 2 / 4 commits.)
+- **Added by instruction (STOP 3)** — 29 `LITE-SKIP` lines in `eadmin/includes/infopanel.php`: `:103–106`, `:108–112`,
+  `:116–122` (constructor, 16) and `:205–218` without the blank line `:216` (`renderFeedTabs()`, 13). 57 + 29 = 86.
 
 ## Checks
 
