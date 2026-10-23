@@ -13,7 +13,7 @@ if (!defined('e107_INIT')) { exit; }
 
 
 
-class rss_shortcodes extends e_shortcode
+class rss_menu_shortcodes extends e_shortcode
 {
 	private $tp;
 
@@ -24,13 +24,13 @@ class rss_shortcodes extends e_shortcode
 
 	function sc_rss_feed()
 	{
-		$url2 = e107::url('rss','rss', $this->var);
+		$url2 = e107::url('rss_menu','rss', $this->var);
 		return "<a href='".$url2."'>".$this->tp->toHTML($this->var['rss_name'], TRUE)."</a>";
 	}
 
 	function sc_rss_icon()
 	{
-		$url2 = e107::url('rss','rss', $this->var);
+		$url2 = e107::url('rss_menu','rss', $this->var);
 		return "<a href='".$url2."'>".defset('RSS_ICON')."</a>";
 	}
 
@@ -41,8 +41,8 @@ class rss_shortcodes extends e_shortcode
 
 	function sc_rss_types()
 	{
-		$url2 = e107::url('rss','rss', $this->var);
-		$url4 = e107::url('rss','atom', $this->var);
+		$url2 = e107::url('rss_menu','rss', $this->var);
+		$url4 = e107::url('rss_menu','atom', $this->var);
 
 		if(deftrue('BOOTSTRAP')) // v2.x
 		{
@@ -56,10 +56,10 @@ class rss_shortcodes extends e_shortcode
 		}
 
 		$text = "";
-	//	$text .= "<a href='".$url1."' class='rss'><img src='".e_PLUGIN_ABS."rss/images/rss1.png' class='icon' alt='RSS 0.92' /></a>";
-		$text .= "<a href='".$url2."' class='rss'><img src='".e_PLUGIN_ABS."rss/images/rss2.png' class='icon' alt='RSS 2.0' /></a>";
-	//	$text .= "<a href='".$url3."' class='rss'><img src='".e_PLUGIN_ABS."rss/images/rss3.png' class='icon' alt='RDF' /></a>";
-		$text .= "<a href='".$url4."' class='rss'><img src='".e_PLUGIN_ABS."rss/images/rss4.png' class='icon' alt='ATOM' /></a>";
+	//	$text .= "<a href='".$url1."' class='rss'><img src='".e_PLUGIN_ABS."rss_menu/images/rss1.png' class='icon' alt='RSS 0.92' /></a>";
+		$text .= "<a href='".$url2."' class='rss'><img src='".e_PLUGIN_ABS."rss_menu/images/rss2.png' class='icon' alt='RSS 2.0' /></a>";
+	//	$text .= "<a href='".$url3."' class='rss'><img src='".e_PLUGIN_ABS."rss_menu/images/rss3.png' class='icon' alt='RDF' /></a>";
+		$text .= "<a href='".$url4."' class='rss'><img src='".e_PLUGIN_ABS."rss_menu/images/rss4.png' class='icon' alt='ATOM' /></a>";
 
 		return $text;
 	}
@@ -117,4 +117,4 @@ class rss_shortcodes extends e_shortcode
 
 }
 
-//	$rss_shortcodes = new rss_shortcodes;
+//	$rss_shortcodes = new rss_menu_shortcodes;

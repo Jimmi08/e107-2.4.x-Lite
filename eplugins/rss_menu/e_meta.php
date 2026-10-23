@@ -40,14 +40,14 @@ if($rssMetaRows)
 			    'rel'   => 'alternate',
 			    'type'  => 'application/rss+xml',
 			    'title' => $title,
-			    'href'  => e107::url('rss','rss', $row, array('mode'=>'full'))
+			    'href'  => e107::url('rss_menu','rss', $row, array('mode'=>'full'))
 			]);
 
 			e107::link([
 			    'rel'   => 'alternate',
 			    'type'  => 'application/atom+xml',
 			    'title' => $title,
-			    'href'  => e107::url('rss','atom', $row, array('mode'=>'full'))
+			    'href'  => e107::url('rss_menu','atom', $row, array('mode'=>'full'))
 			]);
 
 		}

@@ -15,7 +15,7 @@ if (!defined('e107_INIT')) { exit; }
 /**
  * Reads the e_rss.php addon of every installed plugin.
  *
- * The e_rss contract is this plugin's, not core's: nothing outside rss
+ * The e_rss contract is this plugin's, not core's: nothing outside rss_menu
  * consumes it, and the feed descriptions addons return are labelled with this
  * plugin's own admin LAN constants.
  */
@@ -161,9 +161,9 @@ class rss_addons
 	{
 		$ret = array_keys((array) e107::getPref('e_rss_list'));
 
-		if(!in_array('rss', $ret, true))
+		if(!in_array('rss_menu', $ret, true))
 		{
-			$ret[] = 'rss';
+			$ret[] = 'rss_menu';
 		}
 
 		return $ret;
@@ -202,8 +202,11 @@ class rss_addons
 	 */
 	private static function loadLan()
 	{
-		// LITE: Lite auto-loads the rss admin LAN pack via e107::lan('rss', true)
-		// (upstream includeLan of a _admin_rss_menu.php filename Lite does not ship).
-		e107::lan('rss', true);
+		$lan = e_PLUGIN.'rss_menu/languages/'.e_LANGUAGE.'_admin_rss_menu.php';
+
+		if(is_readable($lan))
+		{
+			e107::includeLan($lan);
+		}
 	}
 }

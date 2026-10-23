@@ -37,7 +37,7 @@ if (!defined('e107_INIT'))
 
 $e107 = e107::getInstance();
 
-if (!e107::isInstalled('rss'))
+if (!e107::isInstalled('rss_menu'))
 {
 	e107::redirect();
 	exit;
@@ -45,11 +45,11 @@ if (!e107::isInstalled('rss'))
 
 $tp = e107::getParser();
 
-//require_once(e_PLUGIN.'rss/rss_shortcodes.php');
+//require_once(e_PLUGIN.'rss_menu/rss_shortcodes.php');
 require_once(e_HANDLER.'userclass_class.php');
 
 // Get language file
-e107::lan("rss", true);
+e107::includeLan(e_PLUGIN.'rss_menu/languages/'.e_LANGUAGE.'_admin_rss_menu.php');
 
 
 // Query handler
@@ -79,8 +79,8 @@ if (empty($rss_type))
 	// Display list of all feeds
 	require_once(HEADERF);
 
-	require_once(e_PLUGIN.'rss/rss_shortcodes.php');
-	$sc = e107::getScBatch('rss', true);
+	require_once(e_PLUGIN.'rss_menu/rss_shortcodes.php');
+	$sc = e107::getScBatch('rss_menu', true);
 	$sc->wrapper('rss/page');
 
 	$qb = $sql->createQueryBuilder();
@@ -97,7 +97,7 @@ if (empty($rss_type))
 	}
 	else
 	{
-		if($template = e107::getTemplate('rss', 'rss', 'page'))
+		if($template = e107::getTemplate('rss_menu', 'rss', 'page'))
 		{
 			$RSS_LIST_HEADER    = $template['start'];
 			$RSS_LIST_TABLE     = $template['item'];
@@ -110,9 +110,9 @@ if (empty($rss_type))
 			{
 				require_once(THEME.'rss_template.php');
 			}
-			elseif (is_readable(e_PLUGIN.'rss/rss_template.php'))
+			elseif (is_readable(e_PLUGIN.'rss_menu/rss_template.php'))
 			{
-				require_once(e_PLUGIN.'rss/rss_template.php');
+				require_once(e_PLUGIN.'rss_menu/rss_template.php');
 			}
 
 			$RSS_LIST_HEADER = varset($RSS_LIST_HEADER, '');
@@ -145,8 +145,8 @@ if (empty($rss_type))
 
 // Returning feeds here
 
-require_once(e_PLUGIN.'rss/rss_addons.php');
-require_once(e_PLUGIN.'rss/rss_resolver.php');
+require_once(e_PLUGIN.'rss_menu/rss_addons.php');
+require_once(e_PLUGIN.'rss_menu/rss_resolver.php');
 
 // Look up the feed for this content type, optionally constrained to a topic id.
 $rssFeedLookup = function($contentType, $topicValue) use ($sql)
@@ -216,6 +216,7 @@ class rssCreate
 	/** Every key {@see rssCreate::buildRss()} interpolates or tests, so a feed may carry only the ones it has; custom and media are not among them because it iterates those, and reaches custom through isset(). */
 	const ITEM = array(
 		'author'          => '',
+		'author_id'       => 0,
 		'author_email'    => '',
 		'title'           => '',
 		'link'            => '',
@@ -255,7 +256,7 @@ class rssCreate
 		$this->e107 = e107::getInstance();
 
 		$this -> rssItems = array();
-		$this -> path = e_PLUGIN."rss/";
+		$this -> path = e_PLUGIN."rss_menu/";
 		$this -> rssType = $rss_type;
 		$this -> topicid = $topic_id;
 		$this -> limit = $row['rss_limit'];
@@ -315,6 +316,7 @@ class rssCreate
 					foreach($rs as $k=>$row)
 					{
 						$this -> rssItems[$k]['author'] = varset($row['author']);
+						$this -> rssItems[$k]['author_id'] = (int) varset($row['author_id'], 0);
 						$this -> rssItems[$k]['author_email'] = varset($row['author_email']);
 						$this -> rssItems[$k]['title'] = varset($row['title']);
 
@@ -460,14 +462,13 @@ class rssCreate
 		switch ($this -> rssType)
 		{
 			case 1:		// RSS 1.0
-				// LITE MODIFICATION: RSS 0.92 <link> uses SITEURL, not $pref['siteurl'] — deliberate Lite modernisation
 				echo "<?xml version=\"1.0\" encoding=\"utf-8\" ?".">
 						<!-- generator=\"e107\" -->
 						<!-- content type=\"".$this -> contentType."\" -->
 						<rss version=\"0.92\">
 						<channel>
-						<title>".$tp->toRss($rss_title). "</title>
-						<link>" . SITEURL . "</link>
+						<title>".$tp->toRss($rss_title)."</title>
+						<link>".$pref['siteurl']."</link>
 						<description>".$tp->toRss($pref['sitedescription'])."</description>
 						<lastBuildDate>".$itemdate = date("r", ($time))."</lastBuildDate>
 						<docs>http://backend.userland.com/rss092</docs>\n";
@@ -478,10 +479,10 @@ class rssCreate
 
 						echo "
 							<item>
-							<title>".$tp->toRss($value['title'])."</title>
-							<description>".substr($tp->toRss($value['description']),0,150);
+							<title>".$tp->toRssForAuthor($value['title'], (int) varset($value['author_id'], 0))."</title>
+							<description>".substr($tp->toRssForAuthor($value['description'], (int) varset($value['author_id'], 0)),0,150);
 						echo "</description>
-							<author>".$tp->toRss($value['author'])."&lt;".$this->nospam($value['author_email'])."&gt;</author>
+							<author>".$tp->toRssForAuthor($value['author'], 0)."&lt;".$this->nospam($value['author_email'])."&gt;</author>
 							<link>".$link."</link>
 							</item>";
 					}
@@ -491,9 +492,7 @@ class rssCreate
 			break;
 
 			case 2:	// RSS 2.0
-				// LITE MODIFICATION: sitebutton via getConfig()+thumbUrl(w=500) and <link> SITEURL — replaces upstream SITEBUTTON / $pref['siteurl']
-				$path = e107::getConfig()->get('sitebutton');
-				$sitebutton = e107::getParser()->thumbUrl($path, 'w=500&x=1', true, true);
+				$sitebutton = (strpos(SITEBUTTON, "http:") !== false ? SITEBUTTON : SITEURL.str_replace("../", "", SITEBUTTON));
 				echo "<?xml version=\"1.0\" encoding=\"utf-8\"?".">
 				<!-- generator=\"e107\" -->
 				<!-- content type=\"".$this->contentType."\" -->
@@ -505,8 +504,8 @@ class rssCreate
 					xmlns:media=\"http://search.yahoo.com/mrss/\"
 				>
 				<channel>
-				<title>".$tp->toRss($rss_title). "</title>
-				<link>" . SITEURL . "</link>
+				<title>".$tp->toRss($rss_title)."</title>
+				<link>".$pref['siteurl']."</link>
 				<description>".$tp->toRss($pref['sitedescription'])."</description>\n";
 
 				echo $tp->toHTML($rss_custom_channel)."\n"; // must not convert to CDATA.
@@ -525,18 +524,19 @@ class rssCreate
 				<ttl>60</ttl>";
 
 				echo "
-				<atom:link href=\"".$tp->toRss(e107::url('rss','atom', array('rss_url'=>$this->contentType, 'rss_topicid'=>$this->topicid),'full'))."\" rel=\"self\" type=\"application/rss+xml\" />\n";
+				<atom:link href=\"".$tp->toRss(e107::url('rss_menu','atom', array('rss_url'=>$this->contentType, 'rss_topicid'=>$this->topicid),'full'))."\" rel=\"self\" type=\"application/rss+xml\" />\n";
 
 				if (trim(SITEBUTTON))
 				{
-					// LITE MODIFICATION: image sitebutton via getConfig()+thumbUrl(w=500), <link> SITEURL, no upstream hardcoded 88x31
 					$path = e107::getConfig()->get('sitebutton');
-					$imgPath = e107::getParser()->thumbUrl($path, 'w=500&x=1', true, true);
+					$imgPath = e107::getParser()->thumbUrl($path, array(), false, true);					
 					echo "
 					<image>
 					<title>".$tp->toRss($rss_title)."</title>
 					<url>" . $imgPath . "</url>
-					<link>". SITEURL ."</link>
+					<link>".$pref['siteurl']."</link>
+					<width>88</width>
+					<height>31</height>
 					<description>".$tp->toRss($pref['sitedescription'])."</description>
 					</image>\n";
 				}
@@ -558,25 +558,23 @@ class rssCreate
                     $catlink	= deftrue('e_LANQRY') ? str_replace("?","?".e_LANQRY,$value['category_link']) : $value['category_link'];
 
 					echo "<item>\n";
-					echo "<title>".$tp->toRss($value['title'])."</title>\n";
+					echo "<title>".$tp->toRssForAuthor($value['title'], (int) varset($value['author_id'], 0))."</title>\n";
 
 					if($link)
 					{
 						echo "<link>".$link."</link>\n";
 					}
 
-					echo "<description>".$tp->toRss($value['description'],true). "</description>\n";
+					echo "<description>".$tp->toRssForAuthor($value['description'], (int) varset($value['author_id'], 0), true). "</description>\n";
 
 					if($value['content_encoded'])
 					{
-						echo "<content:encoded>".$tp->toRss($value['content_encoded'],true)."</content:encoded>\n";
+						echo "<content:encoded>".$tp->toRssForAuthor($value['content_encoded'], (int) varset($value['author_id'], 0), true)."</content:encoded>\n";
 					}
 
-					// LITE MODIFICATION: category tag rendering differs from upstream (domain attribute optional)
-					if ($value['category_name'])
+					if($value['category_name'] && $catlink)
 					{
-						$domain = $catlink ? " domain='$catlink'" : '';
-						echo "<category$domain>" . $tp->toRss($value['category_name']) . "</category>\n";
+						echo "<category domain='".$catlink."'>".$tp->toRssForAuthor($value['category_name'], 0)."</category>\n";
 					}
 
 					if($value['comment'])
@@ -586,7 +584,7 @@ class rssCreate
 
 					if($value['author'])
 					{
-						echo "<dc:creator>".$tp->toRss($value['author'])."</dc:creator>\n"; // correct tag for author without email.
+						echo "<dc:creator>".$tp->toRssForAuthor($value['author'], 0)."</dc:creator>\n"; // correct tag for author without email.
 					}
 
 					// Enclosure support for podcasting etc.
@@ -606,7 +604,7 @@ class rssCreate
 					{
 						foreach($value['custom'] as $cKey => $cVal)
 						{
-							echo "<".$cKey.">".$tp->toRss($cVal)."</".$cKey.">\n";
+							echo "<".$cKey.">".$tp->toRssForAuthor($cVal, 0)."</".$cKey.">\n";
 						}
 					}
 
@@ -633,14 +631,13 @@ class rssCreate
 			break;
 
 			case 3: 	// RDF
-				// LITE MODIFICATION: RDF rdf:about/<link> use SITEURL, not $pref['siteurl'] — deliberate Lite modernisation
 				echo "<?xml version=\"1.0\" encoding=\"utf-8\" ?".">
 				<!-- generator=\"e107\" -->
 				<!-- content type=\"".$this -> contentType."\" -->
 				<rdf:RDF xmlns=\"http://purl.org/rss/1.0/\" xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\" xmlns:dc=\"http://purl.org/dc/elements/1.1/\" xmlns:sy=\"http://purl.org/rss/1.0/modules/syndication/\" xmlns:admin=\"http://webns.net/mvcb/\" xmlns:content=\"http://purl.org/rss/1.0/modules/content/\">
-				<channel rdf:about=\"".SITEURL."\">
+				<channel rdf:about=\"".$pref['siteurl']."\">
 				<title>".$tp->toRss($rss_title)."</title>
-				<link>".SITEURL."</link>
+				<link>".$pref['siteurl']."</link>
 				<description>".$tp->toRss($pref['sitedescription'])."</description>
 				<dc:language>".defset('CORE_LC').(defined("CORE_LC2") ? "-".CORE_LC2 : "")."</dc:language>
 				<dc:date>".$this->get_iso_8601_date($time). "</dc:date>
@@ -674,12 +671,12 @@ class rssCreate
 
 					echo "
 						<item rdf:about=\"".$link."\">
-						<title>".$tp->toRss($value['title'])."</title>
+						<title>".$tp->toRssForAuthor($value['title'], (int) varset($value['author_id'], 0))."</title>
 						<link>".$link."</link>
 						<dc:date>".$this->get_iso_8601_date($time)."</dc:date>
-						<dc:creator>".$tp->toRss($value['author'])."</dc:creator>
-						<dc:subject>".$tp->toRss($value['category_name'])."</dc:subject>
-						<description>".$tp->toRss($value['description']). "</description>
+						<dc:creator>".$tp->toRssForAuthor($value['author'], 0)."</dc:creator>
+						<dc:subject>".$tp->toRssForAuthor($value['category_name'], 0)."</dc:subject>
+						<description>".$tp->toRssForAuthor($value['description'], (int) varset($value['author_id'], 0)). "</description>
 						</item>";
 				}
 				echo "
@@ -710,7 +707,7 @@ class rssCreate
 						echo "
 						<uri>https://e107.org/</uri>\n
 					</author>\n
-					<link rel='self' href='".$tp->toRss(e107::url('rss','atom', array('rss_url'=>$this->contentType, 'rss_topicid'=>$this->topicid),'full'))."' />\n";
+					<link rel='self' href='".$tp->toRss(e107::url('rss_menu','atom', array('rss_url'=>$this->contentType, 'rss_topicid'=>$this->topicid),'full'))."' />\n";
 
 					// Optional
 				//	include(e_ADMIN."ver.php");
@@ -721,11 +718,8 @@ class rssCreate
 					</contributor>\n
 					<generator uri='https://e107.org/' version='".defset('e_VERSION')."'>e107</generator>\n";
 					//<icon>/icon.jpg</icon>\n
-					// LITE MODIFICATION: <logo> sitebutton via getConfig()+thumbUrl(w=500) — replaces upstream SITEBUTTON handling
-					$path = e107::getConfig()->get('sitebutton');
-					$imgPath = e107::getParser()->thumbUrl($path, 'w=500&x=1', true, true);
 					echo "
-					<logo>" . $imgPath . "</logo>\n
+					<logo>".(strpos(SITEBUTTON, "http:") !== false ? SITEBUTTON : SITEURL.str_replace("../", "", SITEBUTTON))."</logo>\n
 					<rights type='html'>".$pref['siteadmin']." - ".$this->nospam($pref['siteadminemail'])."</rights>\n";
 					if($pref['sitedescription']){
 					echo "
@@ -738,11 +732,11 @@ class rssCreate
 						// Required
 						echo "
 						<id>".$value['link']."</id>\n
-						<title type='text'>".$tp->toRss($value['title'])."</title>\n
+						<title type='text'>".$tp->toRssForAuthor($value['title'], (int) varset($value['author_id'], 0))."</title>\n
 						<updated>".$this->get_iso_8601_date($value['pubdate'])."</updated>\n";
 
 						// Recommended
-                        $author = $tp->toRss($value['author']);
+                        $author = $tp->toRssForAuthor($value['author'], 0);
                         $author = ($author !== '') ? $author : "unknown";
 
 						echo "
@@ -754,12 +748,12 @@ class rssCreate
 						//<content>complete story here</content>\n
 						echo "
 						<link rel='alternate' type='text/html' href='".$value['link']."' />\n
-						<summary type='text'>".$tp->toRss($tp->toText($value['description'])). "</summary>\n";
+						<summary type='text'>".$tp->toRssForAuthor($tp->toText($value['description']), (int) varset($value['author_id'], 0)). "</summary>\n";
 
 						// Optional
 						if(!empty($value['category_name']))
 						{
-							echo "<category term='".$tp->toRss($value['category_name'])."'/>\n";
+							echo "<category term='".$tp->toRssForAuthor($value['category_name'], 0)."'/>\n";
 						}
 						//<contributor>
 						//	<name>Jane Doe</name>
@@ -809,7 +803,7 @@ class rssCreate
 		foreach($attributes as $att=>$attVal)
 		{
 
-			$text .= " ".$att."=\"".$tp->toRss($attVal)."\"";
+			$text .= " ".$att."=\"".$tp->toRssForAuthor($attVal, 0)."\"";
 		}
 
 		$text .= ">";
@@ -826,7 +820,7 @@ class rssCreate
 			}
 			else
 			{
-				$text .= $tp->toRss($value);
+				$text .= $tp->toRssForAuthor($value, 0);
 			}
 
 		}

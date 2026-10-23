@@ -12,7 +12,7 @@ if (!defined('e107_INIT')) { exit; }
 
 // v2.x Standard  - Simple mod-rewrite module. 
 
-class rss_url // plugin-folder + '_url'
+class rss_menu_url // plugin-folder + '_url'
 {
 	function config() 
 	{
@@ -22,21 +22,21 @@ class rss_url // plugin-folder + '_url'
 			'alias'			=> 'feed',
 			'regex'			=> '^{alias}/(.*)/rss/?([\d]*)?$',
 			'sef'			=> '{alias}/{rss_url}/rss/{rss_topicid}',
-			'redirect'		=> '{e_PLUGIN}rss/rss.php?cat=$1&type=2&topic=$2'
+			'redirect'		=> '{e_PLUGIN}rss_menu/rss.php?cat=$1&type=2&topic=$2'
 		);
 
 		$config['atom'] = array(
 			'alias'			=> 'feed',
 			'regex'			=> '^{alias}/(.*)/atom/?([\d]*)?$',
 			'sef'			=> '{alias}/{rss_url}/atom/{rss_topicid}',
-			'redirect'		=> '{e_PLUGIN}rss/rss.php?cat=$1&type=4&topic=$2'
+			'redirect'		=> '{e_PLUGIN}rss_menu/rss.php?cat=$1&type=4&topic=$2'
 		);
 	
 		$config['index'] = array(
 			'alias'			=> 'feed',
 			'regex'			=> '^{alias}/?$',
 			'sef'			=> '{alias}',
-			'redirect'		=> '{e_PLUGIN}rss/rss.php',
+			'redirect'		=> '{e_PLUGIN}rss_menu/rss.php',
 		);
 
 		return $config;

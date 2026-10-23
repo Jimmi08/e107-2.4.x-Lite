@@ -12,7 +12,7 @@
 
 if (!defined('e107_INIT')) { exit; }
 
-require_once(e_PLUGIN.'rss/rss_addons.php');
+require_once(e_PLUGIN.'rss_menu/rss_addons.php');
 
 /**
  * Resolves a requested feed key to a row in the rss table.

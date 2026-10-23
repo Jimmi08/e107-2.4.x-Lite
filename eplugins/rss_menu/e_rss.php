@@ -19,7 +19,7 @@ if (!defined('e107_INIT')) { exit; }
  * plugin that serves every other feed. {@see rss_addons::feeds()} scans this
  * folder alongside the plugins named in the e_rss_list pref.
  */
-class rss_rss
+class rss_menu_rss
 {
 	/**
 	 * Numeric feed key this feed answered to before v0.7.6.
@@ -144,19 +144,17 @@ class rss_rss
 	}
 
 	/**
-	 * The userclass predicate core states for a comma separated class column.
-	 *
-	 * The column holds a list, so it is matched as one: an IN () would make
-	 * MySQL read '254,0' as the number 254, and would admit a list that names
-	 * both a class the visitor holds and e_UC_NOBODY.
+	 * The userclass predicate for a class column, plus the rule a feed adds: a
+	 * list that names e_UC_NOBODY is withheld even from a class it also names.
 	 *
 	 * @param \e107\Database\QueryBuilder $qb
+	 * @param \e107\Userclass\Membership $visitor
 	 * @param string $column
 	 * @return void
 	 */
-	private function whereClassPermits($qb, $column)
+	private function whereClassPermits($qb, $visitor, $column)
 	{
-		$qb->where($qb->expr()->regexp($column, e_CLASS_REGEXP))
+		$qb->where($visitor->predicate($column))
 			->where($qb->expr()->not($qb->expr()->regexp($column, e_NOBODY_REGEXP)));
 	}
 
@@ -167,7 +165,7 @@ class rss_rss
 	 * to has been published, and who may read it, are properties of that item, so
 	 * the feed joins to it and asks there.
 	 *
-	 * @param string $name key from {@see rss_rss::commentParents()}
+	 * @param string $name key from {@see rss_menu_rss::commentParents()}
 	 * @param array $parent its description
 	 * @param int $limit
 	 * @return array comment rows
@@ -175,7 +173,7 @@ class rss_rss
 	private function visibleComments($name, $parent, $limit)
 	{
 		$now = time();
-		$userclass = array_map('intval', explode(',', USERCLASS_LIST));
+		$visitor = \e107\Userclass\Membership::current();
 
 		$qb = e107::getDb()->createQueryBuilder();
 		$qb->select('c.*')
@@ -187,12 +185,13 @@ class rss_rss
 		switch($name)
 		{
 			case 'news':
-				$this->whereClassPermits($qb, 'p.news_class');
+				$this->whereClassPermits($qb, $visitor, 'p.news_class');
 				$qb->where('p.news_start', '<', $now)
 					->where($qb->expr()->anyOf(
 						$qb->expr()->eq('p.news_end', 0),
 						$qb->expr()->gt('p.news_end', $now)
-					));
+					))
+					->where('p.news_allow_comments', 0);
 				break;
 
 			case 'download':
@@ -200,14 +199,16 @@ class rss_rss
 				// a feed is; download_class is who may then fetch the file.
 				$qb->innerJoin('download_category', 'dc',
 						$qb->expr()->compareColumns('dc.download_category_id', 'p.download_category'))
-					->whereIn('p.download_visible', $userclass)
-					->whereIn('p.download_class', $userclass)
-					->whereIn('dc.download_category_class', $userclass)
-					->where('p.download_active', '!=', 0);
+					->where($visitor->predicate('p.download_visible'))
+					->where($visitor->predicate('p.download_class'))
+					->where($visitor->predicate('dc.download_category_class'))
+					->where('p.download_active', '!=', 0)
+					->where('p.download_comment', '>', 0);
 				break;
 
 			case 'poll':
-				$qb->where('p.poll_start_datestamp', '<=', $now)
+				$qb->where('p.poll_type', 1)
+					->where('p.poll_start_datestamp', '<=', $now)
 					->where($qb->expr()->anyOf(
 						$qb->expr()->eq('p.poll_end_datestamp', 0),
 						$qb->expr()->gt('p.poll_end_datestamp', $now)
@@ -215,8 +216,9 @@ class rss_rss
 				break;
 
 			case 'page':
-				$this->whereClassPermits($qb, 'p.page_class');
-				$qb->where('p.page_password', '');
+				$this->whereClassPermits($qb, $visitor, 'p.page_class');
+				$qb->where('p.page_password', '')
+					->where('p.page_comment_flag', '>', 0);
 				break;
 		}
 

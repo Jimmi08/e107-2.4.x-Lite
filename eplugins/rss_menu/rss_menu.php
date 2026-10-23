@@ -10,14 +10,14 @@
 
 	if (!defined('e107_INIT')) { exit; }
 
-	if (!e107::isInstalled('rss'))
+	if (!e107::isInstalled('rss_menu'))
 	{
 		return '';
 	}
 
 	$sql = e107::getDb();
 
-	e107::lan("rss", true);
+	e107::includeLan(e_PLUGIN."rss_menu/languages/".e_LANGUAGE."_admin_rss_menu.php");
 
 	$topic = "";
 	$caption = "";
@@ -58,14 +58,14 @@
 		{
 			$text = "
 			<div>
-				<a class='btn btn-sm btn-default'  href='".e107::url('rss', 'rss', $arr)."'>".$tp->toGlyph('fa-rss')." RSS</a>
-				<a class='btn btn-sm btn-default'  href='".e107::url('rss', 'atom', $arr)."'>".$tp->toGlyph('fa-rss')." Atom</a>
+				<a class='btn btn-sm btn-default'  href='".e107::url('rss_menu', 'rss', $arr)."'>".$tp->toGlyph('fa-rss')." RSS</a>
+				<a class='btn btn-sm btn-default'  href='".e107::url('rss_menu', 'atom', $arr)."'>".$tp->toGlyph('fa-rss')." Atom</a>
 			</div>";
 
 		}
 		else // v1.x
 		{
-			$path = e_PLUGIN_ABS."rss/";
+			$path = e_PLUGIN_ABS."rss_menu/";
 
 			$description = array(
 
@@ -90,13 +90,13 @@
 			<div>
 				".varset($description[$type]).RSS_MENU_L1."<br />
 
-				<div class='spacer'><a href='".e107::url('rss', 'rss', $arr)."'><img src='".$path."images/rss2.png' alt='rss2.0' /></a></div>
-				<div class='spacer'><a href='".e107::url('rss', 'atom', $arr)."'><img src='".$path."images/rss4.png' alt='atom' /></a></div>
+				<div class='spacer'><a href='".e107::url('rss_menu', 'rss', $arr)."'><img src='".$path."images/rss2.png' alt='rss2.0' /></a></div>
+				<div class='spacer'><a href='".e107::url('rss_menu', 'atom', $arr)."'><img src='".$path."images/rss4.png' alt='atom' /></a></div>
 			</div>";
 
 			$caption = RSS_MENU_L2;
 
 		}
 
-		e107::getRender()->tablerender($caption, $text, 'rss');
+		e107::getRender()->tablerender($caption, $text, 'rss_menu');
 	}

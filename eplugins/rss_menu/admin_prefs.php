@@ -20,14 +20,14 @@ Notes:
 
 require_once(__DIR__ . '/../../class2.php');
 
-if(!getperms("P") || !e107::isInstalled('rss'))
+if(!getperms("P") || !e107::isInstalled('rss_menu'))
 {
 	e107::redirect('admin');
 	exit;
 }
 
 
-e107::lan("rss", true);
+e107::includeLan(e_PLUGIN . "rss_menu/languages/" . e_LANGUAGE . "_admin_rss_menu.php");
 
 
 class rss_admin extends e_admin_dispatcher
@@ -163,9 +163,9 @@ class rss_ui extends e_admin_ui
 
 		global $i, $rss_shortcodes, $feed;
 
-		require_once(e_PLUGIN . 'rss/rss_shortcodes.php');
-		require_once(e_PLUGIN . 'rss/rss_addons.php');
-		$rss_shortcodes = e107::getScBatch('rss', true);
+		require_once(e_PLUGIN . 'rss_menu/rss_shortcodes.php');
+		require_once(e_PLUGIN . 'rss_menu/rss_addons.php');
+		$rss_shortcodes = e107::getScBatch('rss_menu', true);
 
 		$RSS_ADMIN_IMPORT_HEADER = "
 			<form action='" . e_SELF . "' id='imlistform' method='post' >
@@ -259,14 +259,13 @@ class rss_form_ui extends e_admin_form_ui
 				$type = $this->getController()->getListModel()->get('rss_type');
 				$topic = $this->getController()->getListModel()->get('rss_topicid');
 
-				$link = e107::url('rss', 'rss', array('rss_type' => $type, 'rss_url' => $curVal, 'rss_topicid' => $topic));
+				$link = e107::url('rss_menu', 'rss', array('rss_type' => $type, 'rss_url' => $curVal, 'rss_topicid' => $topic));
 
-				// LITE MODIFICATION: feed link opens in a new tab (target='_blank') — deliberate, keep on sync
-				return "<a target='_blank' href='" . $link . "'>" . $curVal . "</a>";
+				return "<a href='" . $link . "'>" . $curVal . "</a>";
 				break;
 
 			case 'write': // Edit Page
-				$link = SITEURL . "feed/"; // e107::url('rss','index').'/';
+				$link = SITEURL . "feed/"; // e107::url('rss_menu','index').'/';
 
 				return "<div class='form-inline'>" . $link . e107::getForm()->text('rss_url', $curVal, 255, 'size=small') . "/rss/{Topic id}</div>";
 				break;
