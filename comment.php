@@ -50,6 +50,11 @@ if(e_AJAX_REQUEST) // TODO improve security
 	{
 		$clean_type = preg_replace("/[^\w\d]/","",$_GET['type']);
 
+		if(!e107::getComment()->canReadComments($clean_type, intval($_GET['id'])))
+		{
+			exit;
+		}
+
 		$tmp = e107::getComment()->getComments($clean_type,intval($_GET['id']),intval($_GET['from']));
 		echo $tmp['comments'];
 		exit;
@@ -62,7 +67,7 @@ if(e_AJAX_REQUEST) // TODO improve security
 		$ret['msg'] 	= COMLAN_332;
 		$ret['error'] 	= ($status) ? false : true;
 		$ret['html']	= $status;
-		echo json_encode($ret);
+		e107::getAjax()->response($ret);
 		exit;
 	}
 
@@ -72,7 +77,7 @@ if(e_AJAX_REQUEST) // TODO improve security
 		$status 		= e107::getComment()->deleteComment($_POST['id'],$_POST['table'],$_POST['itemid']);
 		$ret['msg'] 	= ($status) ? 'Ok' : COMLAN_332;
 		$ret['error'] 	= ($status) ? false : true;
-		echo json_encode($ret);
+		e107::getAjax()->response($ret);
 		exit;
 	}
 
@@ -82,7 +87,7 @@ if(e_AJAX_REQUEST) // TODO improve security
 		$ret['msg'] 	= ($status) ? COMLAN_333 : COMLAN_334;
 		$ret['error'] 	= ($status) ? false : true;
 		$ret['html']	= COMLAN_335;
-		echo json_encode($ret);
+		e107::getAjax()->response($ret);
 		exit;
 	}
 
@@ -90,8 +95,8 @@ if(e_AJAX_REQUEST) // TODO improve security
 	if(!vartrue($_POST['comment']) && varset($_GET['mode']) == 'submit')
 	{
 		$ret['error'] 	= true;
-		$ret['msg'] 	= COMLAN_336." - ".implode(" ",$_GET);
-		echo json_encode($ret);
+		$ret['msg'] 	= COMLAN_336;
+		e107::getAjax()->response($ret);
 		exit;
 	}
 
@@ -103,7 +108,7 @@ if(e_AJAX_REQUEST) // TODO improve security
 		$ret['error'] 	= ($error) ? true : false;
 		$ret['msg'] 	= ($error) ? $error : COMLAN_337;
 
-		echo json_encode($ret);
+		e107::getAjax()->response($ret);
 		exit;
 	}
 	
@@ -163,7 +168,7 @@ if(e_AJAX_REQUEST) // TODO improve security
 			$ret['msg'] = $newid;			
 		}
 		
-		echo json_encode($ret);
+		e107::getAjax()->response($ret);
 	}
 	exit;
 }
@@ -290,10 +295,20 @@ if ($action == "reply")
 		exit;
 	}
 	
+	if (!$cobj->canReadComments($table, $nid))
+	{
+		e107::redirect();
+		exit;
+	}
+
 	$query = "`comment_id` = '{$id}' LIMIT 0,1";
 	
 	$comments = $sql->createQueryBuilder()->select('comment_subject')->from('comments')
-		->where('comment_id', $id)->fetchRow();
+		->where('comment_id', $id)
+		->where('comment_type', (string) $cobj->getCommentType($table))
+		->where('comment_item_id', $nid)
+		->where('comment_blocked', 0)
+		->fetchRow();
 	if ($comments)
 	{
 		$subject = $comments['comment_subject'];
@@ -368,27 +383,24 @@ if ($action == "reply")
 elseif ($action == 'comment')
 {  //  Default code if not reply
 
-	// Check cache
-	if ($cache = e107::getCache()->retrieve("comment.php?{$table}.{$id}"))
-	{
-		require_once(HEADERF);
-		echo $cache;
-		require_once(FOOTERF);
-		exit;
-	}
-	else
-	{
+		if (!$cobj->canReadComments($table, $id))
+		{
+			e107::redirect();
+			exit;
+		}
+
 		switch ($table)
 		{
 			case 'news' :
+				$rule = \e107\Userclass\Membership::current()->predicate('n.news_class');
 				if (!$sql->execute(
 					"SELECT n.*, u.user_id, u.user_name, u.user_customtitle, nc.category_name, nc.category_icon FROM #news AS n
 					LEFT JOIN #user AS u ON n.news_author = u.user_id
 					LEFT JOIN #news_category AS nc ON n.news_category = nc.category_id
-					WHERE n.news_class REGEXP :news_class
+					WHERE ".$rule->getSql()."
 					AND n.news_id = :news_id
 					AND n.news_allow_comments = 0",
-					array('news_class' => e_CLASS_REGEXP, 'news_id' => (int) $id)
+					$rule->getParameters() + array('news_id' => (int) $id)
 				))
 				{
 					e107::redirect();
@@ -399,7 +411,14 @@ elseif ($action == 'comment')
 					$news = $sql->fetch();
 					$subject = $tp->toForm($news['news_title']);
 					define("e_PAGETITLE", "{$subject} - ".COMLAN_100." / ".LAN_COMMENTS);
+					$cache = e107::getCache()->retrieve("comment.php?{$table}.{$id}");
 					require_once(HEADERF);
+					if ($cache)
+					{
+						echo $cache;
+						require_once(FOOTERF);
+						exit;
+					}
 					ob_start();
 					$comment_ob_start = TRUE;
 					$ix = new news;
@@ -500,7 +519,6 @@ elseif ($action == 'comment')
 					}
 				}
 		}
-	}
 }
 else
 {	// Invalid action - just exit

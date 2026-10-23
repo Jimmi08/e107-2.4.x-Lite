@@ -94,12 +94,12 @@ class news_rss // plugin-folder + '_rss'
 			->from('news', 'n')
 			->leftJoin('user', 'u', $qb->expr()->compareColumns('n.news_author', 'u.user_id'))
 			->leftJoin('news_category', 'nc', $qb->expr()->compareColumns('n.news_category', 'nc.category_id'))
-			->whereIn('n.news_class', array_map('intval', explode(',', USERCLASS_LIST)))
+			->where(\e107\Userclass\Membership::current()->predicate('n.news_class'))
 			->where($qb->expr()->not($qb->expr()->regexp('n.news_class', $nobody_regexp)))
 			->where('n.news_start', '<', $now)
 			->where($qb->expr()->anyOf($qb->expr()->eq('n.news_end', 0), $qb->expr()->gt('n.news_end', $now)));
 
-		if($pref['rss_othernews'] != 1)
+		if(empty($pref['rss_othernews']))
 		{
 			$qb->where($qb->expr()->anyOf(
 				$qb->expr()->findInSet('n.news_render_type', '0'),
@@ -124,6 +124,7 @@ class news_rss // plugin-folder + '_rss'
 			$rss[$i]['title']           = $value['news_title'];
 			$rss[$i]['link']            = e107::getUrl()->create('news/view/item', $value, 'full=1');
 			$rss[$i]['author']          = $value['user_name'];
+			$rss[$i]['author_id']       = $value['news_author'];
 			$rss[$i]['author_email']    = $value['user_email'];
 			$rss[$i]['category_name']   = $tp->toHTML($value['category_name'],TRUE,'defs');
 			//category sef
@@ -140,9 +141,9 @@ class news_rss // plugin-folder + '_rss'
 			$rss[$i]['datestamp']         = $value['news_datestamp'];
 			$rss[$i]['description']     = $this->getDescription($value);
 
-			if($value['news_allow_comments'] && $pref['comments_disabled'] != 1)
+			if(empty($value['news_allow_comments']) && $pref['comments_disabled'] != 1)
 			{
-				$rss[$i]['comment']     = "http://".$_SERVER['HTTP_HOST'].e_HTTP."comment.php?comment.news.".$value['news_id'];
+				$rss[$i]['comment']     = SITEURL."comment.php?comment.news.".$value['news_id'];
 			}
 
 			$rss[$i]['media']            = $this->getMedia($value);

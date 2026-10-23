@@ -80,18 +80,18 @@ class upload_ui extends e_admin_ui
             'upload_datestamp'      =>   array ( 'title' => LAN_DATESTAMP, 'type' => 'datestamp', 'data' => 'int', 'width' => '15%', 'filter' => true, 'help' => '', 'readParms' => '', 'writeParms' => '', 'class' => 'left', 'thclass' => 'left',  ),
             'upload_name'           =>   array ( 'title' => LAN_TITLE, 'type' => 'text', 'data' => 'str', 'width' => '15%', 'help' => '', 'readParms' => '', 'writeParms' => '', 'class' => 'left', 'thclass' => 'left', 'validate' => true, 'inline' => true),
            'upload_email'          =>   array ( 'title' => LAN_EMAIL, 'type' => 'text', 'data' => 'str', 'width' => 'auto', 'help' => '', 'readParms' => '', 'writeParms' => '', 'class' => 'center', 'thclass' => 'center',  ),
-            'upload_website'        =>   array ( 'title' => LAN_URL, 'type' => 'url', 'data' => 'str', 'width' => 'auto', 'help' => '', 'readParms' => '', 'writeParms' => '', 'class' => 'left', 'thclass' => 'left',  ),
+            'upload_website'        =>   array ( 'title' => LAN_URL, 'type' => 'url', 'data' => 'str', 'linkAddress' => true, 'width' => 'auto', 'help' => '', 'readParms' => '', 'writeParms' => '', 'class' => 'left', 'thclass' => 'left',  ),
             'upload_version'        =>   array ( 'title' => LAN_VERSION, 'type' => 'text', 'data' => 'str', 'width' => 'auto', 'help' => '', 'readParms' => '', 'writeParms' => '', 'class' => 'center', 'thclass' => 'center',  ),
             'upload_file'           =>   array ( 'title' => LAN_FILE, 'type' => 'text', 'data' => 'str', 'width' => '15%', 'help' => '', 'readParms' => '', 'writeParms' => '', 'class' => 'left', 'thclass' => 'left', 'validate' => true ),
             'upload_ss'             =>   array ( 'title' => 'Ss', 'type' => 'text', 'data' => 'str', 'width' => 'auto', 'help' => '', 'readParms' => '', 'writeParms' => '', 'class' => 'center', 'thclass' => 'center',  ),
             'upload_description'    =>   array ( 'title' => LAN_DESCRIPTION, 'type' => 'textarea', 'data' => 'str', 'width' => '30%', 'help' => '', 'readParms' => '', 'writeParms' => '', 'class' => 'left', 'thclass' => 'left',  ),
             'upload_poster'         =>   array ( 'title' => UPLLAN_5, 'type' => 'user', 'data' => 'int', 'width' => 'auto', 'help' => '', 'readParms' => '', 'writeParms' => '', 'class' => 'center', 'thclass' => 'center',  ),
 
-            'upload_demo'           =>   array ( 'title' => UPLLAN_14, 'type' => 'url', 'data' => 'str', 'width' => 'auto', 'help' => '', 'readParms' => '', 'writeParms' => '', 'class' => 'center', 'thclass' => 'center',  ),
+            'upload_demo'           =>   array ( 'title' => UPLLAN_14, 'type' => 'url', 'data' => 'str', 'linkAddress' => true, 'width' => 'auto', 'help' => '', 'readParms' => '', 'writeParms' => '', 'class' => 'center', 'thclass' => 'center',  ),
             'upload_filesize'       =>   array ( 'title' => LAN_SIZE, 'type' => 'method', 'data' => 'int', 'width' => 'auto', 'help' => '', 'readParms' => '', 'writeParms' => '', 'class' => 'center', 'thclass' => 'center',  ),
             'upload_active'         =>   array ( 'title' => UPLLAN_69, 'type' => 'method', 'data' => 'int', 'width' => 'auto', 'help' => '', 'readParms' => '', 'writeParms' => array('singleOption' => true), 'class' => 'center', 'thclass' => 'center',  'batch' => true, 'filter'=>true),
             'upload_category'       =>   array ( 'title' => LAN_CATEGORY, 'type' => 'method', 'data' => 'int', 'width' => 'auto', 'batch' => true, 'filter' => true, 'help' => '', 'readParms' => array(), 'writeParms' => array(), 'class' => 'left', 'thclass' => 'left', 'validate' => true ),
-            'upload_owner'          =>   array ( 'title' => LAN_OWNER, 'type' => 'text', 'readonly'=>true, 'data' => 'str', 'width' => '10%', 'help' => '', 'readParms' => '', 'writeParms' => '', 'class' => 'left', 'thclass' => 'left',  ),
+            'upload_owner'          =>   array ( 'title' => LAN_OWNER, 'type' => 'method', 'readonly'=>true, 'data' => 'str', 'width' => '10%', 'help' => '', 'readParms' => '', 'writeParms' => '', 'class' => 'left', 'thclass' => 'left',  ),
 
             'options'               =>   array ( 'title' => LAN_OPTIONS, 'type' => '', 'data' => '', 'width' => '140px', 'thclass' => 'center last', 'class' => 'center last', 'forced' => '1',  ),
 		);		
@@ -198,19 +198,17 @@ class upload_ui extends e_admin_ui
      */
     public function beforeUpdate($new_data, $old_data, $id)
     {
-
-        if($new_data['upload_active'] && !e107::isInstalled('download'))
-        {
-            $this->getModel()->addValidationError(UPLLAN_62);
-			$new_data['upload_active'] = 0;
-            return $new_data;
+		if(isset($new_data['upload_category']))
+		{
+			list($catOwner, $catID) = array_pad(explode('__', $new_data['upload_category'], 2), 2, '');
+			$new_data['upload_category'] = (int) $catID;
+			$new_data['upload_owner'] = $catOwner;
 		}
 
-		// Make sure the upload_category contains only integers
-		// Make sure the owner correspondents to the category id
-		list($catOwner, $catID) = explode("__", $new_data['upload_category'], 2);
-		$new_data['upload_category'] = intval($catID);
-		$new_data['upload_owner'] = $catOwner;
+		if(!empty($new_data['upload_active']) && !$this->uploadHandler(array_merge($old_data, $new_data)))
+		{
+			$new_data['upload_active'] = 0;
+		}
 
 		return $new_data;
     }
@@ -237,9 +235,7 @@ class upload_ui extends e_admin_ui
             }
             else
             {
-                $owner = varset($new_data['upload_owner'],'download');
-                $obj = e107::getAddon($owner,'e_upload');
-                $config = $obj->config();
+                $config = $this->uploadHandler($new_data)->config();
                 $url = str_replace('{ID}',$did, $config['url']);
 
                 $link = '<br><a href="'.$url.'">'.UPLLAN_64.'</a>'; //FIXME Needs generic LAN for all areas, not just downloads.
@@ -273,10 +269,11 @@ class upload_ui extends e_admin_ui
             return 0;
         }
 
-		// Make sure the owner is not empty
-        $owner = vartrue($upload['upload_owner'], 'download');
-
-        $uploadObj = e107::getAddon($owner,'e_upload');
+        $uploadObj = $this->uploadHandler($upload);
+        if(!$uploadObj)
+        {
+            return false;
+        }
 
         $config =  $uploadObj->config(); // import configuration from e_upload
 
@@ -339,6 +336,36 @@ class upload_ui extends e_admin_ui
 
     }
 
+    /**
+     * The plugin that owns an upload stored with $owner; uploads from before owners were recorded have none and are download's.
+     *
+     * @param string $owner
+     * @return string
+     */
+    public function uploadOwner($owner)
+    {
+        return vartrue($owner, 'download');
+    }
+
+    /**
+     * The e_upload handler of the plugin that owns $upload.
+     *
+     * @param array $upload
+     * @return object|null null, after telling the administrator, when that plugin has none
+     */
+    private function uploadHandler($upload)
+    {
+        $owner = $this->uploadOwner(varset($upload['upload_owner']));
+        $handler = e107::getAddon($owner, 'e_upload');
+
+        if(!$handler)
+        {
+            e107::getMessage()->addError(e107::getParser()->lanVars(UPLLAN_ACTIVATION_REFUSED_OWNER_MISSING, htmlspecialchars($owner, ENT_QUOTES, 'UTF-8')));
+        }
+
+        return $handler;
+    }
+
 }
 				
 
@@ -347,25 +374,38 @@ class upload_form_ui extends e_admin_form_ui
 {
 	private function findKey($owner, $array,$value)
 	{
-		$searchKey = $owner."__".$value;
-
-		$ret = null;
+		$searchKey = $this->categoryKey($owner, $value);
 
 		foreach($array as $k=>$v)
 		{
 			if(is_array($v))
 			{
 				$ret = $this->findKey($owner,$v,$value);
+				if($ret !== null)
+				{
+					return $ret;
+				}
 			}
 			elseif($k == $searchKey)
 			{
-				$ret = $v;
+				return $v;
 			}
 
 		}
 
-		return $ret;
-	//	return print_a($array,true);
+		return null;
+	}
+
+	/**
+	 * The category selector's value for category $id of $owner.
+	 *
+	 * @param string $owner
+	 * @param int $id
+	 * @return string
+	 */
+	private function categoryKey($owner, $id)
+	{
+		return $owner.'__'.$id;
 	}
 
 
@@ -377,15 +417,13 @@ class upload_form_ui extends e_admin_form_ui
         switch($type)
         {
             case 'read':
-                  $owner =  $this->getController()->getListModel()->get('upload_owner');
-             return $this->findKey($owner, $opts[$owner], $value);
+                  $owner = $this->getController()->uploadOwner($this->getController()->getListModel()->get('upload_owner'));
+             return $this->findKey($owner, varset($opts[$owner], array()), $value);
             break;
 
 	        case 'write':
-	            $owner =  $this->getController()->getModel()->get('upload_owner');
-				//return $value."-- ".$owner; // $this->radio_switch('upload_active', $value, LAN_ACCEPT, LAN_PENDING, $options);
-				// make category editable instead of just displaying data
-				return e107::getForm()->select('upload_category', $opts, $value);
+	            $owner = $this->getController()->uploadOwner($this->getController()->getModel()->getIfPosted('upload_owner'));
+				return e107::getForm()->select('upload_category', $opts, $this->categoryKey($owner, $value));
             break;
 
             case 'batch':
@@ -470,6 +508,24 @@ class upload_form_ui extends e_admin_form_ui
             break;
         }
     }
+
+	/**
+	 * The plugin folder name an upload was submitted against, as text.
+	 *
+	 * @param string $value
+	 * @param string $type
+	 * @param array $options
+	 * @return string
+	 */
+	public function upload_owner($value, $type, $options = array())
+	{
+		if($type === 'write')
+		{
+			return $this->text('upload_owner', $value, 255);
+		}
+
+		return empty($value) ? '-' : $this->tp->toAttribute($value, true);
+	}
 }
 
 		

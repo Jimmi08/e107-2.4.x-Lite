@@ -169,7 +169,7 @@ class e_session
 
     /**
      * Session save method
-     * @var string files|db
+     * @var string db|files|nonblocking, or the name of another PHP session module
      */
     protected $_sessionSaveMethod = 'files';
 
@@ -183,6 +183,9 @@ class e_session
     protected $_namespace;
     protected $_name;
     protected static $_sessionStarted = false; // Fixes lost $_SESSION value problem.
+
+    /** @var bool whether this request's sign-in has been checked against its record, {@see e_session::confirmSignIn()} */
+    private static $_signInConfirmed = false;
 
     /**
      * Validation options
@@ -214,6 +217,9 @@ class e_session
         'httponly'   => true,
         'samesite'   => 'Lax',
     );
+
+    /** @var string the session cookie's path as the folder reads, where releases before the web path was encoded scoped it */
+    private $_earlierCookiePath = '';
 
     /**
      * Session data
@@ -956,6 +962,7 @@ public function getData($key = null, $clear = false)
         $this->_namespace = $namespace;
 
         $this->validate();
+        $this->dropEarlierSessionCookie();
         $this->validateSessionCookie();
     }
 
@@ -977,19 +984,9 @@ public function getData($key = null, $clear = false)
             session_save_path($this->_sessionSavePath);
         }
 
-        switch ($this->_sessionSaveMethod)
+        if (!isset($_SESSION))
         {
-            case 'db':
-                $session = new e_session_db;
-                session_set_save_handler($session);
-                break;
-
-            default:
-                if(!isset($_SESSION))
-                {
-                    session_module_name($this->_sessionSaveMethod);
-                }
-                break;
+            $this->installSaveHandler();
         }
 
         if (empty($this->_options['domain']))
@@ -1011,6 +1008,9 @@ public function getData($key = null, $clear = false)
             }
         }
 
+        $this->_earlierCookiePath = rawurldecode($this->_options['path']);
+        $this->_options['path'] = e107::cookiePath($this->_options['path']);
+
         // session name before options - problems reported on php.net
         if (!empty($sessionName))
         {
@@ -1028,6 +1028,37 @@ public function getData($key = null, $clear = false)
         session_start();
         self::$_sessionStarted = true;
         return $this;
+    }
+
+    /**
+     * Hand PHP the storage the save method names: core's own handler where it has one, PHP's module of that name otherwise, and the files module for "nonblocking" where it cannot reach its directory.
+     *
+     * @return void
+     */
+    private function installSaveHandler()
+    {
+        $method = $this->_sessionSaveMethod;
+
+        if ('db' === $method)
+        {
+            session_set_save_handler(new e_session_db(), true);
+            return;
+        }
+
+        if ('nonblocking' === $method)
+        {
+            $handler = new \e107\SessionHandlers\NonblockingFilesSessionHandler(session_save_path());
+
+            if ($handler->isReachable())
+            {
+                session_set_save_handler($handler, true);
+                return;
+            }
+
+            $method = $this->_sessionSaveMethod = 'files';
+        }
+
+        session_module_name($method);
     }
 
     /**
@@ -1109,7 +1140,7 @@ public function getData($key = null, $clear = false)
     public function setSessionId($sid = null)
     {
         // comma and minus allowed since 5.0
-        if (!empty($sid) && preg_match('#^[0-9a-zA-Z,-]+$#', $sid))
+        if (!empty($sid) && is_scalar($sid) && \e107\SessionHandlers\SessionId::isWellFormed((string) $sid))
         {
             session_id($sid);
         }
@@ -1180,6 +1211,44 @@ public function getData($key = null, $clear = false)
     }
 
     /**
+     * Drops the session cookie a browser kept from before the web path was encoded, scoped to the folder as it reads, which would otherwise be sent ahead of the one scoped to {@see e107::cookiePath()}.
+     *
+     * @return void
+     */
+    private function dropEarlierSessionCookie()
+    {
+        if (!empty($_SESSION['_cookie_session_path']) || headers_sent() || !function_exists('cookie'))
+        {
+            return;
+        }
+
+        if (isset($_COOKIE[session_name()]))
+        {
+            $this->expireEarlierSessionCookie();
+        }
+
+        $_SESSION['_cookie_session_path'] = $this->_options['path'];
+    }
+
+    /**
+     * Expires the session cookie at the path releases before the web path was encoded gave it, in the host-only form PHP sends and the domain form {@see cookie()} writes, unless that path is the current one, is not where the running script's address begins, or holds a space, a comma, a semicolon, a percent sign, a control character or a byte above ASCII.
+     *
+     * @return void
+     */
+    private function expireEarlierSessionCookie()
+    {
+        $earlier = $this->_earlierCookiePath;
+        $self = isset($_SERVER['PHP_SELF']) ? (string) $_SERVER['PHP_SELF'] : '';
+        if ($earlier === $this->_options['path'] || strpos($self, $earlier) !== 0 || !preg_match('#^/[\x21-\x24\x26-\x2B\x2D-\x3A\x3C-\x7E]*\z#', $earlier))
+        {
+            return;
+        }
+
+        eShims::setcookie(session_name(), '', 1, $earlier, (string) $this->_options['domain'], (bool) $this->_options['secure'], true);
+        cookie(session_name(), '', 1, $earlier, $this->_options['domain'], $this->_options['secure']);
+    }
+
+    /**
      * Reset session cookie lifetime
      * We reset session cookie on every (session_lifetime / 4) seconds
      * It's done by all session handler instances, they all share
@@ -1224,6 +1293,7 @@ public function getData($key = null, $clear = false)
     public function cookieDelete()
     {
         cookie(session_name(), null, null, $this->_options['path'], $this->_options['domain'], $this->_options['secure']);
+        $this->expireEarlierSessionCookie();
         return $this;
     }
 
@@ -1239,6 +1309,59 @@ public function getData($key = null, $clear = false)
 		return empty($_SESSION[e_COOKIE]);
 	}
 
+	/**
+	 * @return \e107\User\AccountSessions the sessions accounts are signed in with, as this request sees them
+	 */
+	public function getAccountSessions()
+	{
+		return new \e107\User\AccountSessions(
+			e107::getDb(),
+			max(3600, (int) ini_get('session.gc_maxlifetime')),
+			e107::getIPHandler()->getIP(),
+			isset($_SERVER['HTTP_USER_AGENT']) ? $_SERVER['HTTP_USER_AGENT'] : ''
+		);
+	}
+
+	/**
+	 * Notes that the signed-in session was seen among its account's sessions, records one from before records were kept, and signs it out when its record has been ended.
+	 *
+	 * @return bool FALSE when the session was signed out
+	 */
+	private function confirmSignIn()
+	{
+		$token = \e107\User\SignInToken::parse($_SESSION[e_COOKIE]);
+		$sessions = $this->getAccountSessions();
+
+		if ('' !== $token->handle())
+		{
+			$signedIn = $sessions->confirm($token->accountId(), $token->handle());
+		}
+		elseif (e107::getPref('disallowMultiLogin') && array() !== array_filter($sessions->sessionsOf($token->accountId()), function ($session) { return $session->startedAt() > 0; }))
+		{
+			$signedIn = false;
+		}
+		else
+		{
+			$signedIn = true;
+			$handle = $sessions->adopt($token->accountId());
+
+			if ('' !== $handle)
+			{
+				$_SESSION[e_COOKIE] = (string) $token->withHandle($handle);
+			}
+		}
+
+		if ($signedIn)
+		{
+			return true;
+		}
+
+		unset($_SESSION[e_COOKIE], $_SESSION[e_COOKIE.'_as']);
+		$this->regenerateId();
+
+		return false;
+	}
+
     /**
      * Validate current session
      * @return e_session
@@ -1246,6 +1369,13 @@ public function getData($key = null, $clear = false)
     public function validate()
     {
 		if ($this->isGuest()) return $this;
+
+		if (!self::$_signInConfirmed)
+		{
+			self::$_signInConfirmed = true;
+
+			if (!$this->confirmSignIn()) return $this;
+		}
 
         if (!isset($this->_data['_session_validate_data']))
         {
@@ -1637,7 +1767,7 @@ class e_core_session extends e_session
      */
     private static function hasSubmittedToken()
     {
-        return (isset($_POST['e-token']) || isset($_GET['e-token'])
+        return (isset($_POST['e-token']) || (self::queryTokens() !== array())
             || isset($_SERVER['HTTP_X_E_TOKEN']) || isset($_POST['e_token']));
     }
 
@@ -1684,6 +1814,7 @@ class e_core_session extends e_session
         $usesFetch = self::modeUsesFetchMetadata($mode);
 
         $vouched = ($usesFetch && self::fetchMetadataVouches($mode));
+        $navigated = ($vouched && self::fetchMetadataDescribes(array('navigate'), array('document')));
 
         // A token that does not validate is refused whatever the request was for,
         // including a GET, because e107 has state-changing GETs whose only guard
@@ -1691,26 +1822,29 @@ class e_core_session extends e_session
         // e107_admin/plugin.php, theme.php and language.php, which check for a
         // value but leave validating it to this method.
         //
-        // The browser can overrule that in a mode which asks it, but only by
-        // affirmatively vouching. A page cached from before an upgrade carries a
-        // stale token, and refusing it on a request the browser has already
-        // placed at this origin would recreate the lockout this replaces.
+        // The browser can overrule that in a mode which asks it, but only for a
+        // top-level navigation. A page cached from before an upgrade carries a
+        // stale token, and refusing the link or form followed from it would
+        // recreate the lockout this replaces.
         if($usesToken && self::hasSubmittedToken() && !$this->submittedTokenIsValid())
         {
-            return $vouched;
+            return $navigated;
         }
 
         // An e-token in the query string is e107's marker for a state-changing
         // GET. Those endpoints test that it is not empty and leave the rest to
         // this method, so in a mode that does not read tokens at all there would
         // be nothing between them and any non-empty value an attacker's <img> tag
-        // cares to supply. The browser has to place the request here instead.
+        // cares to supply. The browser has to describe a navigation, a frame of
+        // this origin or a script's request instead.
         //
         // Fetch Metadata can do what the token could not: protect a GET without
         // every ordinary inbound link having to carry something.
-        if(!$usesToken && isset($_GET['e-token']) && self::hasAmbientAuthority())
+        if(!$usesToken && (self::queryTokens() !== array()) && self::hasAmbientAuthority())
         {
-            return $vouched;
+            return $navigated
+                || ($vouched && self::fetchMetadataDescribes(array('cors', 'same-origin'), array('empty')))
+                || ($vouched && (self::fetchMetadata('FETCH_SITE') === 'same-origin') && self::fetchMetadataDescribes(array('navigate'), array('iframe')));
         }
 
         // Cross-site request forgery borrows ambient authority on a request the
@@ -1758,12 +1892,11 @@ class e_core_session extends e_session
      */
     private function submittedTokenIsValid()
     {
-        $submitted = array(
+        $submitted = array_merge(self::queryTokens(), array(
             isset($_POST['e-token']) ? $_POST['e-token'] : null,
-            isset($_GET['e-token']) ? $_GET['e-token'] : null,
             isset($_SERVER['HTTP_X_E_TOKEN']) ? $_SERVER['HTTP_X_E_TOKEN'] : null,
             isset($_POST['e_token']) ? $_POST['e_token'] : null, // '-' is not allowed in jQuery
-        );
+        ));
 
         $found = false;
 
@@ -1786,6 +1919,25 @@ class e_core_session extends e_session
     }
 
     /**
+     * Every e-token in the query, as PHP split it into $_GET and as e107 reads it decoded ({@see e_admin_request}, {@see eRequest::getQueryString()}).
+     *
+     * @return array
+     */
+    private static function queryTokens()
+    {
+        $tokens = isset($_GET['e-token']) ? array($_GET['e-token']) : array();
+
+        parse_str(str_replace('&amp;', '&', defined('e_QUERY') ? e_QUERY : eRequest::getQueryString()), $parsed);
+
+        if(isset($parsed['e-token']) && !in_array($parsed['e-token'], $tokens, true))
+        {
+            $tokens[] = $parsed['e-token'];
+        }
+
+        return $tokens;
+    }
+
+    /**
      * Does the browser say this request came from this site?
      *
      * Sec-Fetch-Site is a forbidden header name, so no document can set or forge
@@ -1799,12 +1951,12 @@ class e_core_session extends e_session
      */
     private static function fetchMetadataVouches($mode)
     {
-        if(empty($_SERVER['HTTP_SEC_FETCH_SITE']))
+        $site = self::fetchMetadata('FETCH_SITE');
+
+        if($site === '')
         {
             return false;
         }
-
-        $site = strtolower(trim($_SERVER['HTTP_SEC_FETCH_SITE']));
 
         if($site === 'same-origin')
         {
@@ -1841,12 +1993,7 @@ class e_core_session extends e_session
      */
     private static function fetchMetadataDisavows($mode)
     {
-        if(!self::modeUsesFetchMetadata($mode) || empty($_SERVER['HTTP_SEC_FETCH_SITE']))
-        {
-            return false;
-        }
-
-        if(strtolower(trim($_SERVER['HTTP_SEC_FETCH_SITE'])) === 'none')
+        if(!self::modeUsesFetchMetadata($mode) || in_array(self::fetchMetadata('FETCH_SITE'), array('', 'none'), true))
         {
             return false;
         }
@@ -1855,20 +2002,43 @@ class e_core_session extends e_session
     }
 
     /**
-     * @return bool whether the Origin header names a host this site serves
+     * Does the browser say this request is one of $modes fetching one of $dests, and not a prefetch or prerender?
+     *
+     * @param array $modes Sec-Fetch-Mode values
+     * @param array $dests Sec-Fetch-Dest values
+     * @return bool
+     */
+    private static function fetchMetadataDescribes(array $modes, array $dests)
+    {
+        return in_array(self::fetchMetadata('FETCH_MODE'), $modes, true)
+            && in_array(self::fetchMetadata('FETCH_DEST'), $dests, true)
+            && (self::fetchMetadata('PURPOSE') === '');
+    }
+
+    /**
+     * @param string $name the header after 'Sec-', in $_SERVER form, such as 'FETCH_SITE'
+     * @return string its value, trimmed and lower-cased, or '' when the browser did not send it
+     */
+    private static function fetchMetadata($name)
+    {
+        $key = 'HTTP_SEC_'.$name;
+
+        return empty($_SERVER[$key]) ? '' : strtolower(trim((string) $_SERVER[$key]));
+    }
+
+    /**
+     * @return bool whether the Origin header, or on a request that carries none the Referer, names a host this site serves
      */
     private static function originIsKnownHost()
     {
-        if(empty($_SERVER['HTTP_ORIGIN']))
+        $source = isset($_SERVER['HTTP_REFERER']) ? $_SERVER['HTTP_REFERER'] : '';
+
+        if(!empty($_SERVER['HTTP_ORIGIN']))
         {
-            // Every browser that sends Sec-Fetch-Site sends Origin on a POST, so
-            // there is no ordinary request this rejects. It has already claimed
-            // same-site, and turning an unplaceable client into a refusal buys
-            // nothing over accepting the claim the browser made.
-            return true;
+            $source = $_SERVER['HTTP_ORIGIN'];
         }
 
-        $host = parse_url($_SERVER['HTTP_ORIGIN'], PHP_URL_HOST);
+        $host = parse_url((string) $source, PHP_URL_HOST);
 
         if(empty($host))
         {
@@ -1934,6 +2104,9 @@ class e_core_session extends e_session
                 {
                     continue;
                 }
+
+                $hosts[] = $domain;
+                $hosts[] = 'www.' . $domain;
 
                 foreach(array_filter($languages) as $language)
                 {
@@ -2015,35 +2188,29 @@ class e_core_session extends e_session
 }
 
 /**
- * Database session handler
+ * {@see \e107\SessionHandlers\DatabaseSessionHandler} on the core database connection, with the accessors v2 callers have always had.
  */
-class e_session_db implements SessionHandlerInterface
+class e_session_db extends \e107\SessionHandlers\DatabaseSessionHandler
 {
-    /**
-     * Digest the session id is stored under, and the prefix that marks a row as
-     * carrying one. Must be a {@see hash_algos()} name.
-     */
-    const KEY_ALGO = 'sha256';
-
-    /**
-     * @var e_db
-     */
-    protected $_db = null;
-
-    /**
-     * Table name
-     * @var string
-     */
-    protected $_table = 'session';
-
-    /**
-     * @var int|null
-     */
-    protected $_lifetime = null;
-
     public function __construct()
     {
-        $this->_db = e107::getDb('session');
+        parent::__construct(e107::getDb('session'));
+    }
+
+    /**
+     * @param string $key
+     * @return string|false session data, '' when no live row holds that key
+     */
+    protected function readKey($key)
+    {
+        $rows = $this->readKeys(array($key));
+
+        if (false === $rows)
+        {
+            return false;
+        }
+
+        return isset($rows[$key]) ? $rows[$key] : '';
     }
 
     /**
@@ -2059,7 +2226,7 @@ class e_session_db implements SessionHandlerInterface
      */
     public function getTable()
     {
-        return $this->_table;
+        return parent::getTable();
     }
 
     /**
@@ -2077,15 +2244,7 @@ class e_session_db implements SessionHandlerInterface
      */
     public function getLifetime()
     {
-        if(null === $this->_lifetime)
-        {
-            $this->_lifetime = ini_get('session.gc_maxlifetime');
-            if(!$this->_lifetime)
-            {
-                $this->_lifetime = 3600;
-            }
-        }
-        return (int) $this->_lifetime;
+        return parent::getLifetime();
     }
 
     /**
@@ -2108,199 +2267,10 @@ class e_session_db implements SessionHandlerInterface
     }
 
     /**
-     * Open session, parameters are ignored (see e_session handler)
-     *
-     * @param string $path
-     * @param string $name
-     * @return bool
-     */
-    #[\ReturnTypeWillChange]
-    public function open($path, $name)
-    {
-        return true;
-    }
-
-    /**
-     * Close session
-     * @return bool
-     */
-    #[\ReturnTypeWillChange]
-    public function close()
-    {
-        $this->gc($this->getLifetime());
-        return true;
-    }
-
-    /**
-     * Get session data
-     * @param string $id
-     * @return string|false
-     */
-    #[\ReturnTypeWillChange]
-    public function read($id)
-    {
-        $data = $this->readKey(self::storageKey($id));
-
-        if('' === $data)
-        {
-            $legacy = $this->readKey(self::_sanitize($id));
-
-            if('' !== $legacy && false !== $legacy && $this->rekey(self::_sanitize($id), self::storageKey($id)))
-            {
-                $data = $legacy;
-            }
-        }
-
-        return $data;
-    }
-
-    /**
-     * Storage key for a session id.
-     *
-     * The id is the value of the visitor's session cookie, so a row keyed by it
-     * verbatim turns any read of this table into a set of live credentials.
-     * The algorithm is named in the value so {@see e_session_db::read()} can
-     * recognise a row written before this was introduced, and so the digest can
-     * be changed later without a second migration.
-     *
-     * @param string $id
-     * @return string
+     * {@inheritDoc}
      */
     public static function storageKey($id)
     {
-        return self::KEY_ALGO.'$'.hash(self::KEY_ALGO, self::_sanitize($id));
-    }
-
-    /**
-     * @param string $key
-     * @return string|false session data, '' when no live row holds that key
-     */
-    protected function readKey($key)
-    {
-        $data = false;
-        $check = $this->_db->createQueryBuilder()
-            ->select('session_data')->from($this->getTable())
-            ->where('session_id', $key)
-            ->where('session_expires', '>', time())
-            ->execute();
-        if($check)
-        {
-            $tmp = $this->_db->fetch();
-            $data = base64_decode($tmp['session_data']);
-        }
-        elseif(false !== $check)
-        {
-            $data = '';
-        }
-        return $data;
-    }
-
-    /**
-     * @param string $from
-     * @param string $to
-     * @return bool
-     */
-    protected function rekey($from, $to)
-    {
-        return false !== $this->_db->createQueryBuilder()
-            ->update($this->getTable())
-            ->set('session_id', $to)
-            ->where('session_id', $from)
-            ->execute();
-    }
-
-    /**
-     * Write session data
-     * @param string $id
-     * @param string $data
-     * @return bool
-     */
-    #[\ReturnTypeWillChange]
-    public function write($id, $data)
-    {
-        $values = array(
-            'session_expires' => (int) (time() + $this->getLifetime()),
-            'session_data'    => base64_encode($data),
-            'session_user'    => (int) defset('USERID'),
-        );
-        if(!self::_sanitize($id))
-        {
-            return false;
-        }
-
-        $id = self::storageKey($id);
-
-        $check = $this->_db->createQueryBuilder()
-            ->select('session_id')->from($this->getTable())
-            ->where('session_id', $id)
-            ->count();
-
-        if($check)
-        {
-            if(false !== $this->_db->createQueryBuilder()
-                ->update($this->getTable())
-                ->set('session_expires', $values['session_expires'])
-                ->set('session_data', $values['session_data'])
-                ->set('session_user', $values['session_user'])
-                ->where('session_id', $id)
-                ->execute())
-            {
-                return true;
-            }
-        }
-        else
-        {
-            $values['session_id'] = $id;
-            if($this->_db->createQueryBuilder()
-                ->insert($this->getTable())
-                ->values($values)
-                ->execute())
-            {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    /**
-     * Destroy session
-     * @param string $id
-     * @return bool
-     */
-    #[\ReturnTypeWillChange]
-    public function destroy($id)
-    {
-        foreach (array(self::storageKey($id), self::_sanitize($id)) as $key)
-        {
-            $this->_db->createQueryBuilder()
-                ->delete($this->getTable())
-                ->where('session_id', $key)
-                ->execute();
-        }
-        return true;
-    }
-
-    /**
-     * Garbage collection
-     * @param int $max_lifetime
-     * @return int|false
-     */
-    #[\ReturnTypeWillChange]
-    public function gc($max_lifetime)
-    {
-        return $this->_db->createQueryBuilder()
-            ->delete($this->getTable())
-            ->where('session_expires', '<', time())
-            ->execute();
-    }
-
-    /**
-     * Allow only well formed session id string
-     * @param string $id
-     * @return string
-     */
-    protected static function _sanitize($id)
-    {
-        return preg_replace('#[^0-9a-zA-Z,-]#', '', $id);
+        return parent::storageKey($id);
     }
 }

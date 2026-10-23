@@ -376,8 +376,7 @@ class theme_admin_ui extends e_admin_ui
 
 					// clear infopanel in admin dashboard.
 					e107::getCache()->clear('Infopanel_theme', true);
-					e107::getSession()->clear('addons-update-status');
-					e107::getSession()->set('addons-update-checked',false); // set to recheck it.
+					(new e107\Admin\AddonUpdateStatus(e107::getCache(), e107::getSession()))->clear();
 				}
 				else
 				{
@@ -896,7 +895,7 @@ class theme_admin_form_ui extends e_admin_form_ui
 
 			if($sitetheme == $path)
 			{
-				return "<span class='pull-right text-warning'><i class='fa fa-home'></i></span>";
+				return "<span class='pull-right float-right float-end text-warning'><i class='fa fa-home'></i></span>";
 			}
 
 			return '';
@@ -904,7 +903,7 @@ class theme_admin_form_ui extends e_admin_form_ui
 
 		$text =(!empty($curVal)) ? "<span class='label label-primary'><i class='fa fa-shopping-cart icon-white'></i> ".$curVal."</span>" : "<span class='label label-success'>".TPVLAN_76."</span>";
 
-		return '<span class="price pull-right">'.$text.'</span>';
+		return '<span class="price pull-right float-right float-end">'.$text.'</span>';
 	}
 
 

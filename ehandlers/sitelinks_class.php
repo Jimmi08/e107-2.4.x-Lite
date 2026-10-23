@@ -9,6 +9,7 @@
  */
 
 use e107\Database\QueryBuilder;
+use e107\Userclass\Membership;
 
 if (!defined('e107_INIT')) { exit; }
 e107::includeLan(e_LANGUAGEDIR.e_LANGUAGE.'/lan_sitelinks.php');
@@ -37,48 +38,21 @@ class sitelinks
 
 
 	/**
-	 * Build the shared sitelink query: all links visible to the current user's
-	 * classes, optionally restricted to a category. Caller appends ORDER BY and
-	 * the fetch terminal.
+	 * The links the visitor may see, optionally in one category. Caller appends
+	 * ORDER BY and the fetch terminal.
 	 *
 	 * @param int $cat category id; 0/negative means "all categories"
 	 * @return QueryBuilder a SELECT builder against the links table
 	 */
-	private function buildLinksQuery($cat = 1)
+	public static function buildLinksQuery($cat = 1)
 	{
-		$classList = explode(',', USERCLASS_LIST);
-
 		$qb = e107::getDb('sqlSiteLinks')->createQueryBuilder();
-		$qb->select('*')->from('links');
+		$qb->select('*')->from('links')->where(Membership::current()->predicate('link_class'));
 
 		if((int) $cat > 0)
 		{
 			$qb->where('link_category', (int) $cat);
 		}
-
-		$expr = $qb->expr();
-
-		// ABS(link_class) NOT IN (...): ABS() is not a plain identifier, so build
-		// the fragment with each class value bound. Empty list => always-true (1=1),
-		// matching the legacy SQL where USERCLASS_LIST is never empty in practice.
-		if($classList)
-		{
-			$placeholders = array();
-			foreach($classList as $class)
-			{
-				$placeholders[] = $qb->createNamedParameter($class);
-			}
-			$absNotIn = 'ABS('.$qb->quoteColumn('link_class').') NOT IN ('.implode(', ', $placeholders).')';
-		}
-		else
-		{
-			$absNotIn = '1=1';
-		}
-
-		$qb->where($expr->anyOf(
-			$expr->allOf($expr->gte('link_class', 0), $expr->in('link_class', $classList)),
-			$expr->allOf($expr->lt('link_class', 0), $absNotIn)
-		));
 
 		return $qb;
 	}
@@ -91,7 +65,7 @@ class sitelinks
 	{
 
 		$this->eLinkList = array(); // clear the array in case getlinks is called 2x on the same page.
-		$qb = $this->buildLinksQuery($cat);
+		$qb = sitelinks::buildLinksQuery($cat);
 		$qb->orderBy('link_order', 'ASC');
 		$rows = $qb->fetchAll();
 		if($rows)
@@ -422,6 +396,22 @@ class sitelinks
 
 
 	/**
+	 * Open a link's address in the popup window its link_open mode sizes, as an open_window() call
+	 *
+	 * @param e_parse $tp
+	 * @param string $url the address as stored or rendered, HTML entities included
+	 * @param int $mode link_open: 4 for 600x400, 5 for 800x600
+	 * @return string script for a single-quoted HTML attribute, the address in it a JavaScript string
+	 */
+	public static function popupScript(e_parse $tp, $url, $mode)
+	{
+		$size = ((int) $mode === 5) ? '800,600' : '600,400';
+
+		return 'open_window('.$tp->toJsString(html_entity_decode($url, ENT_QUOTES | ENT_HTML5, 'UTF-8')).','.$size.')';
+	}
+
+
+	/**
 	 * @param $linkInfo
 	 * @param $submenu
 	 * @param $style
@@ -494,7 +484,7 @@ class sitelinks
 		// Check for screentip regardless of URL.
 		if (isset($pref['linkpage_screentip']) && $pref['linkpage_screentip'] && $linkInfo['link_description'])
 		{
-			$screentip = " title = \"".$tp->toHTML($linkInfo['link_description'],"","value, emotes_off, defs, no_hook")."\"";
+			$screentip = " title = \"".$tp->toAttribute($linkInfo['link_description'], true)."\"";
 		}
 
 		// Check if its expandable first. It should override its URL.
@@ -524,8 +514,7 @@ class sitelinks
 
 			if ($linkInfo['link_open'] == 4 || $linkInfo['link_open'] == 5)
 			{
-				$dimen = ($linkInfo['link_open'] == 4) ? "600,400" : "800,600";
-				$href = " href=\"javascript:open_window('".$linkInfo['link_url']."',{$dimen})\"";
+				$href = " href='".$tp->toJsUrl(self::popupScript($tp, $linkInfo['link_url'], $linkInfo['link_open']))."'";
 			}
 			else
 			{
@@ -1843,54 +1832,9 @@ i.e-cat_users-32{ background-position: -555px 0; width: 32px; height: 32px; }
 	 * --------------- CODE-EFFICIENT APPROACH -------------------------
 	 * FIXME syscache
 	 */
-	/**
-	 * Build the base "links" query (visibility-filtered) shared by this class's
-	 * data methods. Mirrors sitelinks::buildLinksQuery(); every value is bound.
-	 *
-	 * @param int $cat link_category, or 0 for all
-	 * @return QueryBuilder
-	 */
-	private function buildLinksQuery($cat = 1)
-	{
-		$classList = explode(',', USERCLASS_LIST);
-
-		$qb = e107::getDb('sqlSiteLinks')->createQueryBuilder();
-		$qb->select('*')->from('links');
-
-		if((int) $cat > 0)
-		{
-			$qb->where('link_category', (int) $cat);
-		}
-
-		$expr = $qb->expr();
-
-		// ABS(link_class) NOT IN (...): ABS() is not a plain identifier, so build
-		// the fragment with each class value bound. Empty list => always-true (1=1).
-		if($classList)
-		{
-			$placeholders = array();
-			foreach($classList as $class)
-			{
-				$placeholders[] = $qb->createNamedParameter($class);
-			}
-			$absNotIn = 'ABS('.$qb->quoteColumn('link_class').') NOT IN ('.implode(', ', $placeholders).')';
-		}
-		else
-		{
-			$absNotIn = '1=1';
-		}
-
-		$qb->where($expr->anyOf(
-			$expr->allOf($expr->gte('link_class', 0), $expr->in('link_class', $classList)),
-			$expr->allOf($expr->lt('link_class', 0), $absNotIn)
-		));
-
-		return $qb;
-	}
-
 	public function initData($cat=1, $opt=array())
 	{
-		$qb = $this->buildLinksQuery($cat);
+		$qb = sitelinks::buildLinksQuery($cat);
 		$qb->orderBy('link_order', 'ASC')->addOrderBy('link_parent', 'ASC');
 
 		$outArray 	= array();

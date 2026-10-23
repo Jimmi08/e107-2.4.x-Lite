@@ -93,6 +93,17 @@ class e_search
 		return $this->params;
 	}
 
+	/**
+	 * The member an advanced author filter picked: the author field sends a user id, and an address may still carry a name.
+	 *
+	 * @param mixed $author the filter's value
+	 * @return int the user id, or 0 when the value is not one
+	 */
+	public function authorId($author)
+	{
+		return ((is_string($author) || is_int($author)) && preg_match('/^[1-9][0-9]{0,9}$/D', (string) $author)) ? (int) $author : 0;
+	}
+
 
 	/**
 	 * @param $table
@@ -101,7 +112,7 @@ class e_search
 	 * @param $weights
 	 * @param $handler
 	 * @param $no_results
-	 * @param $where
+	 * @param string|\e107\Database\SqlFragment $where developer SQL ending in AND, its values bound when it is a fragment
 	 * @param $order
 	 * @return array
 	 */
@@ -301,7 +312,7 @@ class e_search
 					$endweight = FALSE;
 					foreach ($crop_fields as $field_key => $field) 
 					{
-						$this -> text = $row[$field];
+						$this -> text = (string) $row[$field];
 						foreach ($this -> keywords['match'] as $k_key => $this -> query) 
 						{
 							if (stripos($this->text, $this->query) !== false)
@@ -454,16 +465,17 @@ class e_search
 	 * Add a handler's own where() fragment, which ends in the AND that joined it to the keyword clause it is now a predicate beside.
 	 *
 	 * @param \e107\Database\QueryBuilder $qb
-	 * @param string $where
+	 * @param string|\e107\Database\SqlFragment $where
 	 * @return void
 	 */
 	private function applyHandlerWhere($qb, $where)
 	{
 		$where_clause = preg_replace('/\s+AND$/i', '', trim((string) $where));
+		$params = ($where instanceof \e107\Database\SqlFragment) ? $where->getParameters() : array();
 
 		if ($where_clause !== '')
 		{
-			$qb->where($qb->raw($where_clause));
+			$qb->where($qb->raw($where_clause, $params));
 		}
 	}
 
@@ -601,19 +613,7 @@ class e_search
 
 
 	/**
-	 * Check whether a comment search handler is backed by an installed plugin.
-	 *
-	 * Handlers are keyed by the feature that provides them, and the entries
-	 * shipped for plugin-provided handlers claim 'core' as their directory, so
-	 * the plugin that has to be installed is named by the key whenever the
-	 * directory does not name one. A handler belonging to a plugin that
-	 * requires installation is only usable while that plugin is installed: its
-	 * title comes from the plugin's global language file, and core only
-	 * auto-loads those for installed plugins.
-	 *
-	 * Nothing prunes these prefs when a plugin is uninstalled or deleted, so
-	 * entries left behind by an old install are the norm rather than the
-	 * exception and must not be loaded blindly.
+	 * Check whether the plugin behind a comment search handler is on disk and either installed or declared usable without installation.
 	 *
 	 * @param string $key handler key from the search_prefs 'comments_handlers' array
 	 * @param array $value handler definition, eg. array('id' => 2, 'dir' => 'core', 'class' => '0')
@@ -625,12 +625,31 @@ class e_search
 		$dir = varset($value['dir'], 'core');
 		$plugin = ($dir === 'core') ? $key : $dir;
 
-		if(empty($plugin) || !e107::getPlug()->load($plugin)->getInstallRequired())
+		if(empty($plugin))
 		{
-			return true; // core feature, or a plugin that is usable without being installed
+			return true;
 		}
 
-		return e107::isInstalled($plugin);
+		if(!is_dir(e_PLUGIN.$plugin))
+		{
+			return false;
+		}
+
+		if(e107::isInstalled($plugin))
+		{
+			return true;
+		}
+
+		$file = e_PLUGIN.$plugin.'/plugin.xml';
+		$source = is_readable($file) ? (string) file_get_contents($file) : '';
+		$meta = ($source !== '') ? e107::getXml(false)->parseXml($source, false) : false;
+
+		if(empty($meta['@attributes']['name']))
+		{
+			return false;
+		}
+
+		return !e_plugin::isInstallRequired($meta);
 	}
 
 }

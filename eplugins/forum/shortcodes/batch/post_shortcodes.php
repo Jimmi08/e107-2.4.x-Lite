@@ -197,23 +197,27 @@ class plugin_forum_post_shortcodes extends e_shortcode
 		}
 		
 		
+		$editorText = null;
+		$authorPostsHtml = ($this->var['action'] !== 'edit') || e107::getSystemUser((int) $this->var['post_user'], false)->checkClass(e107::getPref('post_html', e_UC_MAINADMIN), false);
+
 		if(!empty($_POST['post']))
 		{
 			$text = $tp->post_toForm($_POST['post']);
+			$editorText = (string) $_POST['post'];
 		}
 		elseif($this->var['action'] == 'quote')
 		{
-			$post = preg_replace('#\[hide].*?\[/hide]#s', '', trim($this->var['post_entry']));
-			$quoteName = ($this->var['user_name'] ? $this->var['user_name'] : $this->var['post_user_anon']);
-			$text = $tp->toText("[quote={$quoteName}]\n".$post."\n[/quote]\n",true);
-			$text .= "\n\n";
-
-		//	$text = $tp->toForm($text);
+			$post = $this->quotablePost();
+			$quoteName = $tp->attributeValue($this->var['user_name'] ? $this->var['user_name'] : $this->var['post_user_anon']);
+			$quote = "[quote=%s]\n%s\n[/quote]\n";
+			$text = $tp->post_toForm(sprintf($quote, $quoteName, $post))."\n\n";
+			$editorText = sprintf($quote, $quoteName, $this->asTheEditorReadsIt($post))."\n\n";
 			$this->var['action'] = 'rp';
 		}
 		elseif($this->var['action'] == 'edit')
 		{
 			$text = $tp->toForm($this->var['post_entry']);
+			$editorText = $this->asTheEditorReadsIt($this->var['post_entry']);
 		}
 		else
 		{
@@ -223,11 +227,68 @@ class plugin_forum_post_shortcodes extends e_shortcode
 		$editor = is_object($this->forum) ? $this->forum->prefs->get('editor') : null;
 
 		//$wysiwyg = ($editor === 'bbcode') ? false : null;
-		$wysiwyg = is_null($editor) ? 'default' : $editor;
+		$wysiwyg = $authorPostsHtml ? (is_null($editor) ? 'default' : $editor) : false;
+
+		if($editorText !== null && e107::wysiwyg($wysiwyg, true) === 'tinymce4' && check_class(e107::getPref('post_html')))
+		{
+			$text = htmlspecialchars($editorText, ENT_NOQUOTES | ENT_SUBSTITUTE, 'UTF-8');
+		}
 
 		//return e107::getForm()->bbarea('post',$text,'forum','_common','large', array('wysiwyg' => $wysiwyg));
 		return e107::getForm()->bbarea('post',$text,'forum','forum','large', array('wysiwyg' => $wysiwyg));
 
+	}
+
+	/**
+	 * The post as written, without its [html] markers, with each [hide] block sealed unless the quoter may see it.
+	 *
+	 * @return string
+	 */
+	private function quotablePost()
+	{
+		$post = trim($this->var['post_entry']);
+		$blocks = e107::getBB()->hideBlocks($post);
+		$forum = is_object($this->forum) ? $this->forum : new e107forum();
+
+		if($blocks && !$forum->mayReadHidden($this->var['post_thread']))
+		{
+			$sealed = array();
+
+			foreach(array_reverse($blocks, true) as $index => $block)
+			{
+				$sealed[$index] = $forum->sealHidden($this->var['post_thread'], $this->var['post_id'], $block['content']);
+			}
+
+			$parts = array();
+			$at = 0;
+
+			foreach($blocks as $index => $block)
+			{
+				$parts[] = (string) substr($post, $at, $block['start'] - $at);
+				$parts[] = ($sealed[$index] === false) ? '' : '[hide]' . $sealed[$index] . '[/hide]';
+				$at = $block['start'] + $block['length'];
+			}
+
+			$post = implode('', $parts) . (string) substr($post, $at);
+		}
+
+		return str_replace(array('[html]', '[/html]'), '', $post);
+	}
+
+	/**
+	 * Give the rich-text editor the post's text as stored, with the quotes of a post stored as HTML decoded so that its attributes stay attributes.
+	 *
+	 * @param string $text
+	 * @return string
+	 */
+	private function asTheEditorReadsIt($text)
+	{
+		if(strpos($this->var['post_entry'], '[html]') !== 0)
+		{
+			return $text;
+		}
+
+		return str_replace(array('&quot;', '&#039;', '&#092;', '&amp;quot;', '&amp;#039;'), array('"', "'", '\\', '&quot;', '&#039;'), $text);
 	}
 
 	function sc_forum_post_buttons()
@@ -237,8 +298,7 @@ class plugin_forum_post_shortcodes extends e_shortcode
 
 		if($this->var['action'] == 'edit')
 		{
-			// This user created the thread and is editing the original post.
-			if($this->var['thread_datestamp'] == $this->var['post_datestamp'] && $this->var['thread_user'] == $this->var['post_user'])
+			if(!empty($this->var['initial_post']))
 			{
 				return $ret . "<input class='btn btn-primary button' type='submit' name='update_thread' value='".LAN_FORUM_3023."' />";
 			}
@@ -421,7 +481,7 @@ class plugin_forum_post_shortcodes extends e_shortcode
 	function sc_forum_post_poll($parm=null)
 	{
 
-		if(!e107::isInstalled('poll'))
+		if(!is_object($this->forum) || !$this->forum->canAttachPoll())
 		{
 			return null;
 		}
@@ -432,7 +492,7 @@ class plugin_forum_post_shortcodes extends e_shortcode
 			
 		$poll_form = $pollo -> renderPollForm($type);
 
-		if ($this->var['action'] == 'nt' && check_class($this->forum->prefs->get('poll')) && strpos(e_QUERY, 'edit') === false)
+		if ($this->var['action'] == 'nt' && strpos(e_QUERY, 'edit') === false)
 		{
 			if($parm == 'front')
 			{
@@ -453,7 +513,7 @@ class plugin_forum_post_shortcodes extends e_shortcode
 	function sc_postthreadas()
 	{
 		// Show when creating new topic or when editing the original starting post (make sure post is not a reply)
-		if (deftrue('MODERATOR') && ($this->var['action'] == "nt" || varset($this->var['thread_datestamp']) == $this->var['post_datestamp']))
+		if (deftrue('MODERATOR') && ($this->var['action'] == "nt" || !empty($this->var['initial_post'])))
 		{
 			$thread_sticky = (isset($_POST['threadtype']) ? $_POST['threadtype'] : vartrue($this->var['thread_sticky'], 0)); // no reference of 'head' $threadInfo['head']['thread_sticky']
 
@@ -501,7 +561,7 @@ class plugin_forum_post_shortcodes extends e_shortcode
 		if($this->var['action'] == "rp")
 		{
 			$pre = LAN_FORUM_1003;
-			$name = $tp->toHTML($this->var['thread_name'], false, 'no_hook, emotes_off');
+			$name = e107forum::threadNameHtml($this->var['thread_name'], $tp, e107::getBB());
 			$url = e107::url('forum', 'topic', $this->var);
 			$post = LAN_FORUM_2006;
 		}

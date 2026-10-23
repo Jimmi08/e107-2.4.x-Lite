@@ -96,7 +96,6 @@ if(!class_exists('forum_newforumposts_menu'))
 			}
 
 			$limit = (int) vartrue($this->menuPref['display'], 10);
-			$classList = array_map('intval', explode(',', USERCLASS_LIST));
 
 			$qb = e107::getDb('nfp')->createQueryBuilder();
 
@@ -149,8 +148,7 @@ if(!class_exists('forum_newforumposts_menu'))
 						->leftJoin('forum', 'f', $qb->expr()->compareColumns('f.forum_id', 't.thread_forum_id'))
 						->leftJoin('forum', 'fp', $qb->expr()->compareColumns('f.forum_parent', 'fp.forum_id'))
 						->whereColumn('f.forum_id', 't.thread_forum_id')
-						->whereIn('f.forum_class', $classList)
-						->whereIn('fp.forum_class', $classList)
+						->whereIn('t.thread_forum_id', $viewPerm)
 						->groupBy('t.thread_id')
 						->orderBy('t.thread_lastpost', 'DESC')
 						->setFirstResult(0)->setMaxResults($limit);

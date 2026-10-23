@@ -103,6 +103,7 @@ return [
     "LAN_PREVIOUS" => "Previous",
     "LAN_LOGIN" => "Login",
     "LAN_LOGOUT" => "Logout",
+    "LAN_LOGOUT_CONFIRM_QUESTION" => "Are you sure you want to log out?",
     "LAN_LOGOUT_REFUSED_TOKEN_MISSING" => "You have not been logged out, because that link carried no security token. Use the logout link in this site's own menu rather than a bookmark or a link on another site.",
     "LAN_VERIFY" => "Verify",
     "LAN_SETTINGS" => "Settings",
@@ -113,6 +114,7 @@ return [
     "LAN_FILE" => "File",
     "LAN_YOUTUBE_VIDEO" => "Youtube Video",
     "LAN_YOUTUBE_PLAYLIST" => "Youtube Playlist",
+    "LAN_SANITISED" => "Sanitised",
     "LAN_FILETYPES" => "Filetypes",
     "LAN_FILE_NOT_FOUND" => "File Not Found",
     "LAN_FILES" => "Files",
@@ -148,5 +150,6 @@ return [
     "LAN_PLEASEWAIT" => "Please Wait",
     "LAN_CHOOSE_FILE" => "Choose a file",
     "LAN_REQUIRED" => "Required",
+    "LAN_LINK_SCRIPT_SCHEME_REFUSED" => "Only members of the class that can post &lt;script&gt; and similar tags may save an address that starts with javascript:, vbscript: or data:.",
     "LAN_DEVELOPERMODE_CHECK" => "[b]Developer mode is currently enabled. Use this mode only when developing![/b] [br]Please disable developer mode when using your website in live production. When developer mode is enabled, sensitive information may be shown to the public!"
 ];

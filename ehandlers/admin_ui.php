@@ -278,7 +278,7 @@ class e_admin_request
 	 */
 	public function getModeName()
 	{
-		return strtolower(str_replace('-', '_', $this->getMode()));
+		return $this->canonicalizeMode($this->getMode());
 	}
 
 	/**
@@ -484,7 +484,14 @@ class e_admin_request
 	 */
 	public function camelize($str)
 	{
-		return implode('', array_map('ucfirst', explode('-', str_replace('_', '-', $str))));
+		$camel = '';
+
+		foreach(explode('-', str_replace('_', '-', (string) $str)) as $segment)
+		{
+			$camel .= eShims::strtoupper((string) substr($segment, 0, 1)).(string) substr($segment, 1);
+		}
+
+		return $camel;
 	}
 
 	/**
@@ -502,7 +509,7 @@ class e_admin_request
 	 */
 	public function canonicalizeAction($action)
 	{
-		return strtolower($this->camelize((string) $action));
+		return eShims::strtolower($this->camelize((string) $action));
 	}
 
 	/**
@@ -514,7 +521,7 @@ class e_admin_request
 	 */
 	public function canonicalizeMode($mode)
 	{
-		return strtolower(str_replace('-', '_', (string) $mode));
+		return eShims::strtolower(str_replace('-', '_', (string) $mode));
 	}
 }
 
@@ -2213,21 +2220,29 @@ class e_admin_controller
 		// access based on mode setting - general controller access
 		if(!empty($disallow) && in_array($currentAction, $disallow, true))
 		{
-			$request->setAction('e403');
-			e107::getMessage()->addError(LAN_NO_PERMISSIONS)
-				->addDebug('Controller action disallowed restriction triggered.');
-			return false;
+			return $this->refuseAccess('Controller action disallowed restriction triggered.');
 		}
 
 		// access based on $access settings - access per action
 		if(!empty($allow) && !in_array($currentAction, $allow, true))
 		{
-			$request->setAction('e403');
-			e107::getMessage()->addError(LAN_NO_PERMISSIONS)
-				->addDebug('Controller action not in allowed list restriction triggered.');
-			return false;
+			return $this->refuseAccess('Controller action not in allowed list restriction triggered.');
 		}
 		return true;
+	}
+
+	/**
+	 * Send the request to the 403 page, naming in the debug log the check that refused it.
+	 *
+	 * @param string $debug
+	 * @return bool false
+	 */
+	private function refuseAccess($debug)
+	{
+		$this->getRequest()->setAction('e403');
+		e107::getMessage()->addError(LAN_NO_PERMISSIONS)->addDebug($debug);
+
+		return false;
 	}
 
 	/**
@@ -2345,6 +2360,20 @@ class e_admin_controller
 	public function getDispatcher()
 	{
 		return e107::getRegistry('admin/ui/dispatcher');
+	}
+
+	/**
+	 * Whether this administrator holds the named action's route in the current mode.
+	 *
+	 * @param string $action
+	 * @return bool
+	 */
+	protected function hasModeRouteAccess($action)
+	{
+		$dispatcher = $this->getDispatcher();
+
+		return ($dispatcher instanceof e_admin_dispatcher)
+			&& $dispatcher->hasRouteAccess($this->getRequest()->getMode().'/'.$action);
 	}
 
 	/**
@@ -2568,21 +2597,69 @@ class e_admin_controller
 			$action = $this->getRequest()->getActionName();
 		}
 		$method = $this->toMethodName($action);
-		if(!method_exists($this, $method))
+		if(!$this->isActionMethod($method) || $this->endsInTheAjaxInfix($action))
 		{
-			$this->_log('Skipping ' .$method. '() (not found)');
-			$this->getRequest()->setAction($this->getDefaultAction());
+			$this->_log('Skipping ' .$method. '() (no page of its own)');
+			$default = $this->getDefaultAction();
+			$this->getRequest()->setAction($default);
+
+			if(!$this->hasModeRouteAccess($default) || $this->endsInTheAjaxInfix($default))
+			{
+				$this->refuseAccess('Default action restriction triggered: '.$this->getRequest()->getMode().'/'.$default);
+			}
+			else
+			{
+				$this->checkAccess();
+			}
 		}
 
 		// switch to 404 if needed
 		$method = $this->toMethodName($this->getRequest()->getActionName());
-		if(!method_exists($this, $method))
+		if(!$this->isActionMethod($method))
 		{
 			$this->_log('Skipping ' .$method. '() (not found)');
 			$this->getRequest()->setAction('e404');
 			$message = e107::getParser()->lanVars(LAN_UI_404_METHOD_ERROR, $method, true);
 			e107::getMessage()->add($message, E_MESSAGE_ERROR);
 		}
+	}
+
+	/**
+	 * Whether the action's page name ends in the ajax page suffix of {@see e_admin_controller::toMethodName()}, so its page would be another action's ajax page.
+	 *
+	 * @param string $action
+	 * @return bool
+	 */
+	private function endsInTheAjaxInfix($action)
+	{
+		$request = $this->getRequest();
+		$ajaxSuffix = $request->canonicalizeAction($this->toMethodName('', 'page', true));
+		$page = $request->canonicalizeAction($this->toMethodName($action, 'page', false));
+
+		return (string) substr($page, -strlen($ajaxSuffix)) === $ajaxSuffix;
+	}
+
+	/**
+	 * Whether a method named from the request is an action method: one the admin UI does not declare, or declares under the capitalised name {@see e_admin_request::camelize()} gives an action.
+	 *
+	 * @param string $method
+	 * @return bool
+	 */
+	private function isActionMethod($method)
+	{
+		if(!method_exists($this, $method))
+		{
+			return false;
+		}
+
+		if(!method_exists('e_admin_ui', $method))
+		{
+			return true;
+		}
+
+		$declared = new \e107\Reflection\ReflectionMethod('e_admin_ui', $method);
+
+		return strspn($declared->getName(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 0, 1) === 1;
 	}
 
 	/**
@@ -2633,7 +2710,7 @@ class e_admin_controller
 
 		// check for observer
 		$actionObserverName = $this->toMethodName($action, 'observer', e_AJAX_REQUEST);
-		if(method_exists($this, $actionObserverName))
+		if($this->isActionMethod($actionObserverName))
 		{
 			$this->_log('Executing ' .$actionObserverName. '()');
 			$this->$actionObserverName();
@@ -2657,7 +2734,7 @@ class e_admin_controller
 					if(strpos($key, 'etrigger_') === 0)
 					{
 						$actionTriggerName = $this->toMethodName($action.$request->camelize((string) substr($key, 9)), 'trigger', false);
-						if(method_exists($this, $actionTriggerName))
+						if($this->isActionMethod($actionTriggerName))
 						{
 							if($tokenChecked === false)
 							{
@@ -2742,7 +2819,7 @@ class e_admin_controller
 
 		// check for observer
 		$actionHeaderName = $this->toMethodName($action, 'header', false);
-		if(method_exists($this, $actionHeaderName))
+		if($this->isActionMethod($actionHeaderName))
 		{
 			$this->$actionHeaderName();
 		}
@@ -2778,7 +2855,7 @@ class e_admin_controller
 		// check for observer
 		$actionName = $this->toMethodName($action);
 		$ret = '';
-		if(!method_exists($this, $actionName)) // pre dispatch already switched to default action/not found page if needed
+		if(!$this->isActionMethod($actionName)) // pre dispatch already switched to default action/not found page if needed
 		{
 			$this->_log('Skipping ' .$actionName. '() (not found)');
 			e107::getMessage()->add('Action '.$actionName.' no found!', E_MESSAGE_ERROR);
@@ -3123,6 +3200,9 @@ class e_admin_controller_ui extends e_admin_controller
 	/** @var string  */
 	protected $listQry;
 
+	/** @var string|array SQL condition every row of this list meets, which the list, the edit form, the inline editor and the sort all select by, or column => value (a list of values for IN), which also pins those columns */
+	protected $listScope = '';
+
 	protected $pid;
 
 	protected $fields = array();
@@ -3387,20 +3467,25 @@ class e_admin_controller_ui extends e_admin_controller
 
 
 	/**
+	 * Whether the batch offers "Create Navigation Link": the list turns it on, and the administrator may create in this mode and manage navigation links.
+	 *
 	 * @return bool
 	 */
 	public function getBatchLink()
     {
-        return $this->batchLink;
+        return $this->batchLink && $this->hasModeRouteAccess('create') && e107::getUser()->checkAdminPerms('I');
     }
 
 
 	/**
+	 * Whether the batch offers "Create Featurebox Item": the list turns it on, the feature box plugin is installed, and the administrator may administer it and create in this mode.
+	 *
 	 * @return bool
 	 */
 	public function getBatchFeaturebox()
     {
-        return $this->batchFeaturebox;
+        return $this->batchFeaturebox && e107::isInstalled('featurebox')
+			&& e107::getUser()->checkPluginAdminPerms('featurebox') && $this->hasModeRouteAccess('create');
     }
 
 	/**
@@ -3800,7 +3885,7 @@ class e_admin_controller_ui extends e_admin_controller
 
 	/**
 	 * Set controller model
-	 * @param e_admin_model $model
+	 * @param e_admin_model $model Its save() must honour $from_post: {@see e_admin_controller_ui::_manageSubmit()} merges the posted data itself.
 	 * @return e_admin_controller_ui
 	 */
 	public function setModel($model)
@@ -4161,14 +4246,121 @@ class e_admin_controller_ui extends e_admin_controller
 	 */
 	protected function isTypedBatchTrigger($type)
 	{
-		return in_array($type, array('sefgen', 'bool', 'boolreverse', 'attach', 'deattach',
-			'attach_all', 'deattach_all', 'ucadd', 'ucremove', 'ucaddall', 'ucdelall'), true);
+		return in_array($type, $this->typedBatchCommands(), true);
+	}
+
+	/**
+	 * The batch commands that carry their target field in the trigger's second segment.
+	 *
+	 * @return string[]
+	 */
+	private function typedBatchCommands()
+	{
+		return array('sefgen', 'bool', 'boolreverse', 'attach', 'deattach',
+			'attach_all', 'deattach_all', 'ucadd', 'ucremove', 'ucaddall', 'ucdelall');
+	}
+
+	/**
+	 * The declared spelling of a core batch command, for any spelling that reaches the same handler.
+	 *
+	 * @param string $command leading segment of the posted batch trigger
+	 * @return string the declared spelling, or the command as posted when it names no core command
+	 */
+	private function batchCommand($command)
+	{
+		$request = $this->getRequest();
+		$canonical = $request->canonicalizeAction($command);
+
+		foreach(array_merge(array('delete', 'copy', 'export', 'url', 'featurebox'), $this->typedBatchCommands()) as $declared)
+		{
+			if($request->canonicalizeAction($declared) === $canonical)
+			{
+				return $declared;
+			}
+		}
+
+		return $command;
+	}
+
+	/**
+	 * The custom handler a batch command dispatches to, or null when it names none.
+	 *
+	 * @param string $command leading segment of the posted batch trigger
+	 * @param string $actionName
+	 * @return string|null method name, or null when the command has no handler of its own
+	 */
+	private function batchHandler($command, $actionName)
+	{
+		$name = $this->getRequest()->camelize($command);
+		$method = 'handle'.$actionName.$name.'Batch';
+
+		return ($name !== '' && method_exists($this, $method)) ? $method : null;
+	}
+
+	/**
+	 * The route a batch command writes through: delete for a delete, create for a copy, none for the export and the commands that write other tables, and edit for a field write or any other handler.
+	 *
+	 * @param string $command leading segment of the posted batch trigger, in its declared spelling
+	 * @param string $actionName
+	 * @return string|null
+	 */
+	private function batchRoute($command, $actionName)
+	{
+		if($command === 'delete')
+		{
+			return 'delete';
+		}
+
+		if($command === 'copy')
+		{
+			return 'create';
+		}
+
+		if($command === 'export' || $command === 'url' || $command === 'featurebox')
+		{
+			return null;
+		}
+
+		if($this->isTypedBatchTrigger($command) || $this->getFieldAttr($command, 'batch', false)
+			|| $this->batchHandler($command, $actionName) !== null)
+		{
+			return 'edit';
+		}
+
+		return null;
+	}
+
+	/**
+	 * Whether the list offers a core batch command, as {@see e_admin_form_ui::renderBatch()} draws it into the menu.
+	 *
+	 * @param string $command leading segment of the posted batch trigger, in its declared spelling
+	 * @return bool
+	 */
+	private function batchOffered($command)
+	{
+		switch($command)
+		{
+			case 'copy':
+				return (bool) $this->getBatchCopy();
+
+			case 'export':
+				return (bool) $this->getBatchExport();
+
+			case 'url':
+				return $this->getBatchLink();
+
+			case 'featurebox':
+				return $this->getBatchFeaturebox();
+		}
+
+		return true;
 	}
 
 	/**
 	 * Whether a posted batch trigger may address the named field: it must carry the 'batch' flag
 	 * {@see e_admin_form_ui::renderBatchFilter()} builds the menu from, and must not be declared
-	 * 'data' => false, the declaration {@see e_admin_ui::_setModel()} keeps out of dataFields.
+	 * 'data' => false, the declaration {@see e_admin_ui::_setModel()} keeps out of dataFields,
+	 * nor be a column {@see e_admin_controller_ui::$listScope} pins.
 	 * An omitted or null 'data' is the common case on a real column and stays permitted.
 	 *
 	 * @param string $field field segment of the posted batch trigger
@@ -4177,7 +4369,8 @@ class e_admin_controller_ui extends e_admin_controller
 	protected function isBatchField($field)
 	{
 		if(!is_string($field) || !$this->getFieldAttr($field, 'batch', false)
-			|| $this->getFieldAttr($field, 'data', null) === false)
+			|| $this->getFieldAttr($field, 'data', null) === false
+			|| array_key_exists($field, $this->pinnedColumns()))
 		{
 			e107::getMessage()->addDebug('Unhandled batch field: ' .var_export($field, true));
 
@@ -4260,6 +4453,7 @@ class e_admin_controller_ui extends e_admin_controller
 		$multi_name = $this->getFieldAttr('checkboxes', 'toggle', 'multiselect');
 		$selected = array_values($this->getPosted($multi_name, array()));
 		$trigger = $tp->toDB(explode('__', $batch_trigger));
+		$trigger[0] = $this->batchCommand($trigger[0]);
 
 		if(!empty($selected))
 		{
@@ -4269,11 +4463,26 @@ class e_admin_controller_ui extends e_admin_controller
 			}
 		}
 
+		$posted = count($selected);
+		$selected = array_values(array_filter($selected, array($this->getTreeModel(), 'hasNode')));
+
+		if(count($selected) < $posted)
+		{
+			e107::getMessage()->addWarning($tp->lanVars(LAN_UI_BATCH_ROWS_NO_LONGER_LISTED, $posted - count($selected), true));
+		}
+
 		// XXX An empty selection should always be permitted for custom batch methods which may apply changes to all records, not only selected ones.
 
 
 		if(strpos($batch_trigger, 'batch_') === 0)
 		{
+			if(!$this->hasModeRouteAccess('edit'))
+			{
+				e107::getMessage()->addError(LAN_NO_PERMISSIONS);
+
+				return $this;
+			}
+
 			list($tmp,$plugin,$command) = explode('_',$batch_trigger,3);
 			$this->setPosted(array());
 			$this->getRequest()->setAction('batch');
@@ -4292,8 +4501,18 @@ class e_admin_controller_ui extends e_admin_controller
 			$actionName = 'List';
 		}
 
-		if($this->isTypedBatchTrigger($trigger[0]) && !$this->isBatchField(varset($trigger[1], '')))
+		if($this->isTypedBatchTrigger($trigger[0]) && (!$this->isBatchField(varset($trigger[1], ''))
+			|| $this->getFieldAttr($trigger[1], 'linkAddress')))
 		{
+			return $this;
+		}
+
+		$route = $this->batchRoute($trigger[0], $actionName);
+
+		if(!$this->batchOffered($trigger[0]) || ($route !== null && !$this->hasModeRouteAccess($route)))
+		{
+			e107::getMessage()->addError(LAN_NO_PERMISSIONS);
+
 			return $this;
 		}
 
@@ -4500,7 +4719,7 @@ class e_admin_controller_ui extends e_admin_controller
 
 				e107::getMessage()->addDebug('Searching for custom batch method: ' .$method. '(' .implode(',', $selected). ',' .$value. ')');
 
-				if(method_exists($this, $method)) // callback handling
+				if($this->batchHandler($field, $actionName) !== null) // callback handling
 				{
 					$this->$method($selected, $value);
 					break;
@@ -4540,6 +4759,14 @@ class e_admin_controller_ui extends e_admin_controller
 			return array();
 		}
 		$filter = (array) $tp->toDB(explode('__', $filter_value));
+
+		$fields = $this->getFields();
+		$searched = ($this->getRequest()->canonicalizeAction($filter[0]) === 'searchfield') ? varset($filter[1]) : null;
+		if(isset($fields[$searched]) && $this->_refusesSearch($fields[$searched]))
+		{
+			return array();
+		}
+
 		$res = array();
 		switch($filter[0])
 		{
@@ -4779,7 +5006,7 @@ class e_admin_controller_ui extends e_admin_controller
 	}
 
 	/**
-	 * Build ajax auto-complete filter response
+	 * Build ajax auto-complete filter response from the columns the list search reads, taking the term as text.
 	 * @return string response markup
 	 */
 	protected function renderAjaxFilterResponse($listQry = '')
@@ -4788,8 +5015,13 @@ class e_admin_controller_ui extends e_admin_controller
 		$srch = $this->getPosted('searchquery');
 		$this->getRequest()->setQuery('searchquery', $srch); //_modifyListQry() is requiring GET String
 
+		$escape = function ($text)
+		{
+			return htmlspecialchars((string) $text, ENT_QUOTES, 'UTF-8', false);
+		};
+
 		$ret = '<ul>';
-		$ret .= '<li>'.$srch.'<span class="informal warning"> '.LAN_FILTER_LABEL_TYPED.'</span></li>'; // fix Enter - search for typed word only
+		$ret .= '<li>'.$escape($srch).'<span class="informal warning"> '.LAN_FILTER_LABEL_TYPED.'</span></li>'; // fix Enter - search for typed word only
 
 		$reswords = array();
 		if(trim($srch) !== '')
@@ -4798,6 +5030,16 @@ class e_admin_controller_ui extends e_admin_controller
 			$qry = $this->_modifyListQry(false, true, 0, 20, $listQry);
 			$this->_log('Filter ListQry: ' .$qry);
 			//file_put_contents(e_LOG.'uiAjaxResponseSQL.log', $qry."\n\n", FILE_APPEND);
+
+			$term = str_replace(array('\\*', '\\?'), array('\\S*', '\\S'), preg_quote($srch, '#'));
+			$searched = array();
+			foreach($this->getFields() as $key => $field)
+			{
+				if($this->_isSearchField($field, $srch))
+				{
+					$searched[$key] = true;
+				}
+			}
 
 			// Make query. $qry is a fully-assembled list query from _modifyListQry()
 			// (the request search term is escaped via toDB() upstream); this is an
@@ -4809,7 +5051,7 @@ class e_admin_controller_ui extends e_admin_controller
 				while ($res = $sql->fetch())
 				{
 					$tmp1 = array();
-					$tmp = array_values(preg_grep('#'.$srch.'#i', $res));
+					$tmp = array_values(preg_grep('#'.$term.'#i', array_intersect_key($res, $searched)));
 					foreach ($tmp as $w)
 					{
 						if($w == $srch)
@@ -4817,7 +5059,7 @@ class e_admin_controller_ui extends e_admin_controller
 							array_unshift($reswords, $w); //exact match
 							continue;
 						}
-						preg_match('#[\S]*('.$srch.')[\S]*#i', $w, $tmp1);
+						preg_match('#[\S]*('.$term.')[\S]*#i', $w, $tmp1);
 						if($tmp1[0])
 						{
 							$reswords[] = $tmp1[0];
@@ -4830,7 +5072,7 @@ class e_admin_controller_ui extends e_admin_controller
 			$reswords = array_unique($reswords);
 			if($reswords)
 			{
-				$ret .= '<li>'.implode("</li>\n\t<li>", $reswords).'</li>';
+				$ret .= '<li>'.implode("</li>\n\t<li>", array_map($escape, $reswords)).'</li>';
 			}
 		}
 
@@ -5137,6 +5379,13 @@ class e_admin_controller_ui extends e_admin_controller
 
 		$request    = $this->getRequest();
 
+		$fields = $this->getFields();
+		$sortField = $request->getQuery('field');
+		if(isset($fields[$sortField]) && $this->_refusesSearch($fields[$sortField]))
+		{
+			$request->setQuery('field', null);
+		}
+
 
 		$tablePath  = $this->getIfTableAlias(true, true).'.';
 		$tableFrom  = '`'.$this->getTableName(false, true).'`'.($this->getTableName(true) ? ' AS '.$this->getTableName(true) : '');
@@ -5194,6 +5443,13 @@ class e_admin_controller_ui extends e_admin_controller
 		}
 
 		$json = json_encode($data, JSON_PRETTY_PRINT);
+		$substituted = false;
+
+		if($json === false)
+		{
+			$json = json_encode($this->utf8Substituted($data), JSON_PRETTY_PRINT);
+			$substituted = true;
+		}
 
 		if($json === false)
 		{
@@ -5219,9 +5475,51 @@ class e_admin_controller_ui extends e_admin_controller
 			return false;
 		}
 
+		if($substituted)
+		{
+			e107::getMessage()->addWarning(e107::getParser()->lanVars(LAN_UI_HISTORY_UTF8_SUBSTITUTED, $id, true));
+		}
+
 		// Optional: Add debug logs for successful history creation
 		e107::getMessage()->addDebug("History saved for table '{$table}', record ID {$id}");
 		return true;
+	}
+
+	/**
+	 * The same row with every string valid UTF-8, each byte that is not standing as U+FFFD. Values only: the keys are column names.
+	 *
+	 * @param array $data The row {@see e_admin_controller_ui::backupToHistory()} could not encode.
+	 * @return array
+	 */
+	private function utf8Substituted($data)
+	{
+		array_walk_recursive($data, function(&$value)
+		{
+			if(!is_string($value) || preg_match('//u', $value) === 1)
+			{
+				return;
+			}
+
+			$substituted = preg_replace_callback('/[\x00-\x7F]+'
+				. '|[\xC2-\xDF][\x80-\xBF]'
+				. '|\xE0[\xA0-\xBF][\x80-\xBF]'
+				. '|[\xE1-\xEC\xEE\xEF][\x80-\xBF]{2}'
+				. '|\xED[\x80-\x9F][\x80-\xBF]'
+				. '|\xF0[\x90-\xBF][\x80-\xBF]{2}'
+				. '|[\xF1-\xF3][\x80-\xBF]{3}'
+				. '|\xF4[\x80-\x8F][\x80-\xBF]{2}'
+				. '|(.)/s', function($match)
+			{
+				return isset($match[1]) ? "\xEF\xBF\xBD" : $match[0];
+			}, $value);
+
+			if($substituted !== null)
+			{
+				$value = $substituted;
+			}
+		});
+
+		return $data;
 	}
 
 	/**
@@ -5242,6 +5540,119 @@ class e_admin_controller_ui extends e_admin_controller
 		return is_array($row) ? $row : array();
 	}
 
+	/**
+	 * Archives the stored row on its way out, answering whether the delete may go ahead and reporting a refusal.
+	 *
+	 * @param int|string $id The ID of the record about to be deleted.
+	 * @return bool True where there is nothing to archive or the archive was written; an override of {@see e_admin_controller_ui::backupToHistory()} that answers anything but true refuses the delete.
+	 */
+	protected function archiveBeforeDelete($id)
+	{
+		if($this->table === 'admin_history')
+		{
+			return true;
+		}
+
+		return $this->archiveBeforeChange($this->table, $this->pid, $id, 'delete', $this->historySnapshot($this->table, $this->pid, $id));
+	}
+
+	/**
+	 * Archives the values a change is about to overwrite, answering whether that change may go ahead.
+	 *
+	 * @param string     $table  The name of the table where the record resides.
+	 * @param string     $pid    The primary ID field of the record.
+	 * @param int|string $id     The ID of the record about to change.
+	 * @param string     $action The action being recorded ('update', 'restore' or 'delete').
+	 * @param array      $data   The stored values the change would overwrite; an empty set is nothing to record.
+	 * @param bool       $sessionMessage True where the caller redirects, so everything the write had to say is still there to read.
+	 * @return bool True where there is nothing to archive or the archive was written; false refuses the change, with the reason on the message stack.
+	 */
+	protected function archiveBeforeChange($table, $pid, $id, $action, $data, $sessionMessage = false)
+	{
+		if($table === 'admin_history' || !$data)
+		{
+			return true;
+		}
+
+		$archived = $this->backupToHistory($table, $pid, $id, $action, $data, false);
+
+		if(!$archived)
+		{
+			$refusal = $action === 'delete' ? LAN_UI_DELETE_REFUSED_NO_ARCHIVE : LAN_UI_CHANGE_REFUSED_NO_ARCHIVE;
+			e107::getMessage()->addError(e107::getParser()->lanVars($refusal, $id, true));
+		}
+
+		if($sessionMessage)
+		{
+			e107::getMessage()->moveToSession();
+		}
+
+		return $archived;
+	}
+
+
+	/**
+	 * Refuse a save whose link fields hold an address the current user may not save, saying so on each such field.
+	 *
+	 * @param array $fields   the link fields' names
+	 * @param array $new_data the record as posted, or the one field an inline edit sends
+	 * @param array $old_data the record as stored, empty for a new one
+	 * @return bool whether every address posted may be saved
+	 */
+	protected function maySaveLinkAddresses(array $fields, $new_data, $old_data)
+	{
+		$tp = e107::getParser();
+		$allowed = true;
+
+		foreach ($fields as $field)
+		{
+			if (!isset($new_data[$field]) || $tp->maySaveLinkAddress($new_data[$field], isset($old_data[$field]) ? $old_data[$field] : null))
+			{
+				continue;
+			}
+
+			$title = $this->getFieldAttr($field, 'title', $field);
+			$this->getModel()->addValidationError(LAN_LINK_SCRIPT_SCHEME_REFUSED, defset($title, $title));
+			$this->getUI()->addWarning($field);
+			$allowed = false;
+		}
+
+		if (!$allowed)
+		{
+			$this->getModel()->setMessages();
+		}
+
+		return $allowed;
+	}
+
+	/**
+	 * @return string[] the fields declared with 'linkAddress' => true, whose value is a link address {@see e_admin_controller_ui::maySaveLinkAddresses()} judges on every save
+	 * @throws LogicException when the model would store such a field in a form the check does not judge: under a data path, or as a type other than a string
+	 */
+	private function linkAddressFields()
+	{
+		$fields = array();
+
+		foreach ($this->getFields() as $name => $field)
+		{
+			if (!empty($field['linkAddress']))
+			{
+				$fields[$name] = $field;
+			}
+		}
+
+		$types = $fields ? $this->getModel()->getDataFields() : array();
+
+		foreach ($fields as $name => $field)
+		{
+			if (!empty($field['dataPath']) || (isset($types[$name]) && !in_array($types[$name], array('str', 'string'), true)))
+			{
+				throw new LogicException(get_class($this).' declares '.$name.' a link address, but the model would store it unjudged, under a data path or as a type other than a string.');
+			}
+		}
+
+		return array_keys($fields);
+	}
 
 	/**
 	 * Manage submit item
@@ -5259,7 +5670,14 @@ class e_admin_controller_ui extends e_admin_controller
 		$old_data = $model->getData();
 
 		$_posted = $this->getPosted();
+
+		if(!$this->holdSubmitToRoute($model, $_posted))
+		{
+			return false;
+		}
+
 		$this->convertToData($_posted);
+		$sent = $_posted;
 
 		if($callbackBefore && method_exists($this, $callbackBefore))
 		{
@@ -5285,6 +5703,12 @@ class e_admin_controller_ui extends e_admin_controller
 				}
 				$_posted = array_merge($_posted, $data);
 			}
+		}
+
+		if(!$this->maySaveLinkAddresses($this->linkAddressFields(), $_posted, $old_data))
+		{
+			$model->setPostedData($_posted);
+			return false;
 		}
 
 	//	$model->addMessageDebug(print_a($_posted,true));
@@ -5334,20 +5758,17 @@ class e_admin_controller_ui extends e_admin_controller
 
 
 		// Scenario I - use request owned POST data - toForm already executed
-		$model->setPostedData($_posted) // insert() or update() dbInsert();
-			->save(true, $forceSave);
+		$model->setPostedData($_posted)->mergePostedData(false, true, true);
 
-	    if ($id)
-	    {
-	        $new_data = $model->getData();
+		$overwritten = array_intersect_key($stored, array_diff_assoc($model->getData(), $stored));
 
-	        if($changes = array_diff_assoc($new_data, $stored))
-	        {
-	            $old_changed_data = array_intersect_key($stored, $changes);
-				$this->backupToHistory($this->table, $this->getPrimaryName(), $id, 'update', $old_changed_data, false);
-	        }
+		if(!$this->archiveBeforeChange($this->table, $this->getPrimaryName(), $id, 'update', $overwritten))
+		{
+			$model->setPostedData($this->postToRedraw($sent, $_posted));
+			return false;
+		}
 
-	    }
+		$model->save(false, $forceSave); // insert() or update() dbInsert();
 
 
 
@@ -5382,7 +5803,10 @@ class e_admin_controller_ui extends e_admin_controller
 			$this->doAfterSubmit($model->getId(), $noredirectAction);
 			return true;
 		}
-		elseif($callbackError && method_exists($this, $callbackError))
+
+		$model->setPostedData($this->postToRedraw($sent, $_posted));
+
+		if($callbackError && method_exists($this, $callbackError))
 		{
 			// suppress messages if callback returns TRUE
 			if($this->$callbackError($_posted, $old_data, $model->getId()) !== true)
@@ -5398,6 +5822,92 @@ class e_admin_controller_ui extends e_admin_controller
 		return false;
 	}
 
+
+	/**
+	 * Hold a submit to what its route writes: the create route inserts with the values the list's scope pins, and the edit and inline routes update the row they loaded and keep what it pins.
+	 *
+	 * @param e_admin_model $model
+	 * @param array $posted
+	 * @return bool false when an update has no loaded row to write
+	 */
+	private function holdSubmitToRoute($model, &$posted)
+	{
+		$action = $this->getRequest()->canonicalizeAction($this->getAction());
+
+		if($action === 'create')
+		{
+			$posted = array_merge($posted, array_filter($this->pinnedColumns(), 'is_scalar'));
+			$posted['etrigger_submit'] = 'create';
+
+			return true;
+		}
+
+		if($action !== 'edit' && $action !== 'inline')
+		{
+			return true;
+		}
+
+		if(!$model->getId())
+		{
+			$model->addMessageError(LAN_UPDATED_FAILED)->setMessages();
+
+			return false;
+		}
+
+		$posted = array_merge($posted, array_intersect_key($model->getData(), $this->pinnedColumns()));
+		$posted[$this->getPrimaryName()] = $model->getId();
+		$posted['etrigger_submit'] = 'update';
+
+		return true;
+	}
+
+	/**
+	 * The columns the column => value form of {@see e_admin_controller_ui::$listScope} pins, each with the value it declares.
+	 *
+	 * @return array
+	 */
+	protected function pinnedColumns()
+	{
+		return is_array($this->listScope) ? $this->listScope : array();
+	}
+
+	/**
+	 * The SQL condition {@see e_admin_controller_ui::$listScope} declares, '' for none.
+	 *
+	 * @return string
+	 * @throws LogicException when the column => value form names something that is not a column
+	 */
+	protected function listScopeCondition()
+	{
+		if(!is_array($this->listScope))
+		{
+			return (string) $this->listScope;
+		}
+
+		$sql = e107::getDb();
+		$conditions = array();
+
+		foreach($this->listScope as $column => $value)
+		{
+			$quoted = $sql->quoteIdentifier($column);
+
+			if($quoted === false)
+			{
+				throw new LogicException(get_class($this).' declares $listScope on '.var_export($column, true).', which is not a column name.');
+			}
+
+			$literals = array();
+
+			foreach((array) $value as $one)
+			{
+				$literals[] = is_int($one) ? (string) $one : $sql->quoteStringLiteral((string) $one);
+			}
+
+			$conditions[] = $quoted.(is_array($value) ? ' IN ('.implode(', ', $literals).')' : ' = '.$literals[0]);
+		}
+
+		return implode(' AND ', $conditions);
+	}
 
 	/**
 	 * Trigger 2 events. The $triggerName event, and a matching generic admin_ui_xxxxx event.
@@ -5461,6 +5971,24 @@ class e_admin_controller_ui extends e_admin_controller
 
 		return e107::getEvent()->trigger($triggerName, $eventData);
 
+	}
+
+	/**
+	 * @param array $sent the post as {@see e_admin_controller_ui::convertToData()} left it
+	 * @param array $saved that post with what the before-save callback returned merged in
+	 * @return array $saved with each string the callback changed decoded once, as the form shows it again
+	 */
+	private function postToRedraw(array $sent, array $saved)
+	{
+		foreach($saved as $key => $value)
+		{
+			if(is_string($value) && (!array_key_exists($key, $sent) || $sent[$key] !== $value))
+			{
+				$saved[$key] = html_entity_decode($value, ENT_QUOTES);
+			}
+		}
+
+		return $saved;
 	}
 
 	/**
@@ -5536,7 +6064,7 @@ class e_admin_controller_ui extends e_admin_controller
 
 			list($filterField, $filterValue) = $searchFilter;
 
-			if($filterField && $filterValue !== '' && isset($fields[$filterField]))
+			if($filterField && $filterValue !== '' && isset($fields[$filterField]) && !$this->_refusesSearch($fields[$filterField]))
 			{
 				if(!empty($fields[$filterField]['data']))
 				{
@@ -5655,8 +6183,7 @@ class e_admin_controller_ui extends e_admin_controller
 		$tableSFieldsArr[] = $tablePath . '*';
 		foreach($fields as $key => $var)
 		{
-			// disabled or system
-			if((!empty($var['nolist']) && empty($var['filter'])) || empty($var['type']) || empty($var['data']))
+			if(!$this->_isListColumn($var))
 			{
 				continue;
 			}
@@ -5734,14 +6261,18 @@ class e_admin_controller_ui extends e_admin_controller
 							$multiWordSearch = [];
 							foreach($fields as $key => $var)
 							{
-								if(!$this->_isSearchField($var, $splitSearchQuery) || $var['data'] === 'int' || $var['data'] === 'integer' || $var['type'] === 'int' || $var['type'] === 'integer')
+								if(!$this->_isSearchableType($var, $splitSearchQuery) || in_array(varset($var['data']), array('int', 'integer'), true) || $var['type'] === 'int' || $var['type'] === 'integer')
 								{
 									continue;
 								}
 
 								$multiWordSearch[] = $var['__tableField'] . " LIKE '%" . $splitSearchQuery . "%'";
 							}
-							$searchQry[] = '('.implode(' OR ', $multiWordSearch).')';
+
+							if($multiWordSearch)
+							{
+								$searchQry[] = '('.implode(' OR ', $multiWordSearch).')';
+							}
 						}
 					}
 
@@ -5910,13 +6441,24 @@ class e_admin_controller_ui extends e_admin_controller
 		}
 
 
+		$conditions = $searchQry;
+		$scope = $this->listScopeCondition();
+
+		if($scope !== '')
+		{
+			array_unshift($conditions, '('.$scope.')');
+		}
+
 		// where query
-		if(count($searchQry) > 0)
+		if(count($conditions) > 0)
 		{
 			// add more where details on the fly via $this->listQrySql['db_where'];
 			$qry .= (strripos($qry, 'where') === false) ? ' WHERE ' : ' AND '; // Allow 'where' in custom listqry
-			$qry .= implode(' AND ', $searchQry);
+			$qry .= implode(' AND ', $conditions);
+		}
 
+		if(count($searchQry) > 0)
+		{
 			// Disable tree (use flat list instead) when filters are applied
 			// Implemented out of necessity under https://github.com/e107inc/e107/issues/3204
 			// Horrible hack, but only needs this one line of additional code
@@ -5978,22 +6520,60 @@ class e_admin_controller_ui extends e_admin_controller
 	}
 
 	/**
-	 * Checks whether the field array should be searched oor not.
-	 * @param array $var
+	 * Whether the list search matches the term against a field: a list column of a searchable type that does not refuse search.
+	 * @param array $field
 	 * @param string $searchQuery
 	 * @return bool
 	 */
 	private function _isSearchField($field, $searchQuery)
 	{
+		return $this->_isListColumn($field) && $this->_isSearchableType($field, $searchQuery);
+	}
+
+	/**
+	 * Whether a term can be matched against a field by its type, which a field refusing search never can.
+	 * @param array $field
+	 * @param string $searchQuery
+	 * @return bool
+	 */
+	private function _isSearchableType($field, $searchQuery)
+	{
+		if($this->_refusesSearch($field))
+		{
+			return false;
+		}
+
 		$searchable_types = array('text', 'textarea', 'bbarea', 'url', 'ip', 'tags', 'email', 'int', 'integer', 'str', 'safestr', 'string', 'number'); //method? 'user',
 
-		if($field['type'] === 'method' && !empty($field['data']) && ($field['data'] === 'string' || $field['data'] === 'str' || $field['data'] === 'safestr' || $field['data'] === 'int'))
+		$type = varset($field['type']);
+
+		if($type === 'method' && !empty($field['data']) && ($field['data'] === 'string' || $field['data'] === 'str' || $field['data'] === 'safestr' || $field['data'] === 'int'))
 		{
 			$searchable_types[] = 'method';
 		}
 
-		return !empty($field['__tableField']) && trim($searchQuery) !== '' && in_array($field['type'], $searchable_types);
+		return !empty($field['__tableField']) && trim($searchQuery) !== '' && in_array($type, $searchable_types);
 
+	}
+
+	/**
+	 * Whether a field is a column the list reads, rather than a disabled or system entry.
+	 * @param array $field
+	 * @return bool
+	 */
+	private function _isListColumn($field)
+	{
+		return (empty($field['nolist']) || !empty($field['filter'])) && !empty($field['type']) && !empty($field['data']);
+	}
+
+	/**
+	 * Whether a field declares 'search' => false, which keeps request text from ever being matched against it.
+	 * @param array $field
+	 * @return bool
+	 */
+	private function _refusesSearch($field)
+	{
+		return isset($field['search']) && $field['search'] === false;
 	}
 }
 
@@ -6017,6 +6597,12 @@ class e_admin_ui extends e_admin_controller_ui
 	protected $sortParent;
 	protected $orderStep;
 	protected $treePrefix;
+
+	/**
+	 * The load condition {@see e_admin_ui::getModel()} last put on the edit model, '' for none.
+	 * @var string
+	 */
+	private $modelScope = '';
 
 
 	/**
@@ -6313,9 +6899,9 @@ class e_admin_ui extends e_admin_controller_ui
 			{
 				$data = $model->getData();
 
-				if($this->table !== 'admin_history' && ($stored = $this->historySnapshot($this->table, $this->pid, $id)))
+				if(!$this->archiveBeforeDelete($id))
 				{
-					$this->backupToHistory($this->table, $this->pid, $id, 'delete', $stored, false);
+					continue;
 				}
 
 				if($this->beforeDelete($data, $id))
@@ -6565,12 +7151,6 @@ class e_admin_ui extends e_admin_controller_ui
 	 */
 	protected function _add2featurebox($selected)
 	{
-		// FIX - don't allow if plugin not installed
-		if(!e107::isInstalled('featurebox'))
-		{
-			return false;
-		}
-
 		if(empty($selected))
 		{
 			return false;
@@ -6952,6 +7532,11 @@ class e_admin_ui extends e_admin_controller_ui
 		}
 
 
+		if($this->getFieldAttr($field, 'linkAddress') && !$this->maySaveLinkAddresses(array($field), array($field => $value), array()))
+		{
+			return null;
+		}
+
 		// $val is a literal (already toDB'd upstream): batchUpdate() binds it, so
 		// sanitize=false only means "do not re-encode", never "splice raw".
 		$cnt = $this->getTreeModel()->batchUpdate($field, $val, $selected, true, false);
@@ -6986,6 +7571,13 @@ class e_admin_ui extends e_admin_controller_ui
 			return; // always break on cancel!
 		}
 
+		if(!$this->hasModeRouteAccess('delete'))
+		{
+			e107::getMessage()->addError(LAN_NO_PERMISSIONS);
+
+			return;
+		}
+
 		$id = (int) key($posted);
 		if($this->deleteConfirmScreen && !$this->getPosted('etrigger_delete_confirm'))
 		{
@@ -6996,16 +7588,18 @@ class e_admin_ui extends e_admin_controller_ui
 
 		$this->setTriggersEnabled(false);
 		$data = array();
-		$model = $this->getTreeModel()->getNode($id); //FIXME - this has issues with being on a page other than the 1st. 
-
-		if($this->table !== 'admin_history' && ($stored = $this->historySnapshot($this->table, $this->pid, $id)))
-		{
-			$this->backupToHistory($this->table, $this->pid, $id, 'delete', $stored, false);
-		}
+		$model = $this->getTreeModel()->getNode($id);
 
 		if($model)
 		{
 			$data = $model->getData();
+
+			if(!$this->archiveBeforeDelete($id))
+			{
+				$this->getTreeModel()->setMessages();
+
+				return null;
+			}
 
 			if($this->beforeDelete($data, $id))
 			{
@@ -7037,13 +7631,9 @@ class e_admin_ui extends e_admin_controller_ui
 				$this->getTreeModel()->setMessages();// errors
 			}
 		}
-		else  //FIXME - this is a fall-back for the BUG which causes model to fail on all list pages other than the 1st
-		{ 
-			//echo "Couldn't get Node for ID: ".$id;
-			// exit; 
-			e107::getMessage()->addDebug('Model Failure Fallback in use!! ID: '.$id.' file: '.__FILE__. ' line: ' .__LINE__ ,'default',true);
-			$check = $this->getTreeModel()->delete($id);
-			return;			
+		else
+		{
+			e107::getMessage()->addError(LAN_DELETED_FAILED);
 		}
 	}
 
@@ -7121,6 +7711,20 @@ class e_admin_ui extends e_admin_controller_ui
 	}
 
 	/**
+	 * Refuse an ajax write with 403 Forbidden, recording in the ajax log what was missing.
+	 *
+	 * @param string $reason
+	 * @return void
+	 */
+	private function refuseAjaxWrite($reason)
+	{
+		$this->sendAjaxStatus(403, 'Forbidden');
+		echo defset('ADLAN_86', 'Forbidden');
+
+		$this->logajax($reason);
+	}
+
+	/**
 	 * Inline edit action
 	 * @return void
 	 */
@@ -7128,11 +7732,9 @@ class e_admin_ui extends e_admin_controller_ui
 	{
 		$this->logajax('Inline Ajax Triggered');
 
-		$protocol = (isset($_SERVER['SERVER_PROTOCOL']) ? $_SERVER['SERVER_PROTOCOL'] : 'HTTP/1.0');
 		if(!vartrue($_POST['name']) || !vartrue($this->fields[$_POST['name']]))
 		{
-			header($protocol.': 404 Not Found', true, 404);
-			header('Status: 404 Not Found', true, 404);
+			$this->sendAjaxStatus(404, 'Not Found');
 			echo LAN_FIELD. ': ' .$this->fields[$_POST['name']]. ': ' .LAN_NOT_FOUND; // Field: x: not found!
 			$this->logajax('Field not found');
 			return;
@@ -7152,23 +7754,23 @@ class e_admin_ui extends e_admin_controller_ui
 			$this->fields[$_name]['inline'] = true;
 		}
 
-		if(!empty($this->fields[$_name]['noedit']) || !empty($this->fields[$_name]['nolist']) || empty($this->fields[$_name]['inline']) || empty($_token) || !password_verify(session_id(),$_token))
-		{
-			header($protocol.': 403 Forbidden', true, 403);
-			header('Status: 403 Forbidden', true, 403);
-			echo ADLAN_86; //Forbidden
+		$mayWrite = $this->hasModeRouteAccess('edit');
+		$noedit = !empty($this->fields[$_name]['noedit']) || array_key_exists($_name, $this->pinnedColumns());
 
+		if(!$mayWrite || $noedit || !empty($this->fields[$_name]['nolist']) || empty($this->fields[$_name]['inline']) || empty($_token) || !password_verify(session_id(),$_token))
+		{
 			$result = var_export($this->fields[$_name], true);
 
 			$problem = array();
-			$problem['noedit'] = !empty($this->fields[$_name]['noedit']) ? 'yes' : 'no';
+			$problem['route'] = $mayWrite ? 'no' : 'yes';
+			$problem['noedit'] = $noedit ? 'yes' : 'no';
 			$problem['nolist'] = !empty($this->fields[$_name]['nolist']) ? 'yes' : 'no';
 			$problem['inline'] = empty($this->fields[$_name]['inline']) ? 'yes' : 'no';
 			$problem['token'] = empty($_token) ? 'yes' : 'no';
 			$problem['password'] = !password_verify(session_id(),$_token) ? 'yes' : 'no';
 
 			$result .= "\nForbidden Caused by: ".print_r($problem,true);
-			$this->logajax("Forbidden\nAction:".$this->getAction()."\nField (".$_name."):\n".$result);
+			$this->refuseAjaxWrite("Forbidden\nAction:".$this->getAction()."\nField (".$_name."):\n".$result);
 			return;
 		}
 
@@ -7195,32 +7797,52 @@ class e_admin_ui extends e_admin_controller_ui
 
 		if($model->hasError())
 		{
-			// using 400
-			header($protocol.': 400 Bad Request', true, 400);
-			header('Status: 400 Bad Request', true, 400);
-			$this->logajax('Bad Request');
-			// DEBUG e107::getMessage()->addError('Error test.', $model->getMessageStackName())->addError('Another error test.', $model->getMessageStackName());
-
-
-			if(E107_DEBUG_LEVEL)
-			{
-				$message = e107::getMessage()->get('debug', $model->getMessageStackName(), true);
-			}
-			else
-			{
-				$message = e107::getMessage()->get('error', $model->getMessageStackName(), true);
-			}
-
-			if(!empty($message))
-			{
-				echo implode(' ', $message);
-			}
-			$this->logajax(implode(' ', $message));
+			$this->refuseInlineEdit($model->getMessageStackName());
 			return;
 		}
 
 		//TODO ? afterInline trigger?
-		$res = $this->_manageSubmit('beforeUpdate', 'afterUpdate', 'onUpdateError', 'edit');
+		if($this->_manageSubmit('beforeUpdate', 'afterUpdate', 'onUpdateError', 'edit') === false)
+		{
+			$this->refuseInlineEdit('default');
+		}
+	}
+
+	/**
+	 * Answer an inline edit that was not saved with 400 Bad Request and, as text for the editor to show, the messages that say why.
+	 *
+	 * @param string $stack the message stack that holds them
+	 * @return void
+	 */
+	private function refuseInlineEdit($stack)
+	{
+		$this->sendAjaxStatus(400, 'Bad Request');
+		$this->logajax('Bad Request');
+
+		$messages = (array) e107::getMessage()->get('error', $stack, true);
+
+		if(E107_DEBUG_LEVEL)
+		{
+			$messages = array_merge($messages, (array) e107::getMessage()->get('debug', $stack, true));
+		}
+
+		$message = html_entity_decode(strip_tags(implode(' ', $messages)), ENT_QUOTES, 'UTF-8');
+
+		echo $message;
+		$this->logajax($message);
+	}
+
+	/**
+	 * @param int    $code   the HTTP status an ajax request is answered with
+	 * @param string $reason its reason phrase
+	 * @return void
+	 */
+	private function sendAjaxStatus($code, $reason)
+	{
+		$protocol = (isset($_SERVER['SERVER_PROTOCOL']) ? $_SERVER['SERVER_PROTOCOL'] : 'HTTP/1.0');
+
+		header($protocol.' '.$code.' '.$reason, true, $code);
+		header('Status: '.$code.' '.$reason, true, $code);
 	}
 
 	// Temporary - but useful. :-)
@@ -7254,6 +7876,12 @@ class e_admin_ui extends e_admin_controller_ui
 	 */
 	public function SortAjaxPage()
 	{
+		if(!$this->hasModeRouteAccess('edit'))
+		{
+			$this->refuseAjaxWrite("Forbidden\nAction:".$this->getAction()."\nRoute: the mode's edit route is not this administrator's");
+			return;
+		}
+
 		if(!isset($_POST['all']) || empty($_POST['all']))
 		{
 			return;
@@ -7273,10 +7901,9 @@ class e_admin_ui extends e_admin_controller_ui
 		}
 		else // Reset all the order fields first.
 		{
-			$sql->createQueryBuilder()->update($this->table)
-				->set($this->sortField, 999)
-				->execute();
-			$this->_log('Sort Qry ('.$this->table.'): '.$this->sortField.' = 999 WHERE 1');
+			$reset = $this->scopedUpdate()->set($this->sortField, 999);
+			$reset->execute();
+			$this->_log('Sort Qry: '.$reset->getSQL());
 		}
 
 
@@ -7292,7 +7919,7 @@ class e_admin_ui extends e_admin_controller_ui
 			list($tmp,$id) = explode('-', $row, 2);
 			$id = preg_replace('/[^\w\-:.]/', '', $id);
 
-			if($sql->createQueryBuilder()->update($this->table)
+			if($this->scopedUpdate()
 				->set($this->sortField, $c)
 				->where($this->pid, $id)
 				->execute() !== false)
@@ -7317,25 +7944,14 @@ class e_admin_ui extends e_admin_controller_ui
 
 		$changed = $c - $step;
 
-		// User-variable derived-table UPDATE (vendor-specific @n counter) that the
-		// query builder cannot express; values are bound, the dynamic sort column
-		// identifier is validated fail-closed via quoteIdentifier().
-		$sortFieldId = $sql->quoteIdentifier($this->sortField);
-		if($sortFieldId === false)
-		{
-			$this->_log('Sort Qry: invalid sort field identifier: '.$this->sortField);
-			$result = false;
-		}
-		else
-		{
-			$qry = 'UPDATE `#' .$this->table. '` e, (SELECT @n := :n_init) m  SET e.' .$sortFieldId. ' = @n := @n + :step WHERE ' .$sortFieldId. ' > :threshold';
-			$result = $sql->execute($qry, array(
-				'n_init'    => (int) $changed,
-				'step'      => (int) $step,
-				'threshold' => (int) $changed,
-			));
-			$this->_log('Sort Qry: '.$qry);
-		}
+		$sql->execute('SET @n := :n_init', array('n_init' => (int) $changed));
+
+		$renumber = $this->scopedUpdate();
+		$result = $renumber
+			->setExpression($this->sortField, $renumber->raw('@n := @n + :step', array('step' => (int) $step)))
+			->where($this->sortField, '>', (int) $changed)
+			->execute();
+		$this->_log('Sort Qry: '.$renumber->getSQL());
 
 
 		// ------------ Fix Child Order when parent is used. ----------------
@@ -7386,6 +8002,19 @@ class e_admin_ui extends e_admin_controller_ui
 	//	e107::getLog()->addDebug($qry)->toFile('SortAjax','Admin-UI Ajax Sort Log', true);
 
 
+	}
+
+	/**
+	 * An UPDATE of this list's table, held to the rows {@see e_admin_controller_ui::$listScope} selects.
+	 *
+	 * @return \e107\Database\QueryBuilder
+	 */
+	private function scopedUpdate()
+	{
+		$update = e107::getDb()->createQueryBuilder()->update($this->table);
+		$scope = $this->listScopeCondition();
+
+		return $scope === '' ? $update : $update->where($update->raw($scope));
 	}
 
 	/**
@@ -7654,7 +8283,10 @@ class e_admin_ui extends e_admin_controller_ui
 	}
 
 	/**
+	 * Save the options this screen declares, {@see e_admin_ui::getPrefs()}, and no other posted key.
+	 *
 	 * @return void
+	 * @throws LogicException for a preference declared a link address, which this save does not judge
 	 */
 	public function PrefsSaveTrigger()
 	{
@@ -7670,15 +8302,20 @@ class e_admin_ui extends e_admin_controller_ui
 			$data = $tmp;
 		}
 
-		foreach($this->prefs as $k=>$v) // fix for empty checkboxes - need to save a value.
+		foreach($this->getPrefs() as $k=>$v) // fix for empty checkboxes - need to save a value.
 		{
+			if(!empty($v['linkAddress']))
+			{
+				throw new LogicException(get_class($this).' declares the preference '.$k.' a link address, which a preferences save does not judge.');
+			}
+
 			if(!isset($data[$k]) && $v['data'] !== false && ($v['type'] === 'checkboxes' || $v['type'] === 'checkbox'))
 			{
 				$data[$k] = null;
 			}
 		}
 
-		foreach($data as $key=>$val)
+		foreach(array_intersect_key($data, $this->getPrefs()) as $key=>$val)
 		{
 
 			if(!empty($this->prefs[$key]['multilan']))
@@ -7952,6 +8589,53 @@ class e_admin_ui extends e_admin_controller_ui
 	}
 
 	/**
+	 * The edit model, under the list scope as it stands when the model is asked for rather than when it was built.
+	 *
+	 * @return e_admin_model
+	 */
+	public function getModel()
+	{
+		$model = parent::getModel();
+		$scope = $this->editScope();
+
+		if($scope !== '')
+		{
+			$model->setParam('db_where', $scope);
+		}
+		elseif($this->modelScope !== '' && $model->getParam('db_where') === $this->modelScope)
+		{
+			$model->setParam('db_where', null);
+		}
+
+		$this->modelScope = $scope;
+
+		return $model;
+	}
+
+	/**
+	 * The condition the edit form and the inline editor load a row under, which {@see e_admin_controller_ui::$listScope} sets.
+	 *
+	 * @return string
+	 * @throws LogicException when a list scope is declared beside an editQry, which the scope cannot be added to
+	 */
+	private function editScope()
+	{
+		$scope = $this->listScopeCondition();
+
+		if($scope === '')
+		{
+			return '';
+		}
+
+		if(!empty($this->editQry))
+		{
+			throw new LogicException(get_class($this).' declares both $listScope and $editQry; put the scope in $editQry and drop $listScope.');
+		}
+
+		return 'AND ('.$scope.')';
+	}
+
+	/**
 	 * Set current tree
 	 * @return e_admin_ui
 	 */
@@ -8087,10 +8771,9 @@ class e_admin_form_ui extends e_form
 
 		if($mode === 'read')
 		{
+			$inlinePassWillDrawIt = empty($controller->getFieldAttr($treePrefixField, 'noedit')) && !empty($parm['editable']);
 
-			$inline = $this->getController()->getFieldAttr($treePrefixField,'inline');
-
-			if($inline === true)
+			if($inlinePassWillDrawIt)
 			{
 				return $curVal;
 			}
@@ -8354,6 +9037,11 @@ class e_admin_form_ui extends e_form
 			$controller->setBatchCopy(false);
 		}
 
+		if(isset($fields['options']['readParms']) && !is_array($fields['options']['readParms']))
+		{
+			parse_str($fields['options']['readParms'], $fields['options']['readParms']);
+		}
+
 		if(!$controller->getDispatcher()->hasRouteAccess($deleteRoute)) // disable the delete button and batch delete.
 		{
 			$fields['options']['readParms']['deleteClass'] = e_UC_NOBODY;
@@ -8363,7 +9051,7 @@ class e_admin_form_ui extends e_form
 		if(!$controller->getDispatcher()->hasRouteAccess($editRoute))
 		{
 			$fields['options']['readParms']['editClass'] = e_UC_NOBODY; // display the edit button.
-			foreach($options[$id]['fields'] as $k=>$v) // disable inline editing.
+			foreach($fields as $k=>$v) // disable inline editing.
 			{
 				$fields[$k]['inline'] = false;
 			}
@@ -8841,12 +9529,6 @@ class e_admin_form_ui extends e_form
 			$mes = e107::getMessage();
 			$mes->add("Cannot display Batch drop-down as 'checkboxes' was not found in \$fields array.", E_MESSAGE_DEBUG);
 			return '';
-		}
-
-		// FIX - don't show FB option if plugin not installed
-		if(!e107::isInstalled('featurebox'))
-		{
-			$options['featurebox'] = false;
 		}
 
 		// TODO - core ui-batch-option class!!! REMOVE INLINE STYLE!

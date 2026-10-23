@@ -69,7 +69,7 @@ class page_search extends e_search // include plugin-folder in the name.
 		$search = array(
 			'name'			=> LAN_PLUGIN_PAGE_NAME ,
 			'table'			=> 'page AS p LEFT JOIN #page_chapters AS c ON p.page_chapter = c.chapter_id ',
-			'return_fields'	=> array('p.page_id', 'p.page_title', 'p.page_sef', 'p.page_text', 'p.page_metadscr', 'p.page_chapter', 'p.page_datestamp', 'p.menu_image'),
+			'return_fields'	=> array('p.page_id', 'p.page_title', 'p.page_sef', 'p.page_text', 'p.page_metadscr', 'p.page_metakeys', 'p.page_fields', 'p.page_chapter', 'p.page_datestamp', 'p.menu_image'),
 			'search_fields'	=> array('p.page_title' => '1.2', 'p.page_text' => '0.6', 'p.page_metakeys'=> '1.0', 'p.page_fields' => '0.5'), // fields and their weights.
 	
 			'order'			=> array('page_datestamp' => 'DESC'),
@@ -136,14 +136,18 @@ class page_search extends e_search // include plugin-folder in the name.
 
 		$time = time();
 
-		$qry = " (c.chapter_visibility IN (".USERCLASS_LIST.") OR p.page_chapter = 0) AND p.page_class IN (".USERCLASS_LIST.") AND p.page_text != '' AND ";
+		$visitor = \e107\Userclass\Membership::current();
+		$chapter = $visitor->predicate('c.chapter_visibility');
+		$page = $visitor->predicate('p.page_class');
+
+		$qry = " (".$chapter->getSql()." OR p.page_chapter = 0) AND ".$page->getSql()." AND p.page_text != '' AND ";
 
 		if(!empty($parm['cat']) && $parm['cat'] != 'all')
 		{
 			$qry .= " p.page_chapter='".intval($parm['cat'])."' AND";	
 		}
 
-		return $qry;
+		return \e107\Database\SqlFragment::raw($qry, $chapter->getParameters() + $page->getParameters());
 
 		/*
 

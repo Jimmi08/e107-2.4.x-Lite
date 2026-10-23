@@ -830,7 +830,7 @@ if(($pref['membersonly_enabled'] && !isset($_E107['allow_guest'])) || ($pref['ma
 
 // ------------------------------------------------------------------------
 
-if(!isset($_E107['no_prunetmp']))
+if(!isset($_E107['no_prunetmp']) && mt_rand(1, 100) === 1)
 {
 	$sql->createQueryBuilder()->delete('tmp')
 		->where('tmp_time', '<', time() - 300)
@@ -857,7 +857,15 @@ if (e107::getUser()->isUser())
 {
 	if (logout_refused())
 	{
-		e107::getMessage()->addError(defset('LAN_LOGOUT_REFUSED_TOKEN_MISSING', 'You have not been logged out, because that link carried no security token. Use the logout link in this site\'s own menu rather than a bookmark or a link on another site.'));
+		if (empty($_E107['single_entry']))
+		{
+			e107::getRedirect()->go(SITEURL.'index.php?'.\e107\User\LogoutConfirmation::QUERY_WORD, true, 303);
+			exit();
+		}
+		elseif (empty($_E107['route_table']))
+		{
+			e107::getMessage()->addError(defset('LAN_LOGOUT_REFUSED_TOKEN_MISSING', 'You have not been logged out, because that link carried no security token. Use the logout link in this site\'s own menu rather than a bookmark or a link on another site.'));
+		}
 	}
 	elseif (logout_requested())
 	{
@@ -1823,6 +1831,8 @@ function cookie($name, $value, $expire=0, $path = e_HTTP, $domain = '', $secure 
 		$path = '/';
 	}
 	
+	$path = e107::cookiePath($path);
+
 	if($samesite === '')
 	{
 		eShims::setcookie($name, $value, $expire, $path, $domain, $secure, true);
@@ -1878,6 +1888,13 @@ function message_handler($mode, $message, $line = 0, $file = '')
 
 
 
+/**
+ * List a user's classes by id, with the fixed classes their account gives them; without a $uid, only the classes assigned to the current user directly, none that they hold through the class tree.
+ *
+ * @deprecated v2.3.13 Its two forms disagree: given a $uid it reads the classes through e107::user(), inherited ones included, but without one it reads USERCLASS, which leaves them out. Use {@see e_user_model::getClassList()}, or {@see e_user_model::checkClass()} with $allowMain false, on e107::getSystemUser($uid, false) instead; with $allowMain true, checkClass() counts the main administrator in every class.
+ * @param int|string $uid a user id, or '' for the current user
+ * @return string comma-separated class ids
+ */
 function class_list($uid = '')
 {
 	$clist = array();
@@ -1959,7 +1976,7 @@ function logout_requested()
 {
 	$query = isset($_SERVER['QUERY_STRING']) ? $_SERVER['QUERY_STRING'] : '';
 
-	return ($query === 'logout' || strpos($query, 'logout&') === 0);
+	return (new \e107\Http\Request('GET', $query))->hasLeadingQueryWord(\e107\User\LogoutConfirmation::QUERY_WORD);
 }
 
 
@@ -2041,8 +2058,8 @@ class error_handler
 
 	function __construct()
 	{
-		$this->label = array(E_NOTICE => "Notice", E_USER_NOTICE => "Notice", E_WARNING => "Warning",E_USER_WARNING => "Warning", E_DEPRECATED => "Deprecated");
-		$this->color = array(E_NOTICE=> 'info', E_USER_NOTICE=> 'info' , E_WARNING=>'warning',E_USER_WARNING => "warning", E_DEPRECATED => 'danger');
+		$this->label = array(E_NOTICE => "Notice", E_USER_NOTICE => "Notice", E_WARNING => "Warning",E_USER_WARNING => "Warning", E_DEPRECATED => "Deprecated", E_USER_ERROR => "Error");
+		$this->color = array(E_NOTICE=> 'info', E_USER_NOTICE=> 'info' , E_WARNING=>'warning',E_USER_WARNING => "warning", E_DEPRECATED => 'danger', E_USER_ERROR => 'danger');
 
 		if (version_compare(PHP_VERSION, '8.4', '<'))
 		{
@@ -2055,7 +2072,8 @@ class error_handler
 		// This is initialized before the current debug level is known
 		if(function_exists('xdebug_get_function_stack'))
 		{
-			$this->xdebug = true;
+			$version = phpversion('xdebug');
+			$this->xdebug = version_compare($version, '3', '<') || (version_compare($version, '3.1', '>=') && in_array('develop', xdebug_info('mode'), true));
 		}
 
 		//
@@ -2097,10 +2115,24 @@ class error_handler
 		return defined($value) && constant($value);
 	}
 
+	/**
+	 * Diagnostic text as HTML, keeping the entities PHP has already written into it.
+	 *
+	 * @param mixed $text
+	 * @return string
+	 */
+	private function escape($text)
+	{
+		return htmlspecialchars((string) $text, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8', false);
+	}
+
+	/**
+	 * Records a diagnostic for the panel, traced by Xdebug's stack or else by the two frames below handle_error().
+	 */
 	private function addError($type, $message, $line, $file)
 	{
 		$error = [];
-		$error['short'] = "<span class='label label-".$this->color[$type]."'>".$this->label[$type]."</span> {$message}, Line <mark>{$line}</mark> of {$file}<br />\n";
+		$error['short'] = "<span class='label label-".$this->color[$type]."'>".$this->label[$type]."</span> ".$this->escape($message).", Line <mark>{$line}</mark> of ".$this->escape($file)."<br />\n";
 
 		if($this->xdebug)
 		{
@@ -2108,9 +2140,7 @@ class error_handler
 		}
 		else
 		{
-			$trace = debug_backtrace();
-			$backtrace[0] = (isset($trace[1]) ? $trace[1] : "");
-			$backtrace[1] = (isset($trace[2]) ? $trace[2] : "");
+			$backtrace = array_slice(debug_backtrace(DEBUG_BACKTRACE_PROVIDE_OBJECT, 4), 2);
 		}
 
 		$error['trace'] = $backtrace;
@@ -2206,12 +2236,7 @@ class error_handler
 			case E_USER_ERROR:
 			if ($this->debug === true)
 			{
-				$error['short'] = "&nbsp;&nbsp;&nbsp;&nbsp;Internal Error Message: {$message}, Line <mark>{$line}</mark> of {$file}<br />\n";
-				$trace = debug_backtrace();
-				$backtrace[0] = (isset($trace[1]) ? $trace[1] : "");
-				$backtrace[1] = (isset($trace[2]) ? $trace[2] : "");
-				$error['trace'] = $backtrace;
-				$this->errors[] = $error;
+				$this->addError($type, $message, $line, $file);
 			}
 			break;
 
@@ -2243,14 +2268,14 @@ class error_handler
 			<tr>
 				<td>".$key."</td>
 				<td>";
-			$text .= !empty($val['class']) ? $val['class']."->" : '';
-			$text .= !empty($val['include_filename']) ? "include: ". str_replace($this->docroot,'', $val['include_filename']) : '';
-			$text .= !empty($val['function']) ? htmlentities($val['function'])."(" : "";
-			$text .= !empty($val['params']) ? print_r($val['params'],true) : '';
+			$text .= !empty($val['class']) ? $this->escape($val['class'])."->" : '';
+			$text .= !empty($val['include_filename']) ? "include: ". $this->escape(str_replace($this->docroot,'', $val['include_filename'])) : '';
+			$text .= !empty($val['function']) ? $this->escape($val['function'])."(" : "";
+			$text .= !empty($val['params']) ? $this->escape(print_r($val['params'],true)) : '';
 			$text .= !empty($val['function']) ? ")" : "";
 			$text .="</td>
 				<td style='width:20%'>";
-			$text .= str_replace($this->docroot,'', $val['file']).":".$val['line'];
+			$text .= $this->escape(str_replace($this->docroot,'', $val['file'])).":".$val['line'];
 			$text .= "</td>
 			</tr>";
 		}

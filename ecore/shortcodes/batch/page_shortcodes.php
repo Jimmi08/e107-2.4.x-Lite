@@ -825,18 +825,12 @@ class cpage_shortcodes extends e_shortcode
 		}
 
 
-		if(!empty($this->chapterData[$chap]['chapter_fields']) && is_string($this->chapterData[$chap]['chapter_fields']))
+		if(empty($this->chapterData[$chap]['chapter_fields']))
 		{
-			$this->chapterData[$chap]['chapter_fields'] = e107::unserialize($this->chapterData[$chap]['chapter_fields']);
+			return null;
 		}
 
-
-		if(!empty($this->chapterData[$chap]['chapter_fields'][$key]['title']))
-		{
-			return $this->chapterData[$chap]['chapter_fields'][$key]['title'];
-		}
-
-		return null;
+		return e107::getCustomFields()->loadConfig($this->chapterData[$chap]['chapter_fields'])->getFieldTitle($key);
 	}
 
 
@@ -882,7 +876,8 @@ class cpage_shortcodes extends e_shortcode
 	 */
 	function sc_cpagefields($parm=null)
 	{
-		$fieldData  = e107::unserialize($this->var['page_fields']);
+		$fieldData  = e107::getCustomFields()->loadData($this->var['page_fields'])->getData();
+		$tp = e107::getParser();
 
 		if(isset($parm['generate'])) // use to generate all fields for use in template file.
 		{
@@ -890,9 +885,8 @@ class cpage_shortcodes extends e_shortcode
 
 			foreach($fieldData as $ok=>$v)
 			{
-
-				$text .= "&#123;CPAGEFIELDTITLE: name=".$ok."&#125;\n";
-				$text .= "&#123;CPAGEFIELD: name=".$ok."&#125;\n";
+				$text .= "&#123;CPAGEFIELDTITLE: name=".$tp->attributeValue($ok)."&#125;\n";
+				$text .= "&#123;CPAGEFIELD: name=".$tp->attributeValue($ok)."&#125;\n";
 			}
 
 			$text .= "</pre>";
@@ -907,8 +901,7 @@ class cpage_shortcodes extends e_shortcode
 
 		foreach($fieldData as $ok=>$v)
 		{
-
-			$text .= "<tr><td>".$ok."</td><td>".$this->sc_cpagefieldtitle(array('name'=>$ok))."</td><td>".$this->sc_cpagefield(array('name'=>$ok))."</td><td>".$this->sc_cpagefield(array('name'=>$ok, 'mode'=>'raw'))."</td></tr>";
+			$text .= "<tr><td>".$tp->attributeValue($ok)."</td><td>".$this->sc_cpagefieldtitle(array('name'=>$ok))."</td><td>".$this->sc_cpagefield(array('name'=>$ok))."</td><td>".$this->sc_cpagefield(array('name'=>$ok, 'mode'=>'raw'))."</td></tr>";
 		}
 
 		$text .= "</table>";

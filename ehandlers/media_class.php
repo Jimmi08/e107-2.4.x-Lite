@@ -26,6 +26,9 @@ class e_media
 	protected $imagelist = array();
 	
 	protected $logging = false; 
+
+	/** @var string[] media types whose categories carry the type as a suffix, eg. news_image and _common_image */
+	private $typedCategories = array('image', 'video', 'audio');
 	
 	protected $mimePaths = array(
 				'text'			=> e_MEDIA_FILE,
@@ -432,7 +435,7 @@ class e_media
 			$qb->where('media_cat_owner', $owner);
 		}
 
-		$qb->whereIn('media_cat_class', explode(',', USERCLASS_LIST))
+		$qb->where(\e107\Userclass\Membership::current()->predicate('media_cat_class'))
 			->orderBy($safeOrderBy);
 
 		$rows = $qb->fetchAll();
@@ -531,11 +534,12 @@ class e_media
 	//	$inc 		= array();
 		$searchinc 	= array();
 		$catArray   = array();
+		$common     = $this->commonCategory($type);
 		
 		if(strpos($cat,"^") || !$cat)
 		{
 			$cat = str_replace("^","",$cat);
-			$catArray[] = '_common_'.$type;
+			$catArray[] = $common;
 		}
 
 		if($cat)
@@ -548,13 +552,17 @@ class e_media
 			{
 				$catArray[] = $cat;
 
-				if($type === 'image' || $type === 'audio'|| $type === 'video')
+				if(in_array($type, $this->typedCategories, true))
 				{
 					$catArray[] = $cat.'_'.$type; // BC Fix.
 				}
 			}
 		}
 
+		if(in_array($common, $catArray, true))
+		{
+			$catArray[] = '_common';
+		}
 
 		// TODO check the category is valid.
 
@@ -572,7 +580,7 @@ class e_media
 		$qb = e107::getDb()->createQueryBuilder();
 		$qb->select($fields)->from('core_media')
 			->where($qb->expr()->regexp('media_category', $catpattern))
-			->whereIn('media_userclass', explode(',', USERCLASS_LIST))
+			->where(\e107\Userclass\Membership::current()->predicate('media_userclass'))
 			->where($qb->expr()->like('media_type', $typepattern));
 
 		if($search)
@@ -626,7 +634,7 @@ class e_media
 
 		$qb = e107::getDb()->createQueryBuilder();
 		$qb->select('*')->from('core_media')
-			->whereIn('media_userclass', explode(',', USERCLASS_LIST))
+			->where(\e107\Userclass\Membership::current()->predicate('media_userclass'))
 			->where($qb->expr()->like('media_category', '_icon%'));
 
 		if($type)
@@ -1004,6 +1012,14 @@ class e_media
 		
 		if(is_string($type) && in_array($type, $precompiled))
 		{
+			static $built = array();
+
+			$key = (string) $addPrefix;
+
+			if(isset($built[$type][$key]))
+			{
+				return $built[$type][$key];
+			}
 
 			$matches = array();
 			
@@ -1040,18 +1056,18 @@ class e_media
 
 
 			$matches['bs3'] = array(
-			'adjust','align-center','align-justify','align-left','align-right','arrow-down','arrow-left','arrow-right','arrow-up','asterisk','backward','ban-circle','barcode','bell','bold','book
-			','bookmark','briefcase','bullhorn','calendar','camera','certificate','check','chevron-down','chevron-left','chevron-right','chevron-up','circle-arrow-down','circle-arrow-left','circle-arrow-right
-			','circle-arrow-up','cloud','cloud-download','cloud-upload','cog','collapse-down','collapse-up','comment','compressed','copyright-mark','credit-card','cutlery','dashboard','download','download-alt
-			','earphone','edit','eject','envelope','euro','exclamation-sign','expand','export','eye-close','eye-open','facetime-video','fast-backward','fast-forward','file','film','filter','fire','flag
-			','flash','floppy-disk','floppy-open','floppy-remove','floppy-save','floppy-saved','folder-close','folder-open','font','forward','fullscreen','gbp','gift
-			','glass','globe','hand-down','hand-left','hand-right','hand-up','hd-video','hdd','header','headphones','heart','heart-empty','home','import','inbox','indent-left','indent-right','info-sign','italic','leaf','link','list
-			','list-alt','lock','log-in','log-out','magnet','map-marker','minus','minus-sign','move','music','new-window','off','ok','ok-circle','ok-sign','open','paperclip','pause','pencil','phone','phone-alt','picture
-			','plane','play','play-circle','plus','plus-sign','print','pushpin','qrcode','question-sign','random','record','refresh','registration-mark','remove','remove-circle','remove-sign','repeat','resize-full','resize-horizontal
-			','resize-small','resize-vertical','retweet','road','save','saved','screenshot','sd-video','search','send','share','share-alt','shopping-cart','signal','sort','sort-by-alphabet','sort-by-alphabet-alt
-			','sort-by-attributes','sort-by-attributes-alt','sort-by-order','sort-by-order-alt','sound-5-1','sound-6-1','sound-7-1','sound-dolby','sound-stereo','star','stats','step-backward','step-forward','stop
-			','subtitles','tag','tags','tasks','text-height','text-width','th','th-large','th-list','thumbs-down','thumbs-up','time','tint','tower','transfer','trash','tree-conifer','tree-deciduous','unchecked','upload
-			','usd','user','volume-down','volume-off','volume-up','warning-sign','wrench','zoom-in','zoom-out'
+			'adjust','align-center','align-justify','align-left','align-right','arrow-down','arrow-left','arrow-right','arrow-up','asterisk','backward','ban-circle','barcode','bell','bold','book',
+			'bookmark','briefcase','bullhorn','calendar','camera','certificate','check','chevron-down','chevron-left','chevron-right','chevron-up','circle-arrow-down','circle-arrow-left','circle-arrow-right',
+			'circle-arrow-up','cloud','cloud-download','cloud-upload','cog','collapse-down','collapse-up','comment','compressed','copyright-mark','credit-card','cutlery','dashboard','download','download-alt',
+			'earphone','edit','eject','envelope','euro','exclamation-sign','expand','export','eye-close','eye-open','facetime-video','fast-backward','fast-forward','file','film','filter','fire','flag',
+			'flash','floppy-disk','floppy-open','floppy-remove','floppy-save','floppy-saved','folder-close','folder-open','font','forward','fullscreen','gbp','gift',
+			'glass','globe','hand-down','hand-left','hand-right','hand-up','hd-video','hdd','header','headphones','heart','heart-empty','home','import','inbox','indent-left','indent-right','info-sign','italic','leaf','link','list',
+			'list-alt','lock','log-in','log-out','magnet','map-marker','minus','minus-sign','move','music','new-window','off','ok','ok-circle','ok-sign','open','paperclip','pause','pencil','phone','phone-alt','picture',
+			'plane','play','play-circle','plus','plus-sign','print','pushpin','qrcode','question-sign','random','record','refresh','registration-mark','remove','remove-circle','remove-sign','repeat','resize-full','resize-horizontal',
+			'resize-small','resize-vertical','retweet','road','save','saved','screenshot','sd-video','search','send','share','share-alt','shopping-cart','signal','sort','sort-by-alphabet','sort-by-alphabet-alt',
+			'sort-by-attributes','sort-by-attributes-alt','sort-by-order','sort-by-order-alt','sound-5-1','sound-6-1','sound-7-1','sound-dolby','sound-stereo','star','stats','step-backward','step-forward','stop',
+			'subtitles','tag','tags','tasks','text-height','text-width','th','th-large','th-list','thumbs-down','thumbs-up','time','tint','tower','transfer','trash','tree-conifer','tree-deciduous','unchecked','upload',
+			'usd','user','volume-down','volume-off','volume-up','warning-sign','wrench','zoom-in','zoom-out'
 			);
 
 
@@ -1100,15 +1116,17 @@ class e_media
 
 			if(strpos($type,'-shims') !==false)
 			{
-				return $matches[$type];
+				$icons = $matches[$type];
 			}
-
-			foreach($matches[$type] as $ic)
+			else
 			{
-			    $icons[$ic] = $addPrefix.$ic;
+				foreach($matches[$type] as $ic)
+				{
+				    $icons[$ic] = $addPrefix.$ic;
+				}
 			}
 
-			return $icons;
+			return $built[$type][$key] = $icons;
 		}
 					
 
@@ -1376,12 +1394,12 @@ class e_media
 	/**
 	 * Import a file into the Media Manager
 	 * @param string $file Path to file
-	 * @param string $category media-category to import into
+	 * @param string $category media-category to import into; '' or '_common' files it under the common category of its type
 	 * @param null|array $opts('path'=> Custom Folder (optional))
 	 * @param array $new_data - Additional media info to save.
 	 * @return bool|string
 	 */
-	public function importFile($file='', $category='_common_image', $opts = null, $new_data = array())
+	public function importFile($file='', $category='', $opts = null, $new_data = array())
 	{
 		$mes = e107::getMessage();
 		$tp = e107::getParser();
@@ -1415,6 +1433,7 @@ class e_media
 			
 		$img_data = $this->mediaData($oldpath); // Basic File Info only
 
+		$category = $this->importCategory($category, $img_data['media_type']);
 
 		if($category === '_icon')
 		{
@@ -1451,7 +1470,7 @@ class e_media
 		$img_data['media_url']			= $tp->createConstants($newpath,'rel');
 		$img_data['media_name'] 		= $tp->toDB(basename($newpath));
 		$img_data['media_caption'] 		= vartrue($new_data['media_caption']);
-		$img_data['media_category'] 	= vartrue($category,'_common_image');
+		$img_data['media_category'] 	= $category;
 		$img_data['media_description'] 	= vartrue($new_data['media_description']);
 		$img_data['media_userclass'] 	= '0';
 
@@ -1469,6 +1488,33 @@ class e_media
 		}
 		
 		
+	}
+
+
+	/**
+	 * Category an import is stored under: the include-common markers dropped, and no category or the bare '_common' resolved by {@see e_media::commonCategory()}.
+	 * @param string $category
+	 * @param string $mimeType
+	 * @return string
+	 */
+	private function importCategory($category, $mimeType)
+	{
+		$category = str_replace(array('+', '^'), '', (string) $category);
+
+		return ($category === '' || $category === '_common') ? $this->commonCategory($mimeType) : $category;
+	}
+
+
+	/**
+	 * Common category media of a type is filed under, eg. '_common_image' for 'image' or 'image/png', and '_common_file' for any type but image, video and audio.
+	 * @param string $type a media type or a MIME type
+	 * @return string
+	 */
+	private function commonCategory($type)
+	{
+		list($mainType) = explode('/', (string) $type);
+
+		return in_array($mainType, $this->typedCategories, true) ? '_common_'.$mainType : '_common_file';
 	}
 
 
@@ -2347,19 +2393,24 @@ class e_media
 
 		$targetDir = e_IMPORT;
 		$fileName = basename($filePath);
+		$rename = !empty($request['rename']) && is_string($request['rename']) ? basename($request['rename']) : '';
+		$storedPath = $rename === '' ? $filePath : $targetDir.$rename;
 
-		if(e107::getFile()->isAllowedType($filePath) !== true)
+		foreach(array_unique(array($filePath, $storedPath)) as $targetFile)
 		{
-			$this->ajaxUploadLog($filePath, $fileName, filesize($filePath), false, "Unapproved file-type. (".__METHOD__.")");
-			@unlink($filePath);
-			return '{"jsonrpc" : "2.0", "error" : {"code": 120, "message": "Unapproved file-type detected. '.$filePath.'"}, "id" : "id"}';
-		}
-	
-		if(e107::getFile()->isClean($filePath) !== true)
-		{
-			$this->ajaxUploadLog($filePath, $fileName, filesize($filePath), false, "File detected as not clean. (".__METHOD__.")");
-			@unlink($filePath);
-			return '{"jsonrpc" : "2.0", "error" : {"code": 104, "message": "Bad File Detected. '.$filePath.'"}, "id" : "id"}';
+			if(e107::getFile()->isAllowedType($filePath, $targetFile) !== true)
+			{
+				$this->ajaxUploadLog($filePath, $fileName, filesize($filePath), false, "Unapproved file-type. (".__METHOD__.")");
+				@unlink($filePath);
+				return '{"jsonrpc" : "2.0", "error" : {"code": 120, "message": "Unapproved file-type detected. '.$filePath.'"}, "id" : "id"}';
+			}
+
+			if(e107::getFile()->isClean($filePath, $targetFile) !== true)
+			{
+				$this->ajaxUploadLog($filePath, $fileName, filesize($filePath), false, "File detected as not clean. (".__METHOD__.")");
+				@unlink($filePath);
+				return '{"jsonrpc" : "2.0", "error" : {"code": 104, "message": "Bad File Detected. '.$filePath.'"}, "id" : "id"}';
+			}
 		}
 
 
@@ -2400,14 +2451,13 @@ class e_media
 
 		}
 
-		if(!empty($request['rename']))
+		if($rename !== '')
 		{
-			$newPath = $targetDir.basename($request['rename']);
-			if(!rename($filePath, $newPath))
+			if(!rename($filePath, $storedPath))
 			{
-				return '{"jsonrpc" : "2.0", "error" : {"code": 105, "message": "Unable to rename '.$filePath.' to '.$newPath.'"}, "id" : "id"}';
+				return '{"jsonrpc" : "2.0", "error" : {"code": 105, "message": "Unable to rename '.$filePath.' to '.$storedPath.'"}, "id" : "id"}';
 			}
-			$fileName = basename($newPath);
+			$fileName = basename($storedPath);
 		}
 
 		$msg = '';
@@ -2416,7 +2466,6 @@ class e_media
 		{
 			$uploadPath = varset($request['path'],null);
 			$for = e107::getParser()->filter($request['for']);
-			$for = str_replace(array('+','^'),'', $for);
 
 			if(!$result = e107::getMedia()->importFile($fileName, $for, array('path'=>$uploadPath)))
 			{

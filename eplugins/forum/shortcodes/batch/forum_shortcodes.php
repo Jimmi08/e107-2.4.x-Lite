@@ -580,7 +580,7 @@ class forum_shortcodes extends e_shortcode
 		$url            = e107::url('forum', 'topic', $urlData)."?last=1#post-".$lastpost['post_id'];
 		$lastpost_userurl = e107::url('user/profile/view', array('name' => $this->var['user_name'], 'id' => $this->var['forum_lastpost_user']));
 //		$lastpost_username = empty($this->var['user_name']) ? e107::getParser()->toHTML($this->var['forum_lastpost_user_anon']) : "<a href='".e107::url('user/profile/view', array('name' => $this->var['user_name'], 'id' => $this->var['forum_lastpost_user']))."'>{$this->var['user_name']}</a>";
-		$lastpost_username = empty($this->var['user_name']) ? e107::getParser()->toHTML($this->var['forum_lastpost_user_anon']) : "<a href='".$lastpost_userurl."'>{$this->var['user_name']}</a>";
+		$lastpost_username = empty($this->var['user_name']) ? e107::getParser()->attributeValue($this->var['forum_lastpost_user_anon']) : "<a href='".$lastpost_userurl."'>{$this->var['user_name']}</a>";
 
 
 		$format = !empty($parm['date-format']) ? $parm['date-format'] : 'relative';
@@ -613,7 +613,8 @@ class forum_shortcodes extends e_shortcode
 //					break;
 				case "name":
 //					return $lastpost['thread_name'];
-			        return empty($parm['limit']) ? $lastpost['thread_name'] : e107::getParser()->truncate($lastpost['thread_name'], $parm['limit']);
+			        $tp = e107::getParser();
+			        return $tp->attributeValue(empty($parm['limit']) ? $lastpost['thread_name'] : $tp->truncate($lastpost['thread_name'], $parm['limit']));
 //			default:
 
 //				return $relativeDate.'<br />'.$lastpost_name." <a href='".$url."'>".IMAGE_post2.'</a>';
@@ -645,7 +646,7 @@ class forum_shortcodes extends e_shortcode
 
 	function sc_newspostname()
 	{
-		return empty($this->var) || empty($this->var['thread_name']) ? LAN_FORUM_0029 : "<a href='".e107::getUrl()->create('forum/thread/last', $this->var)."'>".e107::getParser()->toHTML($this->var['thread_name'], TRUE, 'no_make_clickable, no_hook').'</a>';
+		return empty($this->var) || empty($this->var['thread_name']) ? LAN_FORUM_0029 : "<a href='".e107::getUrl()->create('forum/thread/last', $this->var)."'>".e107forum::threadNameHtml($this->var['thread_name'], e107::getParser(), e107::getBB()).'</a>';
 	}
 
 

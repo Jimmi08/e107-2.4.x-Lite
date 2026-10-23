@@ -37,12 +37,55 @@ class e_parse
 
 	private $pref; // core prefs used in toHTML.
 
+	/**
+	 * A start or end tag that a bbcode tag may hold, read to its first > outside a quoted value: not one of an element whose content a browser does not read as HTML.
+	 *
+	 * @internal shared by the readers of bbcode tags, not part of the parser API
+	 */
+	const HTML_TAG_A_BBCODE_TAG_MAY_HOLD = '<(?!\/?(?i:iframe|math|noembed|noframes|noscript|plaintext|script|style|svg|textarea|title|xmp)(?![^\t\n\f\r \/>]))(?=\/?[a-zA-Z])(?:[^<>"\'\]]++|"[^"\]]*+"|\'[^\'\]]*+\')*+>';
+
+	/**
+	 * A lookahead holding where the text up to the next ] leaves no HTML tag or comment open and holds no tag of an element whose content a browser does not read as HTML.
+	 *
+	 * @internal shared by the readers of one bbcode tag, not part of the parser API; {@see e_parse::blankBracketsBeginningNoBBCodeTag()} reads a whole text the same way
+	 */
+	const BBCODE_TAG_LEAVES_NO_HTML_TAG_OPEN = '(?=(?:[^\]<]++|<(?![a-zA-Z\/!?])|<!--(?:-?>|(?:[^\]-]++|-(?!-!?>))*+--!?>)|<(?:!(?!--)|\?|\/(?![a-zA-Z]))[^\]>]*+>|' . self::HTML_TAG_A_BBCODE_TAG_MAY_HOLD . ')*+\])';
+
+	private static $hideMarkers = 0; // sets of [hide] markers handed out by setAsideHideBlocks(), so that no two renders share one
+
+	/** @var string a [code] block as the bbcode parser pairs one, the number its tags carry captured second, for a text {@see e_parse::blankBracketsBeginningNoBBCodeTag()} has read */
+	private static $codeBlockPattern = '#(\[code(?![a-z_])(\d*)(?!\d)[^\]\n]*\].*?\[/code(?![a-z_])\2(?!\d)[^\]\n]*\])#is';
+
+	/**
+	 * Matches one HTML entity, the unit both truncators count as a single character.
+	 *
+	 * @var string
+	 */
+	private $htmlEntityRegexp = '&[0-9a-zA-Z]{2,8};|&#[0-9]{1,7};|&#[xX][0-9a-fA-F]{1,6};';
+
+	/**
+	 * The most bytes one such unit can take: a ten-byte entity, as no character is longer.
+	 *
+	 * @var int
+	 */
+	private $longestVisibleUnit = 10;
+
+	/**
+	 * Matches one well-formed UTF-8 character of two bytes or more.
+	 *
+	 * @var string
+	 */
+	private $utf8MultibyteRegexp = '[\xC2-\xDF][\x80-\xBF]|\xE0[\xA0-\xBF][\x80-\xBF]|[\xE1-\xEC\xEE\xEF][\x80-\xBF]{2}|\xED[\x80-\x9F][\x80-\xBF]|\xF0[\x90-\xBF][\x80-\xBF]{2}|[\xF1-\xF3][\x80-\xBF]{3}|\xF4[\x80-\x8F][\x80-\xBF]{2}';
+
 	// 'Hooked' parsers (array)
 	private $e_hook = array();
 
 	public $search = array('&amp;#039;', '&#039;', '&#39;', '&quot;', 'onerror', '&gt;', '&amp;quot;', ' & ');
 
 	public $replace = array("'", "'", "'", '"', 'one<i></i>rror', '>', '"', ' &amp; ');
+
+	/** @var array|null see {@see e_parse::bodyEntities()} */
+	private $bodyEntities = null;
 
 	// Set to TRUE or FALSE once it has been calculated
 	protected $e_highlighting;
@@ -66,6 +109,55 @@ class e_parse
 
 	/** @var array Stored relative paths - used by replaceConstants() */
 	private $relativePaths = [];
+
+	/** @var bool Whether a shortcode pass will run over the bbcodes being parsed, for {@see e_parse::toBBCodeUrlAttribute()} */
+	private static $bbcodeShortcodes = false;
+
+	/** @var string[] The constants {@see e_parse::toAttribute()} may expand: folders the web server serves, never a request or session value */
+	private static $webPathConstants = array(
+		'e_AVATAR', 'e_AVATAR_ABS',
+		'e_BASE',
+		'e_BOOTSTRAP',
+		'e_CSS', 'e_CSS_ABS',
+		'e_DOCS_ABS',
+		'e_FILE', 'e_FILE_ABS',
+		'e_HELP_ABS',
+		'e_HTTP',
+		'e_IMAGE', 'e_IMAGE_ABS',
+		'e_JS', 'e_JS_ABS',
+		'e_MEDIA', 'e_MEDIA_ABS',
+		'e_MEDIA_FILE',
+		'e_MEDIA_ICON',
+		'e_MEDIA_IMAGE',
+		'e_MEDIA_VIDEO',
+		'e_PLUGIN', 'e_PLUGIN_ABS',
+		'e_THEME', 'e_THEME_ABS',
+		'e_WEB', 'e_WEB_ABS',
+		'e_WEB_CSS',
+		'e_WEB_IMAGE',
+		'e_WEB_JS',
+	);
+
+	/** @var string[] The further constants {@see e_parse::replaceConstants()} expands by default: the admin area, and folders a site may keep outside the web root */
+	private static $serverPathConstants = array(
+		'e_ADMIN', 'e_ADMIN_ABS',
+		'e_BACKUP',
+		'e_CACHE', 'e_CACHE_CONTENT', 'e_CACHE_DB', 'e_CACHE_IMAGE',
+		'e_CORE',
+		'e_DOCS',
+		'e_DOWNLOAD',
+		'e_HANDLER',
+		'e_HELP',
+		'e_IMPORT',
+		'e_LANGUAGEDIR',
+		'e_LOG',
+		'e_SYSTEM',
+		'e_TEMP',
+		'e_UPLOAD',
+	);
+
+	/** @var string Matches an {e_...} placeholder replaceConstants() may expand by default */
+	private static $constantPlaceholder = '#\{(e_[A-Z]*(?:_IMAGE|_VIDEO|_FILE|_CONTENT|_ICON|_AVATAR|_JS|_CSS|_PACK|_DB|_ABS){0,1})\}#s';
 
 
 	// BBcode that contain preformatted code.
@@ -278,6 +370,10 @@ class e_parse
 	private $blockTags = array();
 
 	private $scriptAccess = false; // nobody.
+
+	/** @var bool raised by {@see e_parse::toDBWithoutScript()} for the length of its {@see e_parse::toDB()} call */
+	private $storingWithoutScript = false;
+
 	private $replaceVars;
 	private $replaceUnset;
 
@@ -468,9 +564,6 @@ class e_parse
 	 * Returns the portion of string specified by the start and length parameters.
 	 * Unicode (UTF-8) analogue of standard @link http://php.net/substr substr PHP function.
 	 *
-	 * NOTE: May be subtle differences in return values dependent on which routine is used.
-	 *  Native substr() routine can return FALSE. mb_substr() and utf8_substr() just return an empty string.
-	 *
 	 * @param string  $str    The UTF-8 encoded string.
 	 * @param int     $start  Start of portion to be returned. Position is counted in amount of UTF-8 characters from the beginning of str.
 	 *                        First character's position is 0. Second character position is 1, and so on.
@@ -483,7 +576,12 @@ class e_parse
 
 		if ($this->multibyte)
 		{
-			return ($length === null) ? mb_substr($str, $start) : mb_substr($str, $start, $length);
+			return mb_substr($str, $start, $length);
+		}
+
+		if ($length === null)
+		{
+			$length = strlen($str);
 		}
 
 		return (string) substr($str, $start, $length);
@@ -514,9 +612,10 @@ class e_parse
 	 *
 	 * $no_encode IS NOT A REQUEST, IT IS A STARTING POINT. It is forced TRUE for
 	 * any author holding 'post_html', so passing FALSE does not guarantee the
-	 * value comes back encoded. Passing a numeric $parm puts the encoding back
-	 * when the userclass it names does not hold 'post_html'. If a caller needs a
-	 * value encoded no matter who is posting, it has to encode at the sink.
+	 * value comes back encoded. A numeric $parm names the author instead of the
+	 * current user: the user with that id decides both the strip and the
+	 * encoding, either way. If a caller needs a value encoded no matter who is
+	 * posting, it has to encode at the sink.
 	 *
 	 * Note also that it fails permissive on an unrecognised $mod: the modifiers
 	 * are matched with strpos(), so a misspelt 'no_htlm' silently permits HTML.
@@ -549,9 +648,12 @@ class e_parse
 	 *                                             entirely, so a caller passing it
 	 *                                             is asserting the data is already
 	 *                                             trusted.
-	 * @param mixed          $parm      [optional] two unrelated shapes. Numeric: a
-	 *                                  userclass to test 'post_html' against
-	 *                                  instead of the current user. Array with
+	 * @param mixed          $parm      [optional] two unrelated shapes. Numeric: the
+	 *                                  id of the author whose 'post_html' decides,
+	 *                                  in place of the current user's, and
+	 *                                  without whose 'post_script' no script is
+	 *                                  kept; 0 is a guest, with a guest's classes.
+	 *                                  Array with
 	 *                                  'type' and 'field' keys: passed to the
 	 *                                  e_parse hooks, and only read when $mod is
 	 *                                  'model'.
@@ -591,12 +693,21 @@ class e_parse
 		}
 
 		$core_pref = e107::getConfig();
+		$author = ($parm !== null && is_numeric($parm)) ? e107::getSystemUser((int) $parm, false) : null;
+		$authorPostsHtml = ($author !== null) ? $author->checkClass($core_pref->get('post_html', e_UC_MAINADMIN), false) : null;
+		$authorPostsScript = ($author !== null) ? $author->checkClass($core_pref->get('post_script', e_UC_NOBODY), false) : null;
+
+		if ($this->storingWithoutScript)
+		{
+			$authorPostsHtml = true;
+			$authorPostsScript = false;
+		}
 
 		if ($mod !== 'pReFs') //XXX We're not saving prefs.
 		{
 
 			$data = $this->preFilter($data); // used by bb_xxx.php toDB() functions. bb_code.php toDB() allows us to properly bypass HTML cleaning below.
-			$data = $this->cleanHtml($data); // clean it regardless of if it is text or html. (html could have missing closing tags)
+			$data = ($authorPostsScript === false) ? $this->cleanHtmlWithoutScript($data) : $this->cleanHtml($data); // clean it regardless of if it is text or html. (html could have missing closing tags)
 
 			if (($this->isHtml($data)) && strpos($mod, 'no_html') === false)
 			{
@@ -615,28 +726,32 @@ class e_parse
 			}
 
 
-			if (!check_class($core_pref->get('post_html', e_UC_MAINADMIN)))
+			if ($authorPostsHtml === false || ($authorPostsHtml === null && !check_class($core_pref->get('post_html', e_UC_MAINADMIN))))
 			{
 				$data = strip_tags($data); // remove tags from cleaned html.
-				$data = str_replace(array('[html]', '[/html]'), '', $data);
+				$data = str_replace(array('[html]', '[/html]'), array('&#91;html]', '&#91;/html]'), $data);
 			}
 
 			//  $data = html_entity_decode($data, ENT_QUOTES, 'utf-8');	// Prevent double-entities. Fix for [code]  - see bb_code.php toDB();
 		}
 
 
-		if (check_class($core_pref->get('post_html'))) /*$core_pref->is('post_html') && XXX preformecd by cleanHtml() */
+		if ($authorPostsHtml !== null)
+		{
+			$no_encode = $authorPostsHtml;
+		}
+		elseif (check_class($core_pref->get('post_html'))) /*$core_pref->is('post_html') && XXX preformecd by cleanHtml() */
 		{
 			$no_encode = true;
 		}
 
-		if ($parm !== null && is_numeric($parm) && !check_class($core_pref->get('post_html'), '', $parm))
-		{
-			$no_encode = false;
-		}
-
 		if ($no_encode === true && strpos($mod, 'no_html') === false)
 		{
+			if ($mod !== 'pReFs')
+			{
+				$data = str_replace('&quot;', '&amp;quot;', $data);
+			}
+
 			$search = array('$', '"', "'", '\\', '<?');
 			$replace = array('&#036;', '&quot;', '&#039;', '&#092;', '&lt;?');
 			$ret = str_replace($search, $replace, $data);
@@ -647,6 +762,11 @@ class e_parse
 			$search = array('&gt;', '&lt;');
 			$replace = array('>', '<');
 			$data = str_replace($search, $replace, $data); // prevent &amp;gt; etc.
+
+			if ($mod !== 'pReFs')
+			{
+				$data = preg_replace('/&amp;(?!#\d*;)/', '&', $data);
+			}
 
 			$data = htmlspecialchars($data, ENT_QUOTES, 'UTF-8');
 			$data = str_replace('\\', '&#092;', $data);
@@ -695,6 +815,27 @@ class e_parse
 
 
 		return $ret;
+	}
+
+	/**
+	 * Convert submitted content as {@see e_parse::toDB()} stores it for an author who may post HTML but not script.
+	 *
+	 * @param mixed $data string or array, as {@see e_parse::toDB()} takes it
+	 * @return mixed the converted string, an array converted the same way, or $data unchanged when it is neither
+	 */
+	public function toDBWithoutScript($data)
+	{
+		$was = $this->storingWithoutScript;
+		$this->storingWithoutScript = true;
+
+		try
+		{
+			return $this->toDB($data, false, false, 'no_php');
+		}
+		finally
+		{
+			$this->storingWithoutScript = $was;
+		}
 	}
 
 
@@ -819,8 +960,8 @@ class e_parse
 		if (is_string($text) && strpos($text, '[html]') === 0)
 		{
 			// $text = $this->toHTML($text,true);
-			$search = array('&quot;', '&#039;', '&#092;', '&',); // '&' must be last.
-			$replace = array('"', "'", "\\", '&amp;');
+			$search = array('&quot;', '&#039;', '&#092;', '&amp;quot;', '&amp;#039;', '&',); // '&' must be last.
+			$replace = array('"', "'", "\\", '&quot;', '&#039;', '&amp;');
 
 			//	return htmlspecialchars_decode($text);
 			$text = str_replace($search, $replace, $text);
@@ -832,14 +973,14 @@ class e_parse
 		}
 		//	return htmlentities($text);
 
-		$search = array('&#036;', '&quot;', '<', '>', '+');
-		$replace = array('$', '"', '&lt;', '&gt;', '%2B');
+		$search = array('&#036;', '&quot;', '<', '>');
+		$replace = array('$', '"', '&lt;', '&gt;');
 		$text = str_replace($search, $replace, $text);
 
 		if (is_string($text) && e107::wysiwyg() !== true)
 		{
 			// fix for utf-8 issue with html_entity_decode(); ???
-			$text = urldecode($text);
+			$text = rawurldecode(str_ireplace(array('%3C', '%3E', '%27'), array('&lt;', '&gt;', '&#039;'), $text));
 			//	$text = str_replace("&nbsp;", " ", $text);
 		}
 
@@ -1183,8 +1324,8 @@ class e_parse
 				{
 					// Use the ACK (006) ASCII symbol to replace all HTML entities temporarily
 					$value = str_replace("\x06", '', $value);
-					preg_match_all("/&([a-z\d]{2,7}|#\d{2,5});/i", $value, $ents);
-					$value = preg_replace("/&([a-z\d]{2,7}|#\d{2,5});/i", "\x06", $value);
+					preg_match_all("/&([a-z\d]{2,7}|#\d{2,5}|#x[\da-f]{1,6});/i", $value, $ents);
+					$value = preg_replace("/&([a-z\d]{2,7}|#\d{2,5}|#x[\da-f]{1,6});/i", "\x06", $value);
 					//			echo "Found block length ".strlen($value).': '.substr($value,20).'<br />';
 					// Split at spaces - note that this will fail if presented with invalid utf-8 when doing the regex whitespace search
 					//			$split = preg_split('#(\s)#'.$utf8, $value, -1, PREG_SPLIT_NO_EMPTY | PREG_SPLIT_DELIM_CAPTURE );
@@ -1291,16 +1432,26 @@ class e_parse
 	 * Universal text/bbcode/html truncate method.
 	 * new in v2.3.1
 	 *
+	 * An optional fourth argument, bool $exact (default true), cuts at the last space instead of mid-word when false.
+	 *
 	 * @param        $text
 	 * @param int    $length
 	 * @param string $ending
 	 * @return string
+	 * @throws InvalidArgumentException when called with more than four arguments.
 	 */
 	public function truncate($text, $length = 100, $ending = '...')
 	{
+		if (func_num_args() > 4)
+		{
+			throw new InvalidArgumentException('e_parse::truncate() takes at most four arguments ($text, $length, $ending, $exact), ' . func_num_args() . ' given.');
+		}
+
+		$exact = func_num_args() > 3 ? (bool) func_get_arg(3) : true;
+
 		if ($this->isHtml($text))
 		{
-			return $this->html_truncate($text, $length, $ending);
+			return $this->html_truncate($text, $length, $ending, $exact);
 		}
 
 		if ($this->isBBcode($text))
@@ -1308,8 +1459,36 @@ class e_parse
 			$text = $this->toText($text);
 		}
 
-		return $this->text_truncate($text, $length, $ending);
+		$truncated = $this->text_truncate($text, $length, $ending);
+		if ($exact || $truncated === $text)
+		{
+			return $truncated;
+		}
 
+		$cut = (string) substr($truncated, 0, strlen($truncated) - strlen($ending));
+		if ($cut . $ending !== $truncated)
+		{
+			return $truncated;
+		}
+
+		list($kept) = $this->splitAtLastSpace($cut);
+
+		return $kept . $ending;
+	}
+
+	/**
+	 * @param string $text
+	 * @return array $text before and from its last space above position 0, or $text and '' when there is none.
+	 */
+	private function splitAtLastSpace($text)
+	{
+		$spacepos = $this->ustrrpos($text, ' ');
+		if ($spacepos > 0)
+		{
+			return array($this->usubstr($text, 0, $spacepos), $this->usubstr($text, $spacepos));
+		}
+
+		return array($text, '');
 	}
 
 	/**
@@ -1318,7 +1497,9 @@ class e_parse
 	 * @param string  $ending It will be used as Ending and appended to the trimmed string.
 	 * @param boolean $exact  If false, $text will not be cut mid-word
 	 * @return string Trimmed string.
-	 * @deprecated Soon to be made private. Use $tp->truncate() instead.
+	 * @deprecated v2.3.1 Use {@see e_parse::truncate()}, which takes the same four arguments but sends text without tags to
+	 *             {@see e_parse::text_truncate()}, so its answer for such text can differ. Avoid in new code and migrate existing
+	 *             call sites when refactoring; this method remains supported and tested, with no removal planned.
 	 *                        CakePHP(tm) :  Rapid Development Framework (http://www.cakephp.org)
 	 *                        Copyright 2005-2008, Cake Software Foundation, Inc. (http://www.cakefoundation.org)
 	 *
@@ -1329,7 +1510,7 @@ class e_parse
 	public function html_truncate($text, $length = 100, $ending = '...', $exact = true)
 	{
 
-		if ($this->ustrlen(preg_replace('/<.*?>/', '', $text)) <= $length)
+		if (count($this->visibleUnits(preg_replace('/<.*?>/', '', $text), (int) (float) $length + 1)) <= $length)
 		{
 			return $text;
 		}
@@ -1356,29 +1537,12 @@ class e_parse
 				}
 			}
 			$truncate .= $tag[1];
-			$contentLength = $this->ustrlen(preg_replace('/&[0-9a-z]{2,8};|&#[0-9]{1,7};|&#x[0-9a-f]{1,6};/i', ' ', $tag[3]));
+			$units = $this->visibleUnits($tag[3], (int) (float) $length - $totalLength + 1);
+			$contentLength = count($units);
 
 			if ($contentLength + $totalLength > $length)
 			{
-				$left = $length - $totalLength;
-				$entitiesLength = 0;
-				if (preg_match_all('/&[0-9a-z]{2,8};|&#[0-9]{1,7};|&#x[0-9a-f]{1,6};/i', $tag[3], $entities, PREG_OFFSET_CAPTURE))
-				{
-					foreach ($entities[0] as $entity)
-					{
-						if ($entity[1] + 1 - $entitiesLength <= $left)
-						{
-							$left--;
-							$entitiesLength += $this->ustrlen($entity[0]);
-						}
-						else
-						{
-							break;
-						}
-					}
-				}
-
-				$truncate .= $this->usubstr($tag[3], 0, $left + $entitiesLength);
+				$truncate .= implode('', array_slice($units, 0, max(0, $length - $totalLength)));
 				break;
 			}
 
@@ -1391,22 +1555,17 @@ class e_parse
 		}
 		if (!$exact)
 		{
-			$spacepos = $this->ustrrpos($truncate, ' ');
-			if (isset($spacepos))
+			list($truncate, $bits) = $this->splitAtLastSpace($truncate);
+			preg_match_all('/<\/([a-z]+)>/i', $bits, $droppedTags, PREG_SET_ORDER);
+			if (!empty($droppedTags))
 			{
-				$bits = $this->usubstr($truncate, $spacepos);
-				preg_match_all('/<\/([a-z]+)>/i', $bits, $droppedTags, PREG_SET_ORDER);
-				if (!empty($droppedTags))
+				foreach ($droppedTags as $closingTag)
 				{
-					foreach ($droppedTags as $closingTag)
+					if (!in_array($closingTag[1], $openTags))
 					{
-						if (!in_array($closingTag[1], $openTags))
-						{
-							array_unshift($openTags, $closingTag[1]);
-						}
+						array_unshift($openTags, $closingTag[1]);
 					}
 				}
-				$truncate = $this->usubstr($truncate, 0, $spacepos);
 			}
 		}
 		$truncate .= $ending;
@@ -1423,8 +1582,11 @@ class e_parse
 	 * @param string  $text string to process
 	 * @param int     $len  length of characters to be truncated
 	 * @param string  $more string which will be added if truncation
-	 * @return string Always returns text.
-	 * @deprecated for public use. Will be made private. Use $tp->truncate() instead.
+	 * @return string Always returns text. The cut itself never decodes, though bbcode
+	 *                      and HTML input still goes through {@see e_parse::toText()} first.
+	 * @deprecated v2.3.1 Use {@see e_parse::truncate()}, passing the length and ending since its defaults differ; it keeps
+	 *             HTML that this method flattens to text. Avoid in new code and migrate existing call sites when refactoring;
+	 *             this method remains supported and tested, with no removal planned.
 	 *                      Truncate a string of text to a maximum length $len append the string $more if it was truncated
 	 *                      Uses current CHARSET  for utf-8, returns $len characters rather than $len bytes
 	 *
@@ -1442,27 +1604,48 @@ class e_parse
 			$text = $this->toText($text);
 		}
 
+		$units = $this->visibleUnits($text, (int) (float) $len + 1);
 
-		$text = html_entity_decode($text, ENT_QUOTES, 'utf-8');
-
-		if (function_exists('mb_strimwidth'))
+		if (count($units) <= $len)
 		{
-			return mb_strimwidth($text, 0, $len, $more);
+			return $text;
 		}
 
-		$ret = $this->usubstr($text, 0, $len);
+		$keep = $len - count($this->visibleUnits($more, (int) (float) $len + 1));
 
-		// search for possible broken html entities
-		// - if an & is in the last 8 chars, removing it and whatever follows shouldn't hurt
-		// it should work for any characters encoding
+		return implode('', array_slice($units, 0, max(0, $keep))) . $more;
 
-		$leftAmp = $this->ustrrpos($this->usubstr($ret, -8), '&');
-		if ($leftAmp)
+	}
+
+
+	/**
+	 * Split up to $limit units a reader sees off the start of text, each one HTML entity or one character.
+	 *
+	 * @param string $text
+	 * @param int    $limit
+	 * @return array
+	 */
+	private function visibleUnits($text, $limit)
+	{
+
+		$limit = max(0, (int) $limit);
+		$text = (string) $text;
+
+		if ($limit < strlen($text))
 		{
-			$ret = $this->usubstr($ret, 0, $this->ustrlen($ret) - 8 + $leftAmp);
+			$text = (string) substr($text, 0, $limit * $this->longestVisibleUnit);
 		}
 
-		return $ret . $more;
+		$pattern = '/' . $this->htmlEntityRegexp . '|';
+		$units = array();
+
+		if (preg_match_all($pattern . './su', $text, $units) === false)
+		{
+			$units = array();
+			preg_match_all($pattern . $this->utf8MultibyteRegexp . '|./s', $text, $units);
+		}
+
+		return isset($units[0]) ? array_slice($units[0], 0, $limit) : array();
 
 	}
 
@@ -1590,7 +1773,7 @@ class e_parse
 	private function splitOnTags($text)
 	{
 
-		return preg_split('#(<(?:[^<>"\']|"[^"]*"|\'[^\']*\')*>)#s', $text, -1, PREG_SPLIT_DELIM_CAPTURE);
+		return preg_split('#(<(?:[^<>"\']++|"[^"]*+"|\'[^\']*+\')*+>)#s', $text, -1, PREG_SPLIT_DELIM_CAPTURE);
 	}
 
 
@@ -1647,14 +1830,32 @@ class e_parse
 			return $text;
 		}
 
-		$linktext = (!empty($textReplace)) ? $textReplace : '$3';
 		$target = $external ? 'target="_blank"' : '';
 		$break = '\n' . E_NL;
 		$start = $atStart ? '^|' : '';
 
-		$text = preg_replace("/(" . $start . "[" . $break . " \(])([\w]*?)([\w]*?:\/\/[\w]+[^ \,\"" . $break . "\r\t<]*)/is", '$1$2<a class="e-url" href="$3" ' . $target . '>' . $linktext . '</a>', $text);
-		$text = preg_replace("/(" . $start . "[" . $break . " \(])([\w]*?)((www)\.[^ \,\"\t" . $break . "\r\)<]*)/is", '$1$2<a class="e-url" href="http://$3" ' . $target . '>' . $linktext . '</a>', $text);
-		$text = preg_replace("/(" . $start . "[" . $break . " ])([\w]*?)((ftp)\.[^ \,\"\t" . $break . "\r<]*)/is", '$1$2<a class="e-url" href="$4://$3" ' . $target . '>' . $linktext . '</a>', $text);
+		$anchor = function ($href, $address) use ($textReplace, $target)
+		{
+			return '<a class="e-url" href="' . $href . '" ' . $target . '>' . (!empty($textReplace) ? $textReplace : $address) . '</a>';
+		};
+
+		$text = preg_replace_callback("/(" . $start . "[" . $break . " \(])([\w]*?)([\w]*?:\/\/[\w]+[^ \,\"" . $break . "\r\t<]*)/is", function ($match) use ($anchor)
+		{
+			if ($this->toUrlAttribute($match[3]) === '')
+			{
+				return $match[0];
+			}
+
+			return $match[1] . $match[2] . $anchor($match[3], $match[3]);
+		}, $text);
+		$text = preg_replace_callback("/(" . $start . "[" . $break . " \(])([\w]*?)((www)\.[^ \,\"\t" . $break . "\r\)<]*)/is", function ($match) use ($anchor)
+		{
+			return $match[1] . $match[2] . $anchor('http://' . $match[3], $match[3]);
+		}, $text);
+		$text = preg_replace_callback("/(" . $start . "[" . $break . " ])([\w]*?)((ftp)\.[^ \,\"\t" . $break . "\r<]*)/is", function ($match) use ($anchor)
+		{
+			return $match[1] . $match[2] . $anchor($match[4] . '://' . $match[3], $match[3]);
+		}, $text);
 
 		return $text;
 	}
@@ -1668,7 +1869,32 @@ class e_parse
 	public function parseBBCodes($text, $postID)
 	{
 
-		return e107::getBB()->parseBBCodes($text, $postID);
+		return $this->parseBBCodesBeforeShortcodes($text, $postID, self::$bbcodeShortcodes);
+	}
+
+	/**
+	 * Parse bbcodes, telling {@see e_parse::toBBCodeUrlAttribute()} whether a shortcode pass will run over their output.
+	 *
+	 * @param string $text
+	 * @param mixed  $postID
+	 * @param bool   $shortcodes
+	 * @param string $mode
+	 * @param mixed  $strip
+	 * @return string
+	 */
+	private function parseBBCodesBeforeShortcodes($text, $postID, $shortcodes, $mode = 'default', $strip = false)
+	{
+		$outer = self::$bbcodeShortcodes;
+		self::$bbcodeShortcodes = (bool) $shortcodes;
+
+		try
+		{
+			return e107::getBB()->parseBBCodes($text, $postID, $mode, $strip);
+		}
+		finally
+		{
+			self::$bbcodeShortcodes = $outer;
+		}
 	}
 
 	/**
@@ -1733,6 +1959,36 @@ class e_parse
 	}
 
 
+	/** @var bool[] whether each author id {@see e_parse::shortcodeModifiersForAuthor()} has looked up is an administrator */
+	private $adminAuthors = array();
+
+
+	/**
+	 * Add 'scparse_off' to $modifiers unless the author of the stored text is an administrator.
+	 *
+	 * @param string $modifiers {@see e_parse::toHTML()} modifiers for the field
+	 * @param int    $authorId  user id stored with the text
+	 * @return string
+	 */
+	public function shortcodeModifiersForAuthor($modifiers, $authorId)
+	{
+		$authorId = (int) $authorId;
+
+		if (!isset($this->adminAuthors[$authorId]))
+		{
+			$author = ($authorId > 0) ? e107::user($authorId) : array();
+			$this->adminAuthors[$authorId] = !empty($author['user_admin']);
+		}
+
+		if ($this->adminAuthors[$authorId])
+		{
+			return $modifiers;
+		}
+
+		return ltrim($modifiers . ',scparse_off', ',');
+	}
+
+
 	/**
 	 * Render stored content for display: bbcode, shortcodes, {e_XXX} constants,
 	 * emotes, clickable links and any hooked parser the site has enabled.
@@ -1783,7 +2039,9 @@ class e_parse
 	 *
 	 * @param string  $text      content to render. Non-strings and empty values
 	 *                           are returned unchanged.
-	 * @param boolean $parseBB   [optional] parse bbcode in $text
+	 * @param boolean|string $parseBB [optional] parse bbcode in $text, or a
+	 *                           comma-separated list of codes to strip while
+	 *                           parsing the rest
 	 * @param string  $modifiers [optional] see MODIFIER GRAMMAR above
 	 * @param mixed   $postID    [optional] id passed on to bbcode handlers that
 	 *                           need to know which item they are rendering
@@ -1795,10 +2053,32 @@ class e_parse
 	 */
 	public function toHTML($text, $parseBB = false, $modifiers = '', $postID = '', $wrap = false)
 	{
+		return $this->renderText($text, $parseBB, $modifiers, $postID, 0, null);
+	}
+
+
+	/**
+	 * {@see e_parse::toHTML()} for a text $depth [hide] blocks deep: 0 for the text toHTML() was given; 1 for the content of a block set aside from that text, or one the hide bbcode put in a block's place, which is read for its own blocks; from 2, a region of a block nested in such a content, whose blocks are markers already and whose line-break fix and trim the caller makes.
+	 *
+	 * @param string      $text
+	 * @param bool|string $parseBB
+	 * @param string      $modifiers
+	 * @param mixed       $postID
+	 * @param int         $depth
+	 * @param bool|null   $isHtml from depth 2, whether the region's source holds markup; null to tell from $text
+	 * @return string
+	 */
+	private function renderText($text, $parseBB, $modifiers, $postID, $depth, $isHtml)
+	{
 
 		if (empty($text) || !is_string($text))
 		{
 			return $text;
+		}
+
+		if (strpos($text, '<!--') !== false || stripos($text, '<iframe') !== false)
+		{
+			$text = $this->inertHiddenText($text);
 		}
 
 		if (empty($this->pref)) // cache the prefs.
@@ -1816,10 +2096,24 @@ class e_parse
 
 		global $fromadmin;
 
+		if (($parseBB !== false) && ($depth < 2))
+		{
+			$text = $this->inertInsideTags($text, '#\[(?=/?(?:table|html|php|code|scode))#i', '&#91;', true);
+		}
+
 		// Set default modifiers to start
 		$opts = $this->getModifiers($modifiers);
+		$isHtml = ($isHtml === null) ? $this->isHtml($text) : $isHtml;
+		$hideBlocks = array();
+		$parseBlocksWith = $parseBB;
+		$stripCodes = is_string($parseBB) ? explode(',', $parseBB) : array();
 
-		if ($this->isHtml($text)) //BC FIx for when HTML is saved without [html][/html]
+		if (($parseBB !== false) && ($depth < 2) && !in_array('hide', $stripCodes, true))
+		{
+			$text = $this->setAsideHideBlocks($text, $hideBlocks);
+		}
+
+		if ($isHtml) //BC FIx for when HTML is saved without [html][/html]
 		{
 			$opts['nobreak'] = true;
 			$text = trim($text);
@@ -1832,13 +2126,10 @@ class e_parse
 
 		$fromadmin = $opts['fromadmin'];
 
-		// Convert defines(constants) within text. eg. Lan_XXXX - must be the entire text string (i.e. not embedded)
-		// The check for '::' is a workaround for a bug in the Zend Optimiser 3.3.0 and PHP 5.2.4 combination
-		// - causes crashes if '::' in site name
-
-		if ($opts['defs'] && (strlen($text) < 35) && ((strpos($text, '::') === false) && defined(trim($text))))
+		// Convert a language term named by the entire text, eg. LAN_XXXX (i.e. not embedded)
+		if ($opts['defs'] && (strlen($text) < 35) && ($term = self::languageTerm($text)) !== null)
 		{
-			$text = constant(trim($text)); // don't return yet, words could be hooked with linkwords etc.
+			$text = $term; // don't return yet, words could be hooked with linkwords etc.
 		}
 
 		if ($opts['no_tags'])
@@ -1862,7 +2153,9 @@ class e_parse
 		$saveOpts = $opts;
 
 
-		if ($parseBB == false)
+		$keyCodes = implode('|', array_diff(array('table', 'html', 'php', 'code', 'scode', 'hide'), $stripCodes));
+
+		if ($parseBB == false || $keyCodes === '')
 		{
 			$content = array($text);
 		}
@@ -1870,7 +2163,7 @@ class e_parse
 		{
 			// Split each text block into bits which are either within one of the 'key' bbcodes, or outside them
 			// (Because we have to match end words, the 'extra' capturing subpattern gets added to output array. We strip it later)
-			$content = preg_split('#(\[(table|html|php|code|scode|hide).*?\[\/(?:\\2)\])#mis', $text, -1, PREG_SPLIT_NO_EMPTY | PREG_SPLIT_DELIM_CAPTURE);
+			$content = self::splitAtBBCodeTags('#(\[(' . $keyCodes . ').*?\[\/(?:\\2)\])#mis', $text, PREG_SPLIT_NO_EMPTY | PREG_SPLIT_DELIM_CAPTURE);
 		}
 
 
@@ -1879,6 +2172,7 @@ class e_parse
 		{
 			$proc_funcs = true;
 			$convertNL = true;
+			$blockRendered = false;
 
 			// We may have 'captured' a bbcode word - strip it if so
 			if ($last_bbcode == $full_text)
@@ -1896,12 +2190,16 @@ class e_parse
 
 				// Have to have a good test in case a 'non-key' bbcode starts the block
 				// - so pull out the bbcode parameters while we're there
-				if (($parseBB !== false) && preg_match('#(^\[(table|html|php|code|scode|hide)(.*?)\])(.*?)(\[/\\2\]$)#is', $full_text, $matches))
+				if (($parseBB !== false) && ($keyCodes !== '') && preg_match('#(^\[(' . $keyCodes . ')' . self::BBCODE_TAG_LEAVES_NO_HTML_TAG_OPEN . '(.*?)\])(.*?)(\[/\\2\]$)#is', $full_text, $matches))
 				{
 
 					$proc_funcs = false;
 					$full_text = '';
 					$code_text = $matches[4];
+					$bbcodes = function ($value) use ($postID)
+					{
+						return $this->parseBBCodesBeforeShortcodes($value, $postID, false);
+					};
 					//	$parm = $matches[3] ? substr($matches[3], 1) : '';
 					$last_bbcode = $matches[2];
 
@@ -1924,12 +2222,13 @@ class e_parse
 							$html_end = '<!-- bbcode-html-end -->';
 							$full_text = str_replace(array('[html]', '[/html]'), '', $code_text); // quick fix.. security issue?
 
-							$full_text = $this->parseBBCodes($full_text, $postID); // parse any embedded bbcodes eg. [img]
+							$full_text = $this->parseBBCodesBeforeShortcodes($this->expandInsideTags($this->restoreEntitiesOutsideCode($full_text, $opts['value']), '[', $bbcodes), $postID, $opts['parse_sc']); // parse any embedded bbcodes eg. [img]
 							$full_text = $this->replaceConstants($full_text, 'abs'); // parse any other paths using {e_....
 							$full_text = $html_start . $full_text . $html_end;
 							$full_text = $this->parseBBTags($full_text); // strip <bbcode> tags. 
 							$opts['nobreak'] = true;
 							$parseBB = false; // prevent further bbcode processing.
+							$blockRendered = true;
 
 
 							break;
@@ -1940,10 +2239,14 @@ class e_parse
 
 						case 'hide' :
 							$proc_funcs = true;
+							$full_text = $this->restoreEntitiesOutsideCode($matches[1], $opts['value']) . $this->expandInsideTags($this->restoreEntitiesOutsideCode($matches[4], $opts['value']), '[', $bbcodes) . $matches[5];
+							$full_text = $this->parseBBCodesBeforeShortcodes($full_text, $postID, $opts['parse_sc']);
+							$blockRendered = true;
+							break;
 
 						case 'scode':
 						case 'code' :
-							$full_text = $this->parseBBCodes($matches[0], $postID);
+							$full_text = $this->parseBBCodes($this->expandInsideTags($this->restoreEntitiesOutsideCode($matches[0], $opts['value']), '[', $bbcodes), $postID);
 							break;
 					}
 
@@ -1978,7 +2281,7 @@ class e_parse
 
 						//	Link substitution
 						// Convert URL's to clickable links, unless modifiers or prefs override
-						$sub_blk = $this->processModifiers($opts, $sub_blk, $convertNL, $parseBB, $modifiers, $postID);
+						$sub_blk = $this->processModifiers($opts, $sub_blk, $convertNL, $blockRendered ? false : $parseBB, $modifiers, $postID, !$blockRendered);
 
 						$ret_parser .= $sub_blk;
 					}    // End of 'normal' processing for a block of text
@@ -1993,19 +2296,831 @@ class e_parse
 			}
 		}
 
-		// Quick Fix - Remove trailing <br /> on block-level elements (eg. div, pre, table, etc. )
-		$srch = array();
-		$repl = array();
-
-		foreach ($this->blockTags as $val)
+		if (!empty($hideBlocks))
 		{
-			$srch[] = '</' . $val . '><br />';
-			$repl[] = '</' . $val . '>';
+			$ret_parser = $this->renderHideBlocks($ret_parser, $hideBlocks, $parseBlocksWith, $modifiers, $postID, $depth);
 		}
 
-		$ret_parser = str_replace($srch, $repl, $ret_parser);
+		if ($depth >= 2)
+		{
+			return $ret_parser;
+		}
 
-		return trim($ret_parser);
+		// Quick Fix - Remove trailing <br /> on block-level elements (eg. div, pre, table, etc. )
+		return trim($this->withFewerBreaks($ret_parser, 1));
+	}
+
+
+	/**
+	 * Replace each [hide] block {@see e_bbcode::hideBlocks()} finds in $text, and that lies either within one tag or wholly outside tags, with a marker shaped as a tag, so that no other step of toHTML() can make or break one, and none can carry it into an attribute unencoded; write as an entity the bracket of every other [hide] or [/hide] a tag holds, and look once more for the blocks a refused one held. Each block keeps those {@see e_bbcode::hideBlockTree()} finds nested in its content.
+	 *
+	 * @param string $text
+	 * @param array  $blocks receives the blocks and their markers
+	 * @return string
+	 */
+	private function setAsideHideBlocks($text, &$blocks)
+	{
+		$bracket = '#\[(?=/?hide)#i';
+
+		if (!preg_match($bracket, $text))
+		{
+			return $text;
+		}
+
+		for ($pass = 1; ; $pass++)
+		{
+			$pieces = $this->tagPieces($text, true);
+			$tree = ($pieces === false) ? array() : e107::getBB()->hideBlockTree($text);
+			$taken = array();
+			$refused = false;
+			$number = -1;
+
+			foreach ($tree as $index => $block)
+			{
+				if ($block['parent'] !== -1)
+				{
+					continue;
+				}
+
+				$number++;
+
+				if ($this->straddlesTag($pieces, $block))
+				{
+					$refused = true;
+					continue;
+				}
+
+				$taken[$number] = $index;
+			}
+
+			$edits = array();
+			$spans = array_values($taken);
+			$next = 0;
+			preg_match_all($bracket, $text, $brackets, PREG_OFFSET_CAPTURE);
+
+			foreach ($brackets[0] as $match)
+			{
+				$at = $match[1];
+
+				while (isset($spans[$next]) && ($tree[$spans[$next]]['start'] + $tree[$spans[$next]]['length'] <= $at))
+				{
+					$next++;
+				}
+
+				if ((!isset($spans[$next]) || ($at < $tree[$spans[$next]]['start'])) && ($pieces === false || $pieces[$this->tagPieceAt($pieces, $at)]['inTag']))
+				{
+					$edits[$at] = array(1, '&#91;');
+				}
+			}
+
+			if (!$refused || $pass === 2 || empty($edits))
+			{
+				break;
+			}
+
+			$text = $this->spliceText($text, $edits);
+		}
+
+		if (!empty($taken))
+		{
+			$set = ++self::$hideMarkers;
+		}
+
+		foreach ($taken as $number => $index)
+		{
+			$block = $tree[$index];
+			list($contentStart, $contentEnd) = $this->hideContentRange($block);
+			$blocks[$number] = array(
+				'start'   => $block['start'],
+				'length'  => $block['length'],
+				'open'    => $block['open'],
+				'close'   => $block['close'],
+				'content' => (string) substr($text, $contentStart, $contentEnd - $contentStart),
+				'marker'  => '<e_hide_' . $set . '_' . $number . '>',
+				'blocks'  => $this->nestedHideBlocks($tree, $index, $contentStart),
+			);
+			$edits[$block['start']] = array($block['length'], $blocks[$number]['marker']);
+		}
+
+		return $this->spliceText($text, $edits);
+	}
+
+
+	/**
+	 * Put each block {@see e_parse::setAsideHideBlocks()} set aside back into $html, rendered by the hide bbcode, where its marker stands as a tag of its own, and put a space in place of every marker left anywhere else, so that the text either side cannot join; the bbcode may put other text in the block's place, such as a sealed block opened. A shown block's content is rendered as a text of its own at $depth 0, and from the blocks found nested in it below that.
+	 *
+	 * @param string      $html
+	 * @param array       $blocks
+	 * @param bool|string $parseBB
+	 * @param string      $modifiers
+	 * @param mixed       $postID
+	 * @param int         $depth as {@see e_parse::renderText()} takes it
+	 * @return string
+	 */
+	private function renderHideBlocks($html, $blocks, $parseBB, $modifiers, $postID, $depth)
+	{
+		$markers = array();
+
+		foreach ($blocks as $number => $block)
+		{
+			$markers[$block['marker']] = $number;
+		}
+
+		$parts = $this->splitOnTags($html);
+
+		if ($parts === false)
+		{
+			$parts = array($html);
+		}
+
+		foreach ($parts as $i => $part)
+		{
+			if (!isset($markers[$part]))
+			{
+				continue;
+			}
+
+			$block = $blocks[$markers[$part]];
+			list($box, $content) = $this->hideBlockBox($block, $part, $postID);
+
+			if (strpos($box, $part) !== false)
+			{
+				$box = str_replace($part, (($depth === 0) || ($content !== $block['content']))
+					? $this->renderOwnText($content, $parseBB, $modifiers, $postID)
+					: $this->renderNestedBlocks($block, $parseBB, $modifiers, $postID), $box);
+			}
+
+			$parts[$i] = $box;
+		}
+
+		return $this->withoutMarkers(implode('', $parts), array($this->markerSet($blocks) => array_flip(array_keys($blocks))));
+	}
+
+
+	/**
+	 * The content of $block, set aside from the content of another, rendered region by region from the blocks found nested in it: the text of each region once, with a marker for each block in it that does not straddle a tag; each block's box from the hide bbcode before anything inside it is processed; a block whose content would cut a tag, or a [code] block holding one, read in a view of its own once the view it was found in is done with; the whole joined once.
+	 *
+	 * @param array       $block as {@see e_parse::setAsideHideBlocks()} sets it aside
+	 * @param bool|string $parseBB
+	 * @param string      $modifiers
+	 * @param mixed       $postID
+	 * @return string
+	 */
+	private function renderNestedBlocks($block, $parseBB, $modifiers, $postID)
+	{
+		$views = array($this->nestedView($block['content'], $block['blocks']));
+		$pending = array(1);
+		$regions = array();
+		$work = array(array(0, -1, 2, 0));
+		$later = array();
+		$laterAt = 0;
+		$nextRegion = 1;
+		$depths = array(2);
+		$regionSets = array();
+
+		while ($work || isset($later[$laterAt]))
+		{
+			if ($work)
+			{
+				list($view, $index, $depth, $region) = array_pop($work);
+			}
+			else
+			{
+				list($view, $index, $depth, $region) = $later[$laterAt];
+				unset($later[$laterAt++]);
+			}
+
+			$content = $views[$view]['content'];
+			$nested = $views[$view]['nested'];
+			$read = $views[$view]['read'];
+
+			list($start, $end) = ($index < 0) ? array(0, strlen($content)) : $this->hideContentRange($nested[$index]);
+			$markers = array();
+			$text = '';
+			$at = $start;
+			$set = 0;
+
+			foreach (isset($read['children'][$index]) ? $read['children'][$index] : array() as $number => $child)
+			{
+				if (!$set)
+				{
+					$set = ++self::$hideMarkers;
+				}
+
+				$marker = '<e_hide_' . $set . '_' . $number . '>';
+				$markers[$marker] = $child;
+				$regionSets[$region][$set][$number] = true;
+				$text .= $this->editedSlice($content, $read['edits'], $at, $nested[$child]['start']) . $marker;
+				$at = $nested[$child]['start'] + $nested[$child]['length'];
+			}
+
+			$text = $this->withoutPairedHideTags($text . $this->editedSlice($content, $read['edits'], $at, $end));
+
+			$html = $this->renderText($text, $parseBB, $modifiers, $postID, $depth, $markers ? $this->sourceIsHtml($read, $start, $end) : null);
+			$parts = $markers ? $this->splitOnTags($html) : false;
+			$out = array();
+			$buffer = '';
+			$children = array();
+
+			foreach (($parts === false) ? array($html) : $parts as $part)
+			{
+				if (!isset($markers[$part]))
+				{
+					$buffer .= $part;
+					continue;
+				}
+
+				$child = $nested[$markers[$part]];
+				list($childStart, $childEnd) = $this->hideContentRange($child);
+				$child['content'] = (string) substr($content, $childStart, $childEnd - $childStart);
+				list($box, $shown) = $this->hideBlockBox($child, $part, $postID);
+
+				if (strpos($box, $part) === false)
+				{
+					$buffer .= $box;
+					continue;
+				}
+
+				if ($shown !== $child['content'])
+				{
+					$buffer .= str_replace($part, $this->renderOwnText($shown, $parseBB, $modifiers, $postID), $box);
+					continue;
+				}
+
+				$id = $nextRegion++;
+				$depths[$id] = $depth + 1;
+
+				if (isset($read['own'][$markers[$part]]))
+				{
+					$childView = count($pending);
+					$views[$childView] = $this->nestedView($child['content'], $this->nestedHideBlocks($nested, $markers[$part], $childStart));
+					$pending[$childView] = 1;
+					$later[] = array($childView, -1, $depth + 1, $id);
+				}
+				else
+				{
+					$pending[$view]++;
+					$children[] = array($view, $markers[$part], $depth + 1, $id);
+				}
+
+				foreach (explode($part, $box) as $j => $slice)
+				{
+					if ($j)
+					{
+						$out[] = $buffer;
+						$out[] = $id;
+						$buffer = '';
+					}
+
+					$buffer .= $slice;
+				}
+			}
+
+			$out[] = $buffer;
+			$regions[$region] = $out;
+
+			foreach (array_reverse($children) as $child)
+			{
+				$work[] = $child;
+			}
+
+			if (--$pending[$view] === 0)
+			{
+				unset($views[$view]);
+			}
+		}
+
+		$output = array();
+		$stack = array(array(0, 0));
+		$sets = isset($regionSets[0]) ? $regionSets[0] : array();
+
+		while ($stack)
+		{
+			$top = count($stack) - 1;
+			list($region, $i) = $stack[$top];
+			$last = count($regions[$region]) - 1;
+
+			if ($i > $last)
+			{
+				if (isset($regionSets[$region]))
+				{
+					unset($sets[key($regionSets[$region])]);
+				}
+
+				array_pop($stack);
+				continue;
+			}
+
+			$stack[$top][1] = $i + 1;
+
+			if ($i % 2)
+			{
+				$child = $regions[$region][$i];
+				$sets += isset($regionSets[$child]) ? $regionSets[$child] : array();
+				$stack[] = array($child, 0);
+				continue;
+			}
+
+			$part = $this->withFewerBreaks($this->withoutMarkers($regions[$region][$i], $sets), $depths[$region] - 1);
+			$part = ($i === 0) ? ltrim($part) : $part;
+			$output[] = ($i === $last) ? rtrim($part) : $part;
+		}
+
+		return implode('', $output);
+	}
+
+
+	/**
+	 * What {@see e_parse::renderNestedBlocks()} needs to know of $content once: the brackets of [hide] and [/hide] a tag holds, which each region writes as entities; for each nested block, those of the blocks in its content it sets aside, in order, leaving as typed one that straddles a tag; which of them begin or end inside a tag, or inside a [code] block while their content holds a < and letter, and so read tags or [code] blocks otherwise than $content does; and where markup lies, to tell whether a region's source holds any.
+	 *
+	 * @param string  $content
+	 * @param array[] $nested
+	 * @return array with the keys edits (offsets, ascending), children (block index, -1 for $content itself => block indexes), own (block index => true), html (offsets of [html], ascending) and markup (the starts and the ends of each tag the markup test reads, ascending)
+	 */
+	private function readNestedContent($content, $nested)
+	{
+		$read = array('edits' => array(), 'children' => array(), 'own' => array(), 'html' => array(), 'markup' => array(array(), array()));
+
+		if (!preg_match('#\[(?=/?hide)#i', $content))
+		{
+			return $read;
+		}
+
+		$pieces = $this->tagPieces($content, true);
+		preg_match_all('#\[(?=/?hide)#i', $content, $brackets, PREG_OFFSET_CAPTURE);
+
+		foreach ($brackets[0] as $match)
+		{
+			if ($pieces === false || $pieces[$this->tagPieceAt($pieces, $match[1])]['inTag'])
+			{
+				$read['edits'][] = $match[1];
+			}
+		}
+
+		if ($pieces === false || empty($nested))
+		{
+			return $read;
+		}
+
+		$spans = array(array(), array());
+		$tags = array();
+
+		foreach ($pieces as $piece)
+		{
+			if ($piece['tag'])
+			{
+				continue;
+			}
+
+			if ((stripos($piece['text'], '[code') !== false) && preg_match_all(self::$codeBlockPattern, self::blankBracketsBeginningNoBBCodeTag($piece['text']), $found, PREG_OFFSET_CAPTURE))
+			{
+				foreach ($found[0] as $span)
+				{
+					$spans[0][] = $piece['offset'] + $span[1];
+					$spans[1][] = $piece['offset'] + $span[1] + strlen($span[0]);
+				}
+			}
+
+			if (preg_match_all('#<[a-z]#i', $piece['text'], $found, PREG_OFFSET_CAPTURE))
+			{
+				foreach ($found[0] as $tag)
+				{
+					$tags[] = $piece['offset'] + $tag[1];
+				}
+			}
+		}
+
+		$refused = array();
+
+		foreach ($nested as $index => $block)
+		{
+			if (($block['parent'] >= 0 && isset($refused[$block['parent']])) || $this->straddlesTag($pieces, $block))
+			{
+				$refused[$index] = true;
+				continue;
+			}
+
+			$read['children'][$block['parent']][] = $index;
+			list($start, $end) = $this->hideContentRange($block);
+			$tag = $this->lastBefore($tags, $start);
+
+			if ((isset($tags[$tag]) && ($tags[$tag] + 1 < $end) && ($this->insideSpan($spans, $start) || $this->insideSpan($spans, $end)))
+				|| $this->insideTag($pieces, $start) || $this->insideTag($pieces, $end))
+			{
+				$read['own'][$index] = true;
+			}
+		}
+
+		preg_match_all('#\[html\]#', $content, $html, PREG_OFFSET_CAPTURE);
+		preg_match_all('#(?<=<)\w+(?=([^<]*?)>)#', $content, $witnesses, PREG_OFFSET_CAPTURE);
+
+		foreach ($html[0] as $match)
+		{
+			$read['html'][] = $match[1];
+		}
+
+		foreach ($witnesses[0] as $i => $match)
+		{
+			$read['markup'][0][] = $match[1] - 1;
+			$read['markup'][1][] = $witnesses[1][$i][1] + strlen($witnesses[1][$i][0]);
+		}
+
+		return $read;
+	}
+
+
+	/**
+	 * $text with the bracket of every [hide] and [/hide] held by the opening or the closing tag of a [hide] pair {@see e_bbcode::hideBlockTree()} finds in it written as an entity.
+	 *
+	 * @param string $text
+	 * @return string
+	 */
+	private function withoutPairedHideTags($text)
+	{
+		$edits = array();
+
+		foreach (e107::getBB()->hideBlockTree($text) as $block)
+		{
+			$close = $block['start'] + $block['length'] - strlen($block['close']);
+
+			foreach (array($block['start'] => $block['open'], $close => $block['close']) as $at => $tag)
+			{
+				preg_match_all('#\[(?=/?hide)#i', $tag, $brackets, PREG_OFFSET_CAPTURE);
+
+				foreach ($brackets[0] as $bracket)
+				{
+					$edits[$at + $bracket[1]] = array(1, '&#91;');
+				}
+			}
+		}
+
+		return $this->spliceText($text, $edits);
+	}
+
+
+	/**
+	 * Whether offset $at lies strictly inside a tag of $pieces, so that a content beginning or ending there would read the tag as text.
+	 *
+	 * @param array[] $pieces as {@see e_parse::tagPieces()} cuts the text
+	 * @param int     $at
+	 * @return bool
+	 */
+	private function insideTag($pieces, $at)
+	{
+		$piece = $pieces[$this->tagPieceAt($pieces, $at)];
+
+		return $piece['tag'] && ($piece['offset'] < $at) && ($at < $piece['offset'] + strlen($piece['text']));
+	}
+
+
+	/**
+	 * Whether offset $at lies strictly inside one of the [code] spans {@see e_parse::readNestedContent()} found.
+	 *
+	 * @param int[][] $spans the starts and the ends of the spans, ascending
+	 * @param int     $at
+	 * @return bool
+	 */
+	private function insideSpan($spans, $at)
+	{
+		$span = $this->lastBefore($spans[0], $at) - 1;
+
+		return ($span >= 0) && ($spans[1][$span] > $at);
+	}
+
+
+	/**
+	 * The number of $sorted (ascending) that are less than $at.
+	 *
+	 * @param int[] $sorted
+	 * @param int   $at
+	 * @return int
+	 */
+	private function lastBefore($sorted, $at)
+	{
+		$low = 0;
+		$high = count($sorted);
+
+		while ($low < $high)
+		{
+			$middle = ($low + $high) >> 1;
+
+			if ($sorted[$middle] < $at)
+			{
+				$low = $middle + 1;
+			}
+			else
+			{
+				$high = $middle;
+			}
+		}
+
+		return $low;
+	}
+
+
+	/**
+	 * The hide bbcode's box for $block, with $marker in place of its content, and the content the bbcode shows there, which it may put in place of the block's own, such as a sealed block opened.
+	 *
+	 * @param array  $block with the keys start, length, open, close and content
+	 * @param string $marker
+	 * @param mixed  $postID
+	 * @return string[] the box, then the content
+	 */
+	private function hideBlockBox($block, $marker, $postID)
+	{
+		global $e_hide_block;
+
+		$was = $e_hide_block;
+		$e_hide_block = array(
+			'start'   => $block['start'],
+			'length'  => $block['length'],
+			'open'    => $block['open'],
+			'close'   => $block['close'],
+			'content' => $block['content'],
+			'marker'  => $marker,
+		);
+		$box = e107::getBB()->parseBBCodes('[hide]' . $marker . '[/hide]', $postID);
+		$content = $e_hide_block['content'];
+		$e_hide_block = $was;
+
+		return array($box, $content);
+	}
+
+
+	/**
+	 * The blocks of $tree nested in the content of block $index, which begins at byte $offset, each with its start counted from there and its parent counted among them, -1 for the block itself.
+	 *
+	 * @param array[] $tree as {@see e_bbcode::hideBlockTree()} returns it, or a part of it so counted
+	 * @param int     $index
+	 * @param int     $offset
+	 * @return array[]
+	 */
+	private function nestedHideBlocks($tree, $index, $offset)
+	{
+		$nested = array();
+		$end = $tree[$index]['start'] + $tree[$index]['length'];
+
+		for ($i = $index + 1; isset($tree[$i]) && ($tree[$i]['start'] < $end); $i++)
+		{
+			$block = $tree[$i];
+			$block['start'] -= $offset;
+			$block['parent'] = ($block['parent'] === $index) ? -1 : $block['parent'] - $index - 1;
+			$nested[] = $block;
+		}
+
+		return $nested;
+	}
+
+
+	/**
+	 * Whether $block begins and ends in different pieces of $pieces, either of them a tag.
+	 *
+	 * @param array[] $pieces as {@see e_parse::tagPieces()} cuts the text
+	 * @param array   $block with the keys start and length
+	 * @return bool
+	 */
+	private function straddlesTag($pieces, $block)
+	{
+		$first = $this->tagPieceAt($pieces, $block['start']);
+		$last = $this->tagPieceAt($pieces, $block['start'] + $block['length'] - 1);
+
+		return ($first !== $last) && ($pieces[$first]['tag'] || $pieces[$last]['tag']);
+	}
+
+
+	/**
+	 * $text with each of $edits made, offset => array(length, replacement), the spans they replace apart from one another.
+	 *
+	 * @param string  $text
+	 * @param array[] $edits
+	 * @return string
+	 */
+	private function spliceText($text, $edits)
+	{
+		ksort($edits);
+		$parts = array();
+		$at = 0;
+
+		foreach ($edits as $offset => $edit)
+		{
+			$parts[] = (string) substr($text, $at, $offset - $at);
+			$parts[] = $edit[1];
+			$at = $offset + $edit[0];
+		}
+
+		$parts[] = (string) substr($text, $at);
+
+		return implode('', $parts);
+	}
+
+
+	/**
+	 * The bytes of $content from $from to $to, the bracket at each of $edits (offsets, ascending) written as an entity.
+	 *
+	 * @param string $content
+	 * @param int[]  $edits
+	 * @param int    $from
+	 * @param int    $to
+	 * @return string
+	 */
+	private function editedSlice($content, $edits, $from, $to)
+	{
+		$low = $this->lastBefore($edits, $from);
+		$slice = '';
+
+		for ($at = $from; isset($edits[$low]) && ($edits[$low] < $to); $low++)
+		{
+			$slice .= substr($content, $at, $edits[$low] - $at) . '&#91;';
+			$at = $edits[$low] + 1;
+		}
+
+		return $slice . (string) substr($content, $at, $to - $at);
+	}
+
+
+	/**
+	 * Whether the source from $from to $to of the content {@see e_parse::readNestedContent()} read holds markup as {@see e_parse::isHtml()} tells it.
+	 *
+	 * @param array $read
+	 * @param int   $from
+	 * @param int   $to
+	 * @return bool
+	 */
+	private function sourceIsHtml($read, $from, $to)
+	{
+		$html = $this->lastBefore($read['html'], $from);
+		$markup = $this->lastBefore($read['markup'][0], $from);
+
+		return (isset($read['html'][$html]) && ($read['html'][$html] + 6 <= $to)) || (isset($read['markup'][1][$markup]) && ($read['markup'][1][$markup] < $to));
+	}
+
+
+	/**
+	 * $nested, read in $before, with each offset and tag moved to where it lies in $after, which is $before with some of its < written as &lt;.
+	 *
+	 * @param array[] $nested
+	 * @param string  $before
+	 * @param string  $after
+	 * @return array[]
+	 */
+	private function movedBlocks($nested, $before, $after)
+	{
+		$moved = array();
+		$shift = 0;
+
+		for ($i = 0, $j = 0, $length = strlen($before); $i < $length; $i++, $j++)
+		{
+			$moved[$i] = $shift;
+
+			if (($before[$i] === '<') && ($after[$j] === '&'))
+			{
+				$j += 3;
+				$shift += 3;
+			}
+		}
+
+		$moved[$length] = $shift;
+
+		foreach ($nested as $index => $block)
+		{
+			$start = $block['start'] + $moved[$block['start']];
+			list($contentStart, $contentEnd) = $this->hideContentRange($block);
+			$end = $block['start'] + $block['length'];
+			$nested[$index]['start'] = $start;
+			$nested[$index]['length'] = $end + $moved[$end] - $start;
+			$nested[$index]['open'] = (string) substr($after, $start, $contentStart + $moved[$contentStart] - $start);
+			$nested[$index]['close'] = (string) substr($after, $contentEnd + $moved[$contentEnd], $end + $moved[$end] - $contentEnd - $moved[$contentEnd]);
+		}
+
+		return $nested;
+	}
+
+
+	/**
+	 * $html with a space in place of every marker of $sets left in it, as typed, entity-encoded or percent-encoded, so that the text either side cannot join.
+	 *
+	 * @param string $html
+	 * @param array  $sets set number => the numbers of its markers, as keys
+	 * @return string
+	 */
+	private function withoutMarkers($html, $sets)
+	{
+		if (empty($sets) || (strpos($html, 'e_hide_') === false))
+		{
+			return $html;
+		}
+
+		return preg_replace_callback('#<e_hide_(\d+)_(\d+)>|&lt;e_hide_(\d+)_(\d+)(?:&gt;|&\#x3E;)|%3Ce_hide_(\d+)_(\d+)%3E#', function ($match) use ($sets)
+		{
+			$at = ($match[1] !== '') ? 1 : ((isset($match[3]) && $match[3] !== '') ? 3 : 5);
+
+			return isset($sets[$match[$at]][$match[$at + 1]]) ? ' ' : $match[0];
+		}, $html);
+	}
+
+
+	/**
+	 * The set number the markers of $blocks share.
+	 *
+	 * @param array[] $blocks
+	 * @return int
+	 */
+	private function markerSet($blocks)
+	{
+		$block = reset($blocks);
+
+		return (int) substr($block['marker'], 8);
+	}
+
+
+	/**
+	 * $html with up to $times line breaks taken from each run that follows the end of a block element, which carries a line break of its own.
+	 *
+	 * @param string $html
+	 * @param int    $times
+	 * @return string
+	 */
+	private function withFewerBreaks($html, $times)
+	{
+		if (($times < 1) || (strpos($html, '><br />') === false))
+		{
+			return $html;
+		}
+
+		$ends = array();
+
+		foreach ($this->blockTags as $tag)
+		{
+			$ends[] = '</' . $tag . '>';
+		}
+
+		$out = '';
+		$at = 0;
+
+		for ($gt = strpos($html, '><br />'); $gt !== false; $gt = strpos($html, '><br />', $run))
+		{
+			$run = $gt + 1;
+
+			foreach ($ends as $end)
+			{
+				if (($run >= strlen($end)) && ((string) substr($html, $run - strlen($end), strlen($end)) === $end))
+				{
+					for ($breaks = 0; (string) substr($html, $run, 6) === '<br />'; $breaks++)
+					{
+						$run += 6;
+					}
+
+					$out .= substr($html, $at, $gt + 1 - $at) . str_repeat('<br />', max(0, $breaks - $times));
+					$at = $run;
+					break;
+				}
+			}
+		}
+
+		return $out . (string) substr($html, $at);
+	}
+
+
+	/**
+	 * The offsets of the content of $block, from its start up to its closing tag.
+	 *
+	 * @param array $block with the keys start, length, open and close
+	 * @return int[]
+	 */
+	private function hideContentRange($block)
+	{
+		return array($block['start'] + strlen($block['open']), $block['start'] + $block['length'] - strlen($block['close']));
+	}
+
+
+	/**
+	 * $content, shown in a [hide] block, rendered as a text of its own, with every < of a tag the parser cannot read written as &lt;.
+	 *
+	 * @param string      $content
+	 * @param bool|string $parseBB
+	 * @param string      $modifiers
+	 * @param mixed       $postID
+	 * @return string
+	 */
+	private function renderOwnText($content, $parseBB, $modifiers, $postID)
+	{
+		return $this->renderText($this->inertInsideTags($content, '#<#', '&lt;', false), $parseBB, $modifiers, $postID, 1, null);
+	}
+
+
+	/**
+	 * The view {@see e_parse::renderNestedBlocks()} renders regions from: $source with every < of a tag the parser cannot read written as &lt;, the blocks $nested in it moved to match, and what it reads of them.
+	 *
+	 * @param string  $source
+	 * @param array[] $nested counted from the start of $source
+	 * @return array with the keys content, nested and read
+	 */
+	private function nestedView($source, $nested)
+	{
+		$content = $this->inertInsideTags($source, '#<#', '&lt;', false);
+		$nested = ($content === $source) ? $nested : $this->movedBlocks($nested, $source, $content);
+
+		return array('content' => $content, 'nested' => $nested, 'read' => $this->readNestedContent($content, $nested));
 	}
 
 
@@ -2031,25 +3146,14 @@ class e_parse
 
 		while (($lt = strpos($html, '<', $pos)) !== false)
 		{
-			$tag = $this->scriptStyleStartTag($html, $lt);
+			$tag = $this->rawTextStartTag($html, $lt, array('script', 'style'));
 			if ($tag === false)
 			{
 				$pos = $lt + 1;
 				continue;
 			}
 
-			// Find the matching close tag. Browsers treat an unclosed
-			// <script>/<style> as running to the end of input, so do the same.
-			$close = stripos($html, '</' . $tag, $lt + 1);
-			if ($close === false)
-			{
-				$end = $length;
-			}
-			else
-			{
-				$gt = strpos($html, '>', $close);
-				$end = ($gt === false) ? $length : $gt + 1;
-			}
+			$end = $this->rawTextEnd($html, $lt, $tag);
 
 			if ($lt > $textStart)
 			{
@@ -2071,25 +3175,25 @@ class e_parse
 
 
 	/**
-	 * Test whether the `<` at $offset opens a <script> or <style> start tag.
+	 * Test whether the `<` at $offset opens a start tag with one of the given names.
 	 *
 	 * The tag name must be followed by a delimiter (`>`, `/` or whitespace) so a
 	 * name such as `<scripting>` is not mistaken for a script tag.
 	 *
-	 * @param string $html
-	 * @param int    $offset position of a `<` within $html
-	 * @return string|false 'script', 'style', or false
+	 * @param string   $html
+	 * @param int      $offset position of a `<` within $html
+	 * @param string[] $tags   names of elements whose content a browser reads as raw text
+	 * @return string|false the name found, or false
 	 */
-	private function scriptStyleStartTag($html, $offset)
+	private function rawTextStartTag($html, $offset, $tags)
 	{
-		foreach (array('script', 'style') as $tag)
+		foreach ($tags as $tag)
 		{
 			if (strcasecmp((string) substr($html, $offset + 1, strlen($tag)), $tag) !== 0)
 			{
 				continue;
 			}
-			$next = (string) substr($html, $offset + 1 + strlen($tag), 1);
-			if ($next === '>' || $next === '/' || ($next !== '' && ctype_space($next)))
+			if ($this->endsTagName($html, $offset + 1 + strlen($tag)))
 			{
 				return $tag;
 			}
@@ -2097,6 +3201,127 @@ class e_parse
 		return false;
 	}
 
+	/**
+	 * @param string $html
+	 * @param int    $offset just past a tag name
+	 * @return bool whether a browser ends the tag name there: at '>', '/', space, tab, line feed, form feed or carriage return
+	 */
+	private function endsTagName($html, $offset)
+	{
+		$next = (string) substr($html, $offset, 1);
+
+		return $next !== '' && strpos(" \t\n\f\r/>", $next) !== false;
+	}
+
+
+	/**
+	 * @param string $html
+	 * @param int    $offset where the start tag begins
+	 * @param string $tag    the name rawTextStartTag() found there
+	 * @return int the offset just past its closing tag, or the end of $html when it has none
+	 */
+	private function rawTextEnd($html, $offset, $tag)
+	{
+		$close = $this->rawTextClose($html, $offset, $tag);
+		$gt = ($close < strlen($html)) ? strpos($html, '>', $close) : false;
+
+		return ($gt === false) ? strlen($html) : $gt + 1;
+	}
+
+	/**
+	 * @param string $html
+	 * @param int    $offset where the start tag begins
+	 * @param string $tag    the name rawTextStartTag() found there
+	 * @return int where the closing tag that ends it begins, or the end of $html when it has none
+	 */
+	private function rawTextClose($html, $offset, $tag)
+	{
+		$close = $offset;
+		while (($close = stripos($html, '</' . $tag, $close + 1)) !== false)
+		{
+			if ($this->endsTagName($html, $close + 2 + strlen($tag)))
+			{
+				return $close;
+			}
+		}
+
+		return strlen($html);
+	}
+
+	/**
+	 * @param string $text
+	 * @return string $text with & < > [ { encoded, so that nothing later reads markup, a bbcode or a shortcode in it
+	 */
+	private function hiddenText($text)
+	{
+		return strtr($text, array('&' => '&amp;', '<' => '&lt;', '>' => '&#62;', '[' => '&#91;', '{' => '&#123;'));
+	}
+
+	/**
+	 * @param string $text stored HTML
+	 * @return string $text with the text of each comment and each iframe encoded, as hiddenText() does; script and style blocks unchanged
+	 */
+	private function inertHiddenText($text)
+	{
+		$out = '';
+		$copied = 0;
+		$pos = 0;
+		$iframeClose = null;
+
+		while (true)
+		{
+			$lt = strpos($text, '<', $pos);
+
+			if ($iframeClose !== null && ($lt === false || $lt >= $iframeClose))
+			{
+				$out .= $this->hiddenText((string) substr($text, $copied, $iframeClose - $copied));
+				$copied = $pos = $iframeClose;
+				$iframeClose = null;
+				continue;
+			}
+
+			if ($lt === false)
+			{
+				break;
+			}
+
+			if ((string) substr($text, $lt, 4) === '<!--')
+			{
+				$close = strpos($text, '-->', $lt + 4);
+				$innerEnd = ($close === false) ? strlen($text) : $close;
+				$before = (string) substr($text, $copied, $lt - $copied);
+
+				$out .= (($iframeClose === null) ? $before : $this->hiddenText($before))
+					. '<!--' . $this->hiddenText((string) substr($text, $lt + 4, $innerEnd - $lt - 4)) . '-->';
+				$copied = $pos = ($close === false) ? strlen($text) : $close + 3;
+
+				if ($iframeClose !== null && $pos > $iframeClose)
+				{
+					$iframeClose = $this->rawTextClose($text, $pos - 1, 'iframe');
+				}
+				continue;
+			}
+
+			$tag = ($iframeClose === null) ? $this->rawTextStartTag($text, $lt, array('script', 'style', 'iframe')) : false;
+
+			if ($tag === 'iframe')
+			{
+				$gt = strpos($text, '>', $lt);
+				if ($gt === false)
+				{
+					break;
+				}
+				$out .= substr($text, $copied, $gt + 1 - $copied);
+				$copied = $pos = $gt + 1;
+				$iframeClose = max($pos, $this->rawTextClose($text, $lt, 'iframe'));
+				continue;
+			}
+
+			$pos = ($tag === false) ? $lt + 1 : $this->rawTextEnd($text, $lt, $tag);
+		}
+
+		return $out . substr($text, $copied);
+	}
 
 	/**
 	 * Check if a string begins with a preformatter flag.
@@ -2248,23 +3473,21 @@ class e_parse
 	 * Use it on html attributes to avoid breaking markup .
 	 *
 	 * @param string $text
-	 * @param bool   $pure True to skip the text mutation by {@see e_parse::replaceConstants()}
+	 * @param bool   $pure True to leave web path constants such as {e_PLUGIN} unexpanded
 	 * @example echo "<a href='#' title='".$tp->toAttribute($text)."'>Hello</a>";
 	 */
 	public function toAttribute($text, $pure = false)
 	{
+		$text = (string) $text;
 
-		// URLs posted without HTML access may have an &amp; in them.
-
-		// Xhtml compliance.
-		$text = htmlspecialchars((string) $text, ENT_QUOTES, 'UTF-8');
-
-		if (!$pure && !preg_match('/&#|\'|"|<|>/s', $text))
+		if (!$pure && strpos($text, "'") === false)
 		{
-			$text = $this->replaceConstants($text);
+			$text = $this->expandConstants($text, self::$webPathConstants);
 		}
 
-		return $text;
+		$text = htmlspecialchars($text, ENT_QUOTES, 'UTF-8');
+
+		return $pure ? $text : $this->disarmConstantPlaceholders($text);
 	}
 
 	/**
@@ -2285,17 +3508,139 @@ class e_parse
 	public function toUrlAttribute($url, $fallback = '')
 	{
 		$url = (string) $url;
+		$scheme = $this->urlScheme($url);
 
-		// Browsers skip control characters and whitespace while reading a scheme.
-		$probe = strtolower(preg_replace('/[\x00-\x20\x7F]/', '', $url));
-
-		if (preg_match('#^([a-z][a-z0-9+.\-]*):#', $probe, $match)
-			&& !in_array($match[1], array('http', 'https', 'ftp', 'ftps', 'mailto'), true))
+		if ($scheme !== '' && !in_array($scheme, array('http', 'https', 'ftp', 'ftps', 'mailto'), true))
 		{
 			$url = $fallback;
 		}
 
-		return $this->toAttribute($url, true);
+		return $this->disarmConstantPlaceholders($this->toAttribute($url, true));
+	}
+
+	/**
+	 * Encode a bbcode's URL, given as the post stores it, for an href or src attribute once the constants and shortcodes toHTML() expands in it are expanded, leaving the calling bbcode's globals as they were.
+	 *
+	 * @param string $url
+	 * @return string encoded with every opening brace as an entity, or '' when there is nothing {@see e_parse::toUrlAttribute()} will link
+	 */
+	public function toBBCodeUrlAttribute($url)
+	{
+		global $code_text, $parm, $postID, $fromadmin;
+
+		$url = $this->expandConstants($this->bbcodeTextAsTyped($url), self::$webPathConstants);
+
+		if (self::$bbcodeShortcodes && strpos($url, '{') !== false)
+		{
+			$bbcode = array($code_text, $parm, $postID, $fromadmin);
+
+			try
+			{
+				$url = (string) $this->parseTemplate($this->disarmShortcodeParameters($url), true);
+			}
+			finally
+			{
+				list($code_text, $parm, $postID, $fromadmin) = $bbcode;
+			}
+		}
+
+		return str_replace('{', '&#123;', $this->toUrlAttribute($url));
+	}
+
+	/**
+	 * What the author typed in a bbcode's parameter or text, from the value the post stores.
+	 *
+	 * A post's store can write `& < > " '` as references, and a member's post saved by 2.2.0 to 2.3.12 holds an `&` as `&amp;amp;`, so this takes back two levels.
+	 * Only `&amp; &lt; &gt; &quot;` and the numeric references to `& < > " '` are decoded: every other reference stays written, so `&apos;` and a brace written as `&#123;` stay written.
+	 * {@see e_parse::toBBCodeUrlAttribute()} takes back these levels itself, so hand it the stored value.
+	 *
+	 * @param string $stored a bbcode's $parm or $code_text
+	 * @return string decoded, for the bbcode to encode once where it writes it, as with {@see e_parse::toAttribute()}
+	 */
+	public function bbcodeTextAsTyped($stored)
+	{
+		return htmlspecialchars_decode(htmlspecialchars_decode((string) $stored, ENT_QUOTES), ENT_QUOTES);
+	}
+
+	/**
+	 * Whether the current user may save a link address: one that can run script needs the post_script class, unless it is the stored address sent back as it is and the save would store it unchanged.
+	 *
+	 * @param string|array      $address the address as posted, or an array of them
+	 * @param string|array|null $shown   the address as stored, byte for byte, never a decoded form value, or an array of them, or null when nothing is stored
+	 * @return bool
+	 */
+	public function maySaveLinkAddress($address, $shown = null)
+	{
+		if (is_array($address))
+		{
+			foreach ($address as $key => $value)
+			{
+				if (!$this->maySaveLinkAddress($value, (is_array($shown) && isset($shown[$key])) ? $shown[$key] : null))
+				{
+					return false;
+				}
+			}
+
+			return true;
+		}
+
+		if ($this->hasScriptAccess())
+		{
+			return true;
+		}
+
+		$address = (string) $address;
+
+		foreach (array($address, $this->toDB($address), $this->toDB($address, false, false, 'model', array('type' => null, 'field' => null))) as $form)
+		{
+			if (($shown === null || !$this->isUnchangedPost($form, $shown)) && $this->mayRunScript((string) $form))
+			{
+				return false;
+			}
+		}
+
+		return true;
+	}
+
+	/**
+	 * @param string $address an address as posted or as stored
+	 * @return bool whether a browser may read a script scheme at its start once its entities are decoded and e107 has filled in its constants and shortcodes
+	 */
+	private function mayRunScript($address)
+	{
+		do
+		{
+			$previous = $address;
+			$address = preg_replace_callback('/&#(x[0-9a-f]+|[0-9]+);?/i', function ($match)
+			{
+				$codePoint = (strtolower($match[1][0]) === 'x') ? hexdec((string) substr($match[1], 1)) : (int) $match[1];
+
+				return (($codePoint > 0 && $codePoint < 0x20) || $codePoint === 0x7F) ? chr($codePoint) : html_entity_decode('&#'.$match[1].';', ENT_QUOTES | ENT_HTML5, 'UTF-8');
+			}, $address);
+			$address = html_entity_decode($address, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+
+			if (preg_match('/^[^:\/?#]*\{(?!e_)/', $address))
+			{
+				return true;
+			}
+
+			$address = preg_replace('/\{[^{}]*\}/', '', $address);
+		}
+		while ($address !== $previous);
+
+		return in_array($this->urlScheme($address), array('javascript', 'vbscript', 'data'), true);
+	}
+
+	/**
+	 * @param string $url
+	 * @return string the scheme a browser reads at the start of the URL, in lower case, or '' when it names none
+	 */
+	private function urlScheme($url)
+	{
+		// Browsers skip control characters and whitespace while reading a scheme.
+		$probe = eShims::strtolower(preg_replace('/[\x00-\x20\x7F]/', '', $url));
+
+		return preg_match('#^([a-z][a-z0-9+.\-]*):#', $probe, $match) ? $match[1] : '';
 	}
 
 	/**
@@ -2313,6 +3658,176 @@ class e_parse
 	}
 
 	/**
+	 * Turn script into a javascript: address for a single-quoted href, percent-encoding what the attribute or the address would change.
+	 *
+	 * @param string $script
+	 * @return string
+	 */
+	public function toJsUrl($script)
+	{
+		return 'javascript:'.strtr((string) $script, array('%' => '%25', "'" => '%27', '&' => '%26', "\t" => '%09', "\n" => '%0A', "\r" => '%0D', "\0" => '%00'));
+	}
+
+	/**
+	 * Write as $entity each match of $pattern in text holding a tag the parser cannot read, and in the tags it reads when $tagsToo, so that the match can neither cut a tag in two nor open one; in all of $text when it defeats the pattern engine.
+	 *
+	 * @param string $text
+	 * @param string $pattern
+	 * @param string $entity
+	 * @param bool   $tagsToo
+	 * @return string
+	 */
+	private function inertInsideTags($text, $pattern, $entity, $tagsToo)
+	{
+		if (!preg_match($pattern, $text))
+		{
+			return $text;
+		}
+
+		$pieces = $this->tagPieces($text, true);
+
+		if ($pieces === false)
+		{
+			return preg_replace($pattern, $entity, $text);
+		}
+
+		$text = '';
+
+		foreach ($pieces as $piece)
+		{
+			$text .= ($piece['inTag'] && ($tagsToo || !$piece['tag'])) ? preg_replace($pattern, $entity, $piece['text']) : $piece['text'];
+		}
+
+		return $text;
+	}
+
+	/**
+	 * The pieces {@see e_parse::splitOnTags()} cuts $text into, each with its byte offset, whether it is a tag, and whether a browser may read it as part of one: a tag, or text holding a tag the pattern cannot read, outside the [code] blocks when the bbcode parser reads them.
+	 *
+	 * @param string $text
+	 * @param bool   $codeRead whether the bbcode parser reads the text's [code] blocks, which escape what they hold
+	 * @return array[]|false each with the keys text, offset, tag and inTag; false when the text defeats the pattern engine
+	 */
+	private function tagPieces($text, $codeRead)
+	{
+		$segments = $this->splitOnTags($text);
+
+		if ($segments === false)
+		{
+			return false;
+		}
+
+		$pieces = array();
+		$offset = 0;
+
+		foreach ($segments as $i => $segment)
+		{
+			$tag = ($i % 2 === 1);
+			$pieces[] = array(
+				'text'   => $segment,
+				'offset' => $offset,
+				'tag'    => $tag,
+				'inTag'  => $tag || (preg_match('#<[a-z]#i', $segment) === 1 && (!$codeRead || preg_match('#<[a-z]#i', (string) preg_replace(self::$codeBlockPattern, '', self::blankBracketsBeginningNoBBCodeTag($segment))) === 1)),
+			);
+			$offset += strlen($segment);
+		}
+
+		return $pieces;
+	}
+
+	/**
+	 * The index of the piece {@see e_parse::tagPieces()} made that holds byte $at.
+	 *
+	 * @param array[] $pieces
+	 * @param int     $at
+	 * @return int
+	 */
+	private function tagPieceAt($pieces, $at)
+	{
+		$low = 0;
+		$high = count($pieces) - 1;
+
+		while ($low < $high)
+		{
+			$middle = (int) (($low + $high + 1) / 2);
+
+			if ($pieces[$middle]['offset'] <= $at)
+			{
+				$low = $middle;
+			}
+			else
+			{
+				$high = $middle - 1;
+			}
+		}
+
+		return $low;
+	}
+
+	/**
+	 * Expand the codes $marker opens in each quoted attribute value of a tag, one value at a time and encoded for that attribute, and leave $marker inert anywhere else a tag holds it.
+	 *
+	 * @param string   $text
+	 * @param string   $marker the character that opens a code
+	 * @param callable $expand expands one attribute value as it is written
+	 * @return string
+	 */
+	private function expandInsideTags($text, $marker, $expand)
+	{
+		if (strpos($text, $marker) === false)
+		{
+			return $text;
+		}
+
+		$inert = '&#' . ord($marker) . ';';
+		$pieces = $this->tagPieces($text, $marker === '[');
+
+		if ($pieces === false)
+		{
+			return str_replace($marker, $inert, $text);
+		}
+
+		$segments = array();
+
+		foreach ($pieces as $i => $piece)
+		{
+			$segment = $segments[$i] = $piece['text'];
+
+			if (strpos($segment, $marker) === false || !$piece['inTag'] || !preg_match('#<[a-z]#i', $segment))
+			{
+				continue;
+			}
+
+			if (!$piece['tag'] || !preg_match('#^</?[a-z]#i', $segment))
+			{
+				$segments[$i] = str_replace($marker, $inert, $segment);
+				continue;
+			}
+
+			$parts = preg_split('#("[^"]*"|\'[^\']*\'|&quot;.*?&quot;|&\#0?39;.*?&\#0?39;)#s', $segment, -1, PREG_SPLIT_DELIM_CAPTURE);
+
+			foreach ($parts as $j => $part)
+			{
+				if ($j % 2 === 1 && strpos($part, $marker) !== false && preg_match('#([^\s"\'=<>/;]+)\s*=\s*$#', $parts[$j - 1], $name)
+					&& preg_match('#^("|\'|&quot;|&\#0?39;)(.*)\1$#s', $part, $quoted))
+				{
+					$value = html_entity_decode($expand($quoted[2]), ENT_QUOTES | ENT_HTML5, 'UTF-8');
+					$value = in_array(strtolower($name[1]), array('action', 'background', 'cite', 'data', 'formaction', 'href', 'poster', 'src', 'xlink:href'), true)
+						? $this->toUrlAttribute($value, '#')
+						: $this->toAttribute($value, true);
+					$part = $quoted[1] . strtr($value, array('&quot;' => '&#x22;', '&#039;' => '&#x27;', '&gt;' => '&#x3E;')) . $quoted[1];
+				}
+
+				$parts[$j] = str_replace($marker, $inert, $part);
+			}
+
+			$segments[$i] = implode('', $parts);
+		}
+
+		return implode('', $segments);
+	}
+
+	/**
 	 * Build a series of HTML attributes from the provided array
 	 *
 	 * Because of legacy loose typing client code usages, values that are {@see empty()} will not be added to the
@@ -2322,7 +3837,7 @@ class e_parse
 	 * @param array $attributes Key-value pairs of HTML attributes. The value must not be HTML-encoded. If the value is
 	 *                          boolean true, the value will be set to the key (e.g. `['required' => true]` becomes
 	 *                          "required='required'").
-	 * @param bool  $pure       True to skip the text mutation by {@see e_parse::replaceConstants()}
+	 * @param bool  $pure       True to leave web path constants such as {e_PLUGIN} unexpanded
 	 * @return string The HTML attributes to concatenate inside an HTML tag
 	 * @see e_parseTest::testToAttributesMixedPureAndReplaceConstants() for an example of how to use this method
 	 */
@@ -2508,8 +4023,35 @@ class e_parse
 	 * @param string  $text
 	 * @param boolean $tags [optional]
 	 * @return string
+	 * @see e_parse::toRssForAuthor() for text a user wrote
 	 */
 	public function toRss($text, $tags = false)
+	{
+		return $this->rssText($text, $tags, null);
+	}
+
+
+	/**
+	 * Convert text a user wrote for RSS/XML use; its shortcodes expand only if that user is an administrator.
+	 *
+	 * @param string  $text
+	 * @param int     $authorId user ID stored with the text
+	 * @param boolean $tags     [optional]
+	 * @return string
+	 */
+	public function toRssForAuthor($text, $authorId, $tags = false)
+	{
+		return $this->rssText($text, $tags, $this->shortcodeModifiersForAuthor('parse_sc, no_make_clickable', $authorId));
+	}
+
+
+	/**
+	 * @param string      $text
+	 * @param boolean     $tags
+	 * @param string|null $emailModifiers {@see e_parse::toEmail()} modifiers, NULL for its defaults
+	 * @return string
+	 */
+	private function rssText($text, $tags, $emailModifiers)
 	{
 
 		if ($tags != true)
@@ -2519,7 +4061,7 @@ class e_parse
 
 		}
 
-		$text = $this->toEmail($text);
+		$text = ($emailModifiers === null) ? $this->toEmail($text) : $this->toEmail($text, '', $emailModifiers);
 
 		$search = array('&amp;#039;', '&amp;#036;', '&#039;', '&#036;', e_BASE, "href='request.php", '<!-- bbcode-html-start -->', '<!-- bbcode-html-end -->');
 		$replace = array("'", '$', "'", '$', SITEURL, "href='" . SITEURL . 'request.php', '', '');
@@ -3709,9 +5251,23 @@ class e_parse
 			return !empty($text) ? str_replace($search, $replace, $text) : $text;
 		}
 
-//		$pattern = ($all ? "#\{([A-Za-z_0-9]*)\}#s" : "#\{(e_[A-Z]*)\}#s");
-		$pattern = ($all ? '#\{([A-Za-z_0-9]*)\}#s' : '#\{(e_[A-Z]*(?:_IMAGE|_VIDEO|_FILE|_CONTENT|_ICON|_AVATAR|_JS|_CSS|_PACK|_DB|_ABS){0,1})\}#s');
-		$text = preg_replace_callback($pattern, array($this, 'doReplace'), $text);
+		return $this->expandConstants($text, $all ? null : array_merge(self::$webPathConstants, self::$serverPathConstants));
+	}
+
+	/**
+	 * Expand the {e_...} constants named in $names, or every {CONSTANT} when $names is null, and {THEME}.
+	 *
+	 * @param string        $text
+	 * @param string[]|null $names
+	 * @return string
+	 */
+	private function expandConstants($text, $names)
+	{
+		$pattern = ($names === null ? '#\{([A-Za-z_0-9]*)\}#s' : self::$constantPlaceholder);
+		$text = preg_replace_callback($pattern, function ($matches) use ($names)
+		{
+			return $this->doReplace($matches, $names);
+		}, $text);
 
 		if (!defined('THEME'))
 		{
@@ -3730,14 +5286,34 @@ class e_parse
 
 
 	/**
-	 * @param array $matches
+	 * Encode the brace of each {e_...} placeholder that names no web path constant, so that no later constants pass expands it.
+	 *
+	 * @param string $text
+	 * @return string
+	 */
+	private function disarmConstantPlaceholders($text)
+	{
+		return preg_replace_callback(self::$constantPlaceholder, function ($matches)
+		{
+			return in_array($matches[1], self::$webPathConstants, true) ? $matches[0] : '&#123;'.substr($matches[0], 1);
+		}, $text);
+	}
+
+	/**
+	 * @param array         $matches
+	 * @param string[]|null $names the constants that may expand, or null for any
 	 * @return mixed|string
 	 */
-	private function doReplace($matches)
+	private function doReplace($matches, $names)
 	{
 
 		if (defined($matches[1]) && (deftrue('ADMIN') || strpos($matches[1], 'ADMIN') === false))
 		{
+			if ($names !== null && !in_array($matches[1], $names, true))
+			{
+				return $matches[0];
+			}
+
 			return constant($matches[1]);
 		}
 
@@ -3970,7 +5546,7 @@ class e_parse
 		if ($this->isHtml($text))
 		{
 			$text = str_replace(array('[html]', '[/html]'), '', $text);
-			$text = html_entity_decode($text, ENT_COMPAT, 'UTF-8');
+			$text = $this->decodeEntitiesKeepingMarkup($text);
 		}
 		else
 		{
@@ -3979,6 +5555,68 @@ class e_parse
 		}
 
 		return $text;
+	}
+
+	/**
+	 * html_entity_decode() for HTML that adds no element and no attribute: entities stay as they are in a comment and a tag name, '<' and '>' everywhere, and '"' anywhere but in text or between a tag's attributes; '' if the text cannot be searched.
+	 *
+	 * @param string $text
+	 * @return string
+	 */
+	private function decodeEntitiesKeepingMarkup($text)
+	{
+		$inside = '';
+
+		$html = preg_replace_callback('/<!---?>|<!--|--!?>|<\/?[a-z!&][^\s\/<>"\']*|>|"|\'|&(?:#\d+|#x[0-9a-f]+|[a-z][a-z0-9]*);/i', function ($match) use (&$inside)
+		{
+			$token = $match[0];
+
+			if ($token[0] === '&')
+			{
+				$character = html_entity_decode($token, ENT_COMPAT, 'UTF-8');
+				$keep = $inside === '<!--' || $character === '<' || $character === '>' || ($character === '"' && $inside !== '' && $inside !== '<');
+
+				return $keep ? $token : $character;
+			}
+
+			if ($inside === '<!--')
+			{
+				if ($token === '-->' || $token === '--!>')
+				{
+					$inside = '';
+				}
+			}
+			elseif ($inside === '')
+			{
+				if ($token === '<!--')
+				{
+					$inside = '<!--';
+				}
+				elseif ($token[0] === '<' && $token !== '<!-->' && $token !== '<!--->')
+				{
+					$inside = '<';
+				}
+			}
+			elseif ($inside === '<')
+			{
+				if (substr($token, -1) === '>')
+				{
+					$inside = '';
+				}
+				elseif ($token === '"' || $token === "'")
+				{
+					$inside = $token;
+				}
+			}
+			elseif ($token === $inside)
+			{
+				$inside = '<';
+			}
+
+			return $token;
+		}, $text);
+
+		return ($html === null) ? '' : $html;
 	}
 
 
@@ -4266,6 +5904,19 @@ class e_parse
 	}
 
 	/**
+	 * @return bool whether the current user is in the class that may post script
+	 */
+	private function hasScriptAccess()
+	{
+		if ($this->scriptAccess === false)
+		{
+			$this->scriptAccess = e107::getConfig()->get('post_script', e_UC_NOBODY); // Pref to Allow <script> tags11;
+		}
+
+		return check_class($this->scriptAccess);
+	}
+
+	/**
 	 * @return array
 	 */
 	public function getRemoved()
@@ -4337,6 +5988,24 @@ class e_parse
 	public function leadingZeros($num, $numDigits)
 	{
 		return (string) sprintf('%0' . $numDigits . 'd', $num);
+	}
+
+	/**
+	 * The value of the language term a name in content refers to, or null when it names no defined language term.
+	 *
+	 * @param string $name
+	 * @return string|null
+	 */
+	public static function languageTerm($name)
+	{
+		$name = trim((string) $name);
+
+		if (preg_match('/^[A-Z][A-Za-z0-9_]*$/', $name) && preg_match('/LAN|\d$/', $name) && defined($name))
+		{
+			return constant($name);
+		}
+
+		return null;
 	}
 
 	/**
@@ -4454,6 +6123,12 @@ class e_parse
 	private function toGlyphEmbed($cat, $id, $parm = array())
 	{
 		$dirs = ['far' => 'regular', 'fab' => 'brands', 'fas' => 'solid'];
+
+		if (!isset($dirs[$cat]) || !preg_match('/^[a-z0-9-]+$/', $id))
+		{
+			return false;
+		}
+
 		$path = e_WEB . 'lib/font-awesome/5/svgs/';
 		$path .= $dirs[$cat] . '/';
 		$path .= str_replace('fa-', '', $id) . ".svg";
@@ -5264,14 +6939,116 @@ class e_parse
 
 
 	/**
-	 * Encode a value for a quoted HTML attribute, leaving an entity the caller already wrote alone.
+	 * Encode a value for markup the browser parses once, as a quoted attribute or element text, leaving an entity already in it alone.
 	 *
 	 * @param mixed $value
 	 * @return string
 	 */
-	private function attributeValue($value)
+	public function attributeValue($value)
 	{
 		return htmlspecialchars((string) $value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8', false);
+	}
+
+
+	/**
+	 * Whether a value a form posted back is the stored value the form showed, unchanged.
+	 *
+	 * @param mixed      $posted  the value as posted, or an array of them
+	 * @param mixed      $shown   the stored value as the form showed it, after the form's own decoding, or an array of them
+	 * @param array|null $element the element that showed it, as array('type' => an e_form element type, 'maxItems' => the tag widget's limit as {@see e_form::tags()} takes it), to compare as a browser posts that element back; null to compare as stored
+	 * @return bool
+	 * @throws InvalidArgumentException when $element is neither null nor an array naming a type
+	 */
+	public function isUnchangedPost($posted, $shown, $element = null)
+	{
+		if ($element !== null && (!is_array($element) || !isset($element['type']) || !is_string($element['type'])))
+		{
+			throw new InvalidArgumentException("isUnchangedPost() takes the element that showed the value as array('type' => an e_form element type), or null.");
+		}
+
+		if (is_array($posted) || is_array($shown))
+		{
+			if (!is_array($posted) || !is_array($shown) || count($posted) !== count($shown))
+			{
+				return false;
+			}
+
+			foreach ($shown as $key => $value)
+			{
+				if (!array_key_exists($key, $posted) || !$this->isUnchangedPost($posted[$key], $value, $element))
+				{
+					return false;
+				}
+			}
+
+			return true;
+		}
+
+		if ((!is_scalar($posted) && $posted !== null) || (!is_scalar($shown) && $shown !== null))
+		{
+			return false;
+		}
+
+		$posted = str_replace(array("\r\n", "\r"), "\n", (string) $posted);
+		$shown = str_replace(array("\r\n", "\r"), "\n", (string) $shown);
+
+		if ($element === null)
+		{
+			return $posted === $shown;
+		}
+
+		$type = $element['type'];
+		$limit = empty($element['maxItems']) ? 7 : (is_numeric($element['maxItems']) ? (int) ceil($element['maxItems']) : null);
+
+		return $this->postedBack($posted, $type) === $this->postedBack($shown, $type)
+			|| ($type === 'tags' && $posted === $this->tagsPostedBack($shown, $limit));
+	}
+
+	/**
+	 * @param string $value a value with its line breaks as LF
+	 * @param string $type  the e_form element type that shows it
+	 * @return string the value as a browser posts it back from that element: a NUL as U+FFFD, without the line breaks that open a text area, without any line break from a one-line input, and an email input's addresses without the white space around them
+	 */
+	private function postedBack($value, $type)
+	{
+		$value = str_replace("\0", "\xEF\xBF\xBD", $value);
+
+		if ($type === 'textarea' || $type === 'bbarea')
+		{
+			return ltrim($value, "\n");
+		}
+
+		$value = str_replace("\n", '', $value);
+
+		return ($type === 'email') ? preg_replace('/[\t\f ]*,[\t\f ]*/', ',', trim($value, " \t\f")) : $value;
+	}
+
+	/**
+	 * @param string   $value a tag list with its line breaks as LF
+	 * @param int|null $limit how many tags the widget keeps, null for no limit
+	 * @return string|null the list as the tag widget posts it back: trimmed as JavaScript trims, each tag once, none named '__proto__', none past $limit; null when it is not UTF-8
+	 */
+	private function tagsPostedBack($value, $limit)
+	{
+		$space = '[\x{9}-\x{d}\x{20}\x{a0}\x{1680}\x{2000}-\x{200a}\x{2028}\x{2029}\x{202f}\x{205f}\x{3000}\x{feff}]+';
+		$value = preg_replace('/^'.$space.'|'.$space.'$/u', '', $this->postedBack($value, 'tags'));
+
+		if (!is_string($value))
+		{
+			return null;
+		}
+
+		$tags = array();
+
+		foreach (($value === '') ? array() : explode(',', $value) as $tag)
+		{
+			if ($tag !== '__proto__' && ($limit === null || count($tags) < $limit) && !in_array($tag, $tags, true))
+			{
+				$tags[] = $tag;
+			}
+		}
+
+		return implode(',', $tags);
 	}
 
 
@@ -5289,16 +7066,21 @@ class e_parse
 			return false;
 		}
 
-		if (strpos($text, '[') === false)
+		if (strpos($text, '[/') === false)
 		{
 			return false;
 		}
 
-		$bbsearch = array('[/img]', '[/h]', '[/b]', '[/link]', '[/right]', '[/center]', '[/flash]', '[/code]', '[/table]');
-
-		foreach ($bbsearch as $v)
+		if (!preg_match_all('#\[/([^\[\]]+)]#', $text, $matches))
 		{
-			if (strpos($text, $v) !== false)
+			return false;
+		}
+
+		$bbcode = e107::getBB();
+
+		foreach ($matches[1] as $bbword)
+		{
+			if ($bbcode->isRegistered($bbword))
 			{
 				return true;
 			}
@@ -5398,15 +7180,7 @@ class e_parse
 			return (mb_check_encoding($string, 'UTF-8'));
 		}
 
-		return (bool) preg_match('%(?:
-        [\xC2-\xDF][\x80-\xBF]        # non-overlong 2-byte
-        |\xE0[\xA0-\xBF][\x80-\xBF]               # excluding overlongs
-        |[\xE1-\xEC\xEE\xEF][\x80-\xBF]{2}      # straight 3-byte
-        |\xED[\x80-\x9F][\x80-\xBF]               # excluding surrogates
-        |\xF0[\x90-\xBF][\x80-\xBF]{2}    # planes 1-3
-        |[\xF1-\xF3][\x80-\xBF]{3}                  # planes 4-15
-        |\xF4[\x80-\x8F][\x80-\xBF]{2}    # plane 16
-        )+%xs', $string);
+		return (bool) preg_match('%(?:' . $this->utf8MultibyteRegexp . ')+%s', $string);
 
 	}
 
@@ -5493,7 +7267,7 @@ class e_parse
 
 		$text = '<audio controls style="max-width:100%" ' . $autoplay . $controls . '>';
 		$text .= "\n";
-		$text .= '<source src="' . $file . '" type="' . $mime . '">';
+		$text .= '<source src="' . $this->attributeValue($file) . '" type="' . $mime . '">';
 		$text .= "\n";
 		$text .= 'Your browser does not support the audio tag.';
 		$text .= "\n";
@@ -5521,6 +7295,11 @@ class e_parse
 		$type = pathinfo($file, PATHINFO_EXTENSION);
 
 		$id = str_replace('.' . $type, '', $file);
+
+		if (($type === 'youtube' || $type === 'youtubepl') && !preg_match('#^[\w\-]+$#', $id))
+		{
+			return false;
+		}
 
 		$thumb = vartrue($parm['thumb']);
 		$mode = varset($parm['mode'], false); // tag, url
@@ -5655,7 +7434,7 @@ class e_parse
 			return '
 			<div class="video-responsive">
 			<video width="' . $width . '" height="' . $height . '" controls>
-			  <source src="' . $file . '" type="' . $mime . '">
+			  <source src="' . $this->attributeValue($file) . '" type="' . $mime . '">
 		
 			  Your browser does not support the video tag.
 			</video>
@@ -5692,7 +7471,7 @@ class e_parse
 
 
 	/**
-	 * Parse new <x-bbcode> tags into bbcode output.
+	 * Replace each <x-bbcode> element with the bbcode its alt holds, as text, or for the editor as bbcode with < and > encoded.
 	 *
 	 * @param bool $retainTags : when you want to replace html and retain the <bbcode> tags wrapping it.
 	 * @return string html
@@ -5708,10 +7487,12 @@ class e_parse
 		{
 			foreach ($v as $val)
 			{
-				$tag = base64_decode($val['alt']);
-				$repl = ($retainTags == true) ? '$1' . $tag . '$2' : $tag;
-				//	$text = preg_replace('/(<x-bbcode[^>]*>).*(<\/x-bbcode>)/i',$repl, $text);
-				$text = preg_replace('/(<x-bbcode alt=(?:&quot;|")' . $val['alt'] . '(?:&quot;|")>).*(<\/x-bbcode>)/i', $repl, $text);
+				$bbcode = base64_decode($val['alt']);
+				$tag = ($retainTags == true) ? str_replace(array('<', '>'), array('&lt;', '&gt;'), $bbcode) : $this->attributeValue($bbcode);
+				$text = preg_replace_callback('/(<x-bbcode alt=(?:&quot;|")' . preg_quote($val['alt'], '/') . '(?:&quot;|")>).*?(<\/x-bbcode>)/i', function ($match) use ($tag, $retainTags)
+				{
+					return ($retainTags == true) ? $match[1] . $tag . $match[2] : $tag;
+				}, $text);
 
 			}
 		}
@@ -5867,6 +7648,45 @@ class e_parse
 
 
 	/**
+	 * Clean HTML as cleanHtml() does for a user without script access, whatever the current user's.
+	 *
+	 * @param string $html
+	 * @return string
+	 */
+	private function cleanHtmlWithoutScript($html)
+	{
+		$access = $this->scriptAccess;
+		$tags = $this->allowedTags;
+		$attributes = $this->allowedAttributes;
+		$scriptTags = $this->scriptTags;
+		$scriptAttributes = $this->scriptAttributes;
+
+		$this->scriptAccess = e_UC_NOBODY;
+		$this->allowedTags = array_values(array_diff($tags, $scriptTags));
+
+		foreach ($attributes as $tag => $list)
+		{
+			$this->allowedAttributes[$tag] = array_values(array_diff($list, $scriptAttributes));
+		}
+
+		$this->scriptTags = array();
+		$this->scriptAttributes = array();
+
+		try
+		{
+			return $this->cleanHtml($html);
+		}
+		finally
+		{
+			$this->scriptAccess = $access;
+			$this->allowedTags = $tags;
+			$this->allowedAttributes = $attributes;
+			$this->scriptTags = $scriptTags;
+			$this->scriptAttributes = $scriptAttributes;
+		}
+	}
+
+	/**
 	 * Process and clean HTML from user input.
 	 * TODO Html5 tag support.
 	 *
@@ -5892,6 +7712,7 @@ class e_parse
 		//  Part 1 of 2
 		// clean out windows line-breaks.
 		$html = str_replace(array('&nbsp;', "\r", "\n", '{', '}'), array('__E_PARSER_CLEAN_HTML_NON_BREAKING_SPACE__', '', '__E_PARSER_CLEAN_HTML_LINE_BREAK__', '__E_PARSER_CLEAN_HTML_CURLY_OPEN__', '__E_PARSER_CLEAN_HTML_CURLY_CLOSED__'), $html);
+		$html = str_replace('<?', '&lt;?', $html);
 
 
 		if (strpos($html, '<body') === false) // HTML Fragment
@@ -5900,16 +7721,13 @@ class e_parse
 		}
 
 
-		if ($this->scriptAccess === false)
-		{
-			$this->scriptAccess = e107::getConfig()->get('post_script', e_UC_NOBODY); // Pref to Allow <script> tags11;
-		}
+		$scriptAccess = $this->hasScriptAccess();
 
-		if (check_class($this->scriptAccess))
+		if ($scriptAccess)
 		{
 			$this->grantScriptAccess();
 		}
-		elseif(deftrue('ADMIN') && (strpos($html, '</script>') !== false))
+		elseif(!$this->storingWithoutScript && deftrue('ADMIN') && (strpos($html, '</script>') !== false))
 		{
 			$lan1 = defset('LAN_NO_SCRIPT_ACCESS', "You don't have permission to use [script] tags.");
 			$lan2 = defset('', "If you believe this is an error, please ask the main administrator to grant you script access via [b]Preferences > Content Filters[/b]");
@@ -5931,7 +7749,7 @@ class e_parse
 		//	$doc->encoding = 'utf-8';
 		$doc = $this->domObj;
 		$opts = defined('LIBXML_HTML_NOIMPLIED') ? LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD : 0;
-		$doc->loadHTML($html, $opts);
+		$this->loadHtmlKeepingBareLessThan($doc, $html, $opts);
 
 		$this->nodesToConvert = array(); // required.
 		$this->nodesToDelete = array(); // required.
@@ -5979,7 +7797,7 @@ class e_parse
 				if (!in_array($name, $allow))
 				{
 
-					if ($this->scriptAccess == true && strpos($name, 'data-') === 0)
+					if ($scriptAccess && strpos($name, 'data-') === 0)
 					{
 						continue;
 					}
@@ -6121,6 +7939,43 @@ class e_parse
 	}
 
 	/**
+	 * Load $html into $doc so that every libxml2 version keeps a "<" that cannot open markup as text.
+	 *
+	 * @param DOMDocument $doc
+	 * @param string      $html
+	 * @param int         $options
+	 * @return void
+	 */
+	private function loadHtmlKeepingBareLessThan($doc, $html, $options)
+	{
+		$reference = '&#0000060;';
+		$escaped = 0;
+
+		if (strpos(preg_replace('/[\x01-\x08\x0B\x0C\x0E-\x1F]/', '', $html), $reference) === false)
+		{
+			$html = preg_replace('#<(?![A-Za-z/!?])#', $reference, $html, -1, $escaped);
+		}
+
+		$doc->loadHTML($html, $options);
+
+		if ($escaped === 0)
+		{
+			return;
+		}
+
+		$xpath = new DOMXPath($doc);
+		$holds = '[contains(., "' . $reference . '")]';
+
+		foreach ($xpath->query('//text()' . $holds . ' | //comment()' . $holds . ' | //processing-instruction()' . $holds) as $node)
+		{
+			if ($node->nodeType !== XML_TEXT_NODE)
+			{
+				$node->nodeValue = str_replace($reference, '<', $node->nodeValue);
+			}
+		}
+	}
+
+	/**
 	 * HTML5 void elements that may not have a closing tag.
 	 *
 	 * @var string[]
@@ -6221,11 +8076,11 @@ class e_parse
 	 */
 	public function invalidAttributeValue($value)
 	{
-
+		$probe = eShims::strtolower($value);
 
 		foreach ($this->badAttrValues as $v) // global list because a bad value is bad regardless of the attribute it's in. ;-)
 		{
-			if (preg_match('/' . $v . '/i', $value) == true)
+			if (preg_match('/' . $v . '/i', $probe) == true)
 			{
 				$this->removedList['blacklist'][] = "Match found for '{$v}' in '{$value}'";
 
@@ -6301,15 +8156,269 @@ class e_parse
 	}
 
 	/**
+	 * Apply the entity table {@see e_parse::$search} toHTML() runs over body text, or its reverse for attribute values.
+	 *
+	 * @param string $text
+	 * @param bool   $forAttributeValue
+	 * @return string
+	 */
+	private function restoreEntities($text, $forAttributeValue = false)
+	{
+		return $forAttributeValue
+			? str_replace($this->replace, $this->search, $text)
+			: strtr($text, $this->bodyEntities());
+	}
+
+	/**
+	 * preg_split() of $text by $pattern, where a [ that cannot begin a bbcode tag begins no match ({@see e_parse::blankBracketsBeginningNoBBCodeTag()}).
+	 *
+	 * @internal shared by the readers that search a whole text for bbcode tags, not part of the parser API
+	 * @param string $pattern a pattern that matches a [ only as the [ of a bbcode tag, with a ] after it
+	 * @param string $text
+	 * @param int    $flags PREG_SPLIT_NO_EMPTY and PREG_SPLIT_DELIM_CAPTURE
+	 * @return string[]|false
+	 */
+	public static function splitAtBBCodeTags($pattern, $text, $flags = 0)
+	{
+		$flags &= PREG_SPLIT_NO_EMPTY | PREG_SPLIT_DELIM_CAPTURE;
+
+		if (preg_match('#\[[^\[\]<]*+<#', $text) === 0)
+		{
+			return preg_split($pattern, $text, -1, $flags);
+		}
+
+		$pieces = preg_split($pattern, self::blankBracketsBeginningNoBBCodeTag($text), -1, $flags | PREG_SPLIT_OFFSET_CAPTURE);
+
+		if ($pieces === false)
+		{
+			return false;
+		}
+
+		foreach ($pieces as $key => $piece)
+		{
+			$pieces[$key] = (string) substr($text, $piece[1], strlen($piece[0]));
+		}
+
+		return $pieces;
+	}
+
+	/**
+	 * $text with every [ that cannot begin a bbcode tag by {@see e_parse::BBCODE_TAG_LEAVES_NO_HTML_TAG_OPEN} written as a NUL byte, read once from its end.
+	 *
+	 * @param string $text
+	 * @return string
+	 */
+	private static function blankBracketsBeginningNoBBCodeTag($text)
+	{
+		if (strpos($text, '[') === false)
+		{
+			return $text;
+		}
+
+		preg_match_all('#[\[\]<]#', $text, $marks, PREG_OFFSET_CAPTURE);
+		$marks = $marks[0];
+		$open = false;
+
+		foreach ($marks as $key => $mark)
+		{
+			if ($mark[0] !== '<')
+			{
+				$open = ($mark[0] === '[');
+			}
+			elseif (!$open)
+			{
+				unset($marks[$key]);
+			}
+		}
+
+		$commentEnds = null;
+		$tagEnds = null;
+		$blanked = $text;
+		$reaches = array();
+		$reach = false;
+		$close = strlen($text);
+
+		foreach (array_reverse($marks) as $mark)
+		{
+			$at = $mark[1];
+
+			if ($mark[0] === ']')
+			{
+				$reach = true;
+				$close = $at;
+			}
+			elseif ($mark[0] === '[')
+			{
+				if (!$reach)
+				{
+					$blanked[$at] = "\0";
+				}
+			}
+			else
+			{
+				$end = $at + 1;
+
+				if (preg_match('#\G(?:<(!--)|<([!?]|/(?![a-zA-Z]))|(' . self::HTML_TAG_A_BBCODE_TAG_MAY_HOLD . ')|<(?=/?[a-zA-Z]))#', $text, $kind, 0, $at) !== 0)
+				{
+					$end = null;
+
+					if (!empty($kind[1]))
+					{
+						if ($commentEnds === null)
+						{
+							preg_match_all('#--!?>#', $text, $commentEnds, PREG_OFFSET_CAPTURE);
+							$commentEnds = $commentEnds[0];
+							$commentEnd = count($commentEnds);
+						}
+
+						while (($commentEnd > 0) && ($commentEnds[$commentEnd - 1][1] >= $at + 4))
+						{
+							$commentEnd--;
+						}
+
+						if ((string) substr($text, $at + 4, 1) === '>')
+						{
+							$end = $at + 5;
+						}
+						elseif ((string) substr($text, $at + 4, 2) === '->')
+						{
+							$end = $at + 6;
+						}
+						elseif (isset($commentEnds[$commentEnd]) && ($commentEnds[$commentEnd][1] < $close))
+						{
+							$end = $commentEnds[$commentEnd][1] + strlen($commentEnds[$commentEnd][0]);
+						}
+					}
+					elseif (!empty($kind[2]))
+					{
+						if ($tagEnds === null)
+						{
+							preg_match_all('#>#', $text, $tagEnds, PREG_OFFSET_CAPTURE);
+							$tagEnds = $tagEnds[0];
+							$tagEnd = count($tagEnds);
+						}
+
+						while (($tagEnd > 0) && ($tagEnds[$tagEnd - 1][1] >= $at + 2))
+						{
+							$tagEnd--;
+						}
+
+						if (isset($tagEnds[$tagEnd]) && ($tagEnds[$tagEnd][1] < $close))
+						{
+							$end = $tagEnds[$tagEnd][1] + 1;
+						}
+					}
+					elseif (isset($kind[3]))
+					{
+						$end = $at + strlen($kind[3]);
+					}
+				}
+
+				if (($end !== null) && !isset($reaches[$end]))
+				{
+					$next = $end + strcspn($text, '[]<', $end);
+					$reaches[$end] = isset($reaches[$next]) && $reaches[$next];
+				}
+
+				$reach = ($end !== null) && $reaches[$end];
+			}
+
+			$reaches[$at] = $reach;
+		}
+
+		return $blanked;
+	}
+
+	/**
+	 * Apply {@see e_parse::restoreEntities()} to body text only, skipping <script> and <style> blocks and [code] blocks, whose `<` is written as `&lt;` unless it opens a [hide] block's marker.
+	 *
+	 * @param string $text
+	 * @param bool   $forAttributeValue
+	 * @return string
+	 */
+	private function restoreEntitiesOutsideCode($text, $forAttributeValue)
+	{
+		$parts = self::splitAtBBCodeTags(self::$codeBlockPattern, $text, PREG_SPLIT_DELIM_CAPTURE);
+		$result = '';
+
+		foreach ($parts as $index => $part)
+		{
+			if ($index % 3 === 1)
+			{
+				$result .= preg_replace('#<(?!e_hide_\d+_\d+>)#', '&lt;', $part);
+			}
+			elseif ($index % 3 === 0)
+			{
+				foreach ($this->splitScriptStyle($part) as $block)
+				{
+					list($type, $chunk) = $block;
+					$result .= ($type === 'text') ? $this->restoreEntities($chunk, $forAttributeValue) : $chunk;
+				}
+			}
+		}
+
+		return $result;
+	}
+
+	/**
+	 * Encode the quotes and angle brackets, typed or percent-encoded, in the parameters of each shortcode named in text that is not a template, so that no shortcode can print them as markup.
+	 * An opening brace, typed or percent-encoded, and a percent-encoded closing brace are encoded the same way.
+	 *
+	 * @param string $text
+	 * @return string
+	 */
+	private function disarmShortcodeParameters($text)
+	{
+		$encoded = array('%27' => '%26%23x27%3B', '%22' => '%26%23x22%3B', '%3C' => '%26lt%3B', '%3E' => '%26%23x3E%3B', '%7B' => '%26%23x7B%3B', '%7D' => '%26%23x7D%3B');
+
+		return preg_replace_callback('#\{([A-Z][^\x02]*?\S)\}#', function ($match) use ($encoded)
+		{
+			if (preg_match('/^([A-Z_]*\d?):(.*)$/s', $match[1], $form))
+			{
+				$typed = array("'" => $encoded['%27'], '"' => $encoded['%22'], '<' => $encoded['%3C'], '>' => $encoded['%3E'], '{' => $encoded['%7B']);
+				$separator = ':';
+			}
+			elseif (strpos($match[1], '=') !== false)
+			{
+				$form = array(0, strstr($match[1], '=', true), (string) substr(strstr($match[1], '='), 1));
+				$typed = array("'" => '&#x27;', '"' => '&#x22;', '<' => '&lt;', '>' => '&#x3E;', '{' => '&#x7B;');
+				$separator = '=';
+			}
+			else
+			{
+				return $match[0];
+			}
+
+			$parameters = str_ireplace(array_keys($encoded), array_values($encoded), strtr($form[2], $typed));
+
+			return '{'.$form[1].$separator.$parameters.'}';
+		}, $text);
+	}
+
+	/**
+	 * @return array the entity table toHTML() applies to body text, built once
+	 */
+	private function bodyEntities()
+	{
+		if ($this->bodyEntities === null)
+		{
+			$this->bodyEntities = array('&amp;quot;' => '&quot;', '&amp;#039;' => '&#039;') + array_combine($this->search, $this->replace);
+		}
+
+		return $this->bodyEntities;
+	}
+
+	/**
 	 * @param array       $opts
 	 * @param string      $text
 	 * @param bool        $convertNL
 	 * @param bool|string $parseBB
 	 * @param             $modifiers
 	 * @param int         $postID
+	 * @param bool        $restoreEntities restore entity-encoded quotes; false when the caller restored them before rendering bbcode
 	 * @return array|bool|mixed|string|null
 	 */
-	private function processModifiers($opts, $text, $convertNL, $parseBB, $modifiers, $postID)
+	private function processModifiers($opts, $text, $convertNL, $parseBB, $modifiers, $postID, $restoreEntities = true)
 	{
 
 		// Convert emoticons to graphical icons, if enabled
@@ -6337,42 +8446,38 @@ class e_parse
 
 		//	Entity conversion
 		// Restore entity form of quotes and such to single characters, except for text destined for tag attributes or JS.
-		if ($opts['value'])
+		if ($restoreEntities)
 		{
-			// output used for attribute values.
-			$text = str_replace($this->replace, $this->search, $text);
-		}
-		else
-		{
-			// output not used for attribute values.
-			$text = str_replace($this->search, $this->replace, $text);
+			$text = $this->restoreEntities($text, $opts['value']);
 		}
 
 
 		//   BBCode processing (other than the four already done, which shouldn't appear at all in the text)
 		if ($parseBB !== false)
 		{
-			if ($parseBB === true)
+			$bbcodes = function ($text, $shortcodes = false) use ($parseBB, $modifiers, $postID)
 			{
-				// 'Normal' or 'legacy' processing
-				if ($modifiers === 'WYSIWYG')
+				if ($parseBB === true)
 				{
-					$text = e107::getBB()->parseBBCodes($text, $postID, 'wysiwyg');
-				}
-				else
-				{
-					$text = e107::getBB()->parseBBCodes($text, $postID);
+					// 'Normal' or 'legacy' processing
+					if ($modifiers === 'WYSIWYG')
+					{
+						return $this->parseBBCodesBeforeShortcodes($text, $postID, $shortcodes, 'wysiwyg');
+					}
+
+					return $this->parseBBCodesBeforeShortcodes($text, $postID, $shortcodes);
 				}
 
-			}
-			elseif ($parseBB === 'STRIP') // Need to strip all BBCodes
-			{
-				$text = e107::getBB()->parseBBCodes($text, $postID, 'default', true);
-			}
-			else // Need to strip just some BBCodes
-			{
-				$text = e107::getBB()->parseBBCodes($text, $postID, 'default', $parseBB);
-			}
+				if ($parseBB === 'STRIP') // Need to strip all BBCodes
+				{
+					return $this->parseBBCodesBeforeShortcodes($text, $postID, $shortcodes, 'default', true);
+				}
+
+				// Need to strip just some BBCodes
+				return $this->parseBBCodesBeforeShortcodes($text, $postID, $shortcodes, 'default', $parseBB);
+			};
+
+			$text = $bbcodes($this->expandInsideTags($text, '[', $bbcodes), $opts['parse_sc']);
 		}
 
 
@@ -6414,7 +8519,10 @@ class e_parse
 		// Optional short-code conversion
 		if ($opts['parse_sc'])
 		{
-			$text = $this->parseTemplate($text, true);
+			$text = $this->parseTemplate($this->disarmShortcodeParameters($this->expandInsideTags($text, '{', function ($value)
+			{
+				return $this->parseTemplate($this->disarmShortcodeParameters($value), true);
+			})), true);
 		}
 
 		/**

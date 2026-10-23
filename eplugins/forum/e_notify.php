@@ -144,11 +144,11 @@ class forum_notify extends notify
 			$message = e107::getParser()->lanVars(nl2br(LAN_FORUM_NT_NEWTOPIC_MSG), array(
 				'user' => USERNAME,
 				'forum' => $data['forum_name'],
-				'thread' => sprintf('<a href="%s">%s</a>', $url, $data['thread_name']),
-				'post' => e107::getParser()->toHTML($data['post_entry'], true, 'BODY')
+				'thread' => sprintf('<a href="%s">%s</a>', $url, e107::getParser()->attributeValue($data['thread_name'])),
+				'post' => e107::getParser()->toHTML($data['post_entry'], true, 'USER_BODY')
 			));
 		}
-		$this->send('user_forum_topic_created', LAN_PLUGIN_FORUM_NAME, $message);
+		$this->sendForAuthor(0, 'user_forum_topic_created', LAN_PLUGIN_FORUM_NAME, $message);
 		return true;
 	}
 
@@ -170,12 +170,12 @@ class forum_notify extends notify
 			$message = e107::getParser()->lanVars(nl2br(LAN_FORUM_NT_NEWTOPIC_PROB_MSG), array(
 				'user' => USERNAME,
 				'forum' => $data['forum_name'],
-				'thread' => sprintf('<a href="%s">%s</a>', $url, $data['thread_name']),
-				'post' => e107::getParser()->toHTML($data['post_entry'], true, 'BODY')
+				'thread' => sprintf('<a href="%s">%s</a>', $url, e107::getParser()->attributeValue($data['thread_name'])),
+				'post' => e107::getParser()->toHTML($data['post_entry'], true, 'USER_BODY')
 			));
 		}
 
-		$this->send('user_forum_topic_created_probationary', LAN_FORUM_NT_7, $message);
+		$this->sendForAuthor(0, 'user_forum_topic_created_probationary', LAN_FORUM_NT_7, $message);
 		return true;
 	}
 
@@ -197,11 +197,11 @@ class forum_notify extends notify
 				'user' => USERNAME,
 				'forum' => $data['old_thread']['forum_name'],
 				'forum2' => sprintf('<a href="%s">%s</a>', $url, $data['new_thread']['forum_name']),
-				'thread' => $data['new_thread']['thread_name']
+				'thread' => e107::getParser()->attributeValue($data['new_thread']['thread_name'])
 			));
 		}
 
-		$this->send('user_forum_topic_moved', LAN_FORUM_NT_13, $message);
+		$this->sendForAuthor(0, 'user_forum_topic_moved', LAN_FORUM_NT_13, $message);
 		return true;
 	}
 
@@ -223,11 +223,11 @@ class forum_notify extends notify
 			$message = e107::getParser()->lanVars(nl2br(LAN_FORUM_NT_TOPIC_DELETED_MSG), array(
 				'user' => USERNAME,
 				'forum' => sprintf('<a href="%s">%s</a>', $url, $data['forum_name']),
-				'thread' => $data['thread_name']
+				'thread' => e107::getParser()->attributeValue($data['thread_name'])
 			));
 		}
 
-		$this->send('user_forum_topic_deleted', LAN_FORUM_NT_8, $message);
+		$this->sendForAuthor(0, 'user_forum_topic_deleted', LAN_FORUM_NT_8, $message);
 		return true;
 	}
 
@@ -248,11 +248,11 @@ class forum_notify extends notify
 			$message = e107::getParser()->lanVars(nl2br(LAN_FORUM_NT_TOPIC_UPDATED_MSG), array(
 				'user' => USERNAME,
 				'forum' => $data['forum_name'],
-				'thread' => sprintf('<a href="%s">%s</a>', $url, $data['thread_name']),
-				'post' => e107::getParser()->toHTML($data['post_entry'], true, 'BODY')
+				'thread' => sprintf('<a href="%s">%s</a>', $url, e107::getParser()->attributeValue($data['thread_name'])),
+				'post' => e107::getParser()->toHTML($data['post_entry'], true, 'USER_BODY')
 			));
 		}
-		$this->send('user_forum_topic_updated', LAN_FORUM_NT_12, $message);
+		$this->sendForAuthor(0, 'user_forum_topic_updated', LAN_FORUM_NT_12, $message);
 		return true;
 	}
 
@@ -268,7 +268,7 @@ class forum_notify extends notify
 			$message = $data;
 		}
 
-		$this->send('forum_topic_split', LAN_FORUM_NT_9, $message);
+		$this->sendForAuthor(0, 'forum_topic_split', LAN_FORUM_NT_9, $message);
 	}
 
 	function user_forum_post_created($data)
@@ -287,11 +287,11 @@ class forum_notify extends notify
 			$message = e107::getParser()->lanVars(nl2br(LAN_FORUM_NT_POST_CREATED_MSG), array(
 				'user' => USERNAME,
 				'forum' => $data['forum_name'],
-				'thread' => sprintf('<a href="%s">%s</a>', $url, $data['thread_name']),
-				'post' => e107::getParser()->toHTML($data['post_entry'], true, 'BODY')
+				'thread' => sprintf('<a href="%s">%s</a>', $url, e107::getParser()->attributeValue($data['thread_name'])),
+				'post' => e107::getParser()->toHTML($data['post_entry'], true, 'USER_BODY')
 			));
 		}
-		$this->send('user_forum_post_created', LAN_FORUM_NT_14, $message);
+		$this->sendForAuthor(0, 'user_forum_post_created', LAN_FORUM_NT_14, $message);
 		return true;
 	}
 
@@ -311,11 +311,11 @@ class forum_notify extends notify
 			$message = e107::getParser()->lanVars(nl2br(LAN_FORUM_NT_POST_UPDATED_MSG), array(
 				'user' => USERNAME,
 				'forum' => $data['forum_name'],
-				'thread' => sprintf('<a href="%s">%s</a>', $url, $data['thread_name']),
-				'post' => e107::getParser()->toHTML($data['post_entry'], true, 'BODY')
+				'thread' => sprintf('<a href="%s">%s</a>', $url, e107::getParser()->attributeValue($data['thread_name'])),
+				'post' => e107::getParser()->toHTML($data['post_entry'], true, 'USER_BODY')
 			));
 		}
-		$this->send('user_forum_post_updated', LAN_FORUM_NT_15, $message);
+		$this->sendForAuthor(0, 'user_forum_post_updated', LAN_FORUM_NT_15, $message);
 		return true;
 	}
 
@@ -328,7 +328,7 @@ class forum_notify extends notify
 		}
 		else
 		{
-			$entry = e107::getParser()->toHTML($data['post_entry'], true, 'BODY');
+			$entry = e107::getParser()->toHTML($data['post_entry'], true, 'USER_BODY');
 			$postid = $data['post_id'];
 
 			$data = $this->getData('thread', vartrue($data['post_thread'], 0));
@@ -339,12 +339,12 @@ class forum_notify extends notify
 			$message = e107::getParser()->lanVars(nl2br(LAN_FORUM_NT_POST_DELETED_MSG), array(
 				'user' => USERNAME,
 				'forum' => $data['forum_name'],
-				'thread' => sprintf('<a href="%s">%s</a>', $url, $data['thread_name']),
+				'thread' => sprintf('<a href="%s">%s</a>', $url, e107::getParser()->attributeValue($data['thread_name'])),
 				'postid' => $postid,
 				'post' => $entry
 			));
 		}
-		$this->send('user_forum_post_deleted', LAN_FORUM_NT_10, $message);
+		$this->sendForAuthor(0, 'user_forum_post_deleted', LAN_FORUM_NT_10, $message);
 		return true;
 	}
 
@@ -360,7 +360,7 @@ class forum_notify extends notify
 			$message = $data['notify_message'];
 		}
 
-		$this->send('user_forum_post_report', LAN_FORUM_NT_11, $message);
+		$this->sendForAuthor(0, 'user_forum_post_report', LAN_FORUM_NT_11, $message);
 		return true;
 	}
 	

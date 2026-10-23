@@ -71,11 +71,13 @@
  */
 function uploadfile_shortcode($parm)
 {
+	e107::coreLan('admin', true);
+
 	if(!FILE_UPLOADS)
 	{
 		return LAN_UPLOAD_SERVEROFF;
 	}
-	if(deftrue('USER_AREA') && !check_class(e107::getPref('upload_class')))
+	if(!deftrue('e_ADMIN_AREA') && !e107::getFile()->currentUserMayUsePublicUploads())
 	{
 		return LAN_DISABLED;
 	}
@@ -144,7 +146,8 @@ function uploadfile_shortcode($parm)
 
 	// RENDER FORM
 	$onclickt = !isset($parms['nowarn']) ? " onclick=\"return jsconfirm('".LAN_UPLOAD_CONFIRM."')\"" : '';
-	$onclickd = " onclick=\"duplicateHTML('{$parms['up_row']}','{$parms['up_container']}');\"";
+	$tp = e107::getParser();
+	$onclickd = " onclick='duplicateHTML(".$tp->toJsString($parms['up_row']).",".$tp->toJsString($parms['up_container']).");'";
 	$name = $parms['name'].'[]';
 
 	$text ="

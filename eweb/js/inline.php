@@ -25,9 +25,11 @@ class e107InlineEdit
 
 		$token = e107::getParser()->filter($_POST['token']);
 
-		$perm = (string) $_SESSION['editable'][$token]['perm'];
+		$editable = isset($_SESSION[e_parse_shortcode::EDITABLE_SESSION_KEY][$token]) ? $_SESSION[e_parse_shortcode::EDITABLE_SESSION_KEY][$token] : array();
+		$perms = isset($editable['perms']) ? trim((string) $editable['perms']) : '';
+		$where = isset($editable['where']) ? $editable['where'] : array();
 
-		if(!ADMIN || !e_AJAX_REQUEST || !isset($_SESSION['editable'][$token]) || !getperms($perm))
+		if(!ADMIN || !e_AJAX_REQUEST || empty($editable) || $perms === '' || !getperms($perms) || !is_array($where))
 		{
 			$ret['msg'] = "Access Denied";
 			$ret['status'] = 'error';
@@ -47,10 +49,10 @@ class e107InlineEdit
 
 		$ret    = array();
 		$id     = intval($_POST['id']);
-		$table  = $_SESSION['editable'][$token]['table'];
-		$field  = $_SESSION['editable'][$token]['shortcodes'][$shortcode]['field'];
-		$pid    = $_SESSION['editable'][$token]['pid'];
-		$type   = $_SESSION['editable'][$token]['shortcodes'][$shortcode]['type'];
+		$table  = $editable['table'];
+		$field  = $editable['shortcodes'][$shortcode]['field'];
+		$pid    = $editable['pid'];
+		$type   = $editable['shortcodes'][$shortcode]['type'];
 
 
 		if(empty($field) || empty($pid) || empty($table))
@@ -59,6 +61,11 @@ class e107InlineEdit
 			$ret['status'] = 'error';
 			echo json_encode($ret);
 			return;
+		}
+
+		if($table === 'news' && ($author = e107::getObject('news')->limitedToAuthor()))
+		{
+			$where['news_author'] = $author;
 		}
 
 
@@ -88,12 +95,17 @@ class e107InlineEdit
 		// $table/$field/$pid are server-set identifiers (the session 'editable' map,
 		// behind the ADMIN + token + getperms() gate above); the builder validates each
 		// fail-closed and binds the intval'd row id, replacing the hand-built WHERE/LIMIT.
-		if(e107::getDb()->createQueryBuilder()
+		$query = e107::getDb()->createQueryBuilder()
 			->update($table)
 			->setTyped($field, $content, $fieldType)
-			->where($pid, $id)
-			->limit(1)
-			->execute() !== false)
+			->where($pid, $id);
+
+		foreach($where as $column => $value)
+		{
+			$query->where($column, $value);
+		}
+
+		if($query->limit(1)->execute() !== false)
 		{
 			$ret['msg'] = "Saved"; // LAN_UPDATED; or LAN_SAVED
 			$ret['status'] = 'ok';

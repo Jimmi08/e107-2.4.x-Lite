@@ -170,8 +170,15 @@ if(e_MENUMANAGER_ACTIVE === true || vartrue($_GET['vis']) || vartrue($_GET['parm
                 caption = '';
             }
 
-    		window.parent.$('.modal-body').html('<div class="well"><iframe id="e-modal-iframe" width="100%" height="'+height+'px" frameborder="0" scrolling="auto" style="display:block;background-color:transparent" allowtransparency="true" src="' + url + '"></iframe></div>');
-    		window.parent.$('.modal-caption').html(caption + ' <i id="e-modal-loading" class="fa fa-spin fa-spinner"></i>');
+            if(!e107.callbacks.isWebAddress(url))
+            {
+                return;
+            }
+
+    		var frame = window.parent.$('<iframe id="e-modal-iframe" width="100%" frameborder="0" scrolling="auto" style="display:block;background-color:transparent" allowtransparency="true"></iframe>')
+    			.attr({height: height + 'px', src: url});
+    		window.parent.$('.modal-body').empty().append(window.parent.$('<div class="well"></div>').append(frame));
+    		window.parent.$('.modal-caption').text(caption).append(' <i id="e-modal-loading" class="fa fa-spin fa-spinner"></i>');
     		window.parent.$('.modal').modal('show');
 
     		window.parent.$("#e-modal-iframe").on("load", function () {
@@ -191,10 +198,20 @@ TEMPL;
 			$('.e-menumanager-option').on('click', function(){
 				var link = $(this).attr('href');
 				var caption = $(this).attr('data-modal-caption');
+				var address = document.createElement('a');
+
+				address.href = link;
+
+				if(address.href.split(/[?#]/)[0] !== window.parent.location.href.split(/[?#]/)[0])
+				{
+					return false;
+				}
 
 				window.parent.$('#uiModal .modal-caption').text(caption);	
 
-				window.parent.$('#uiModal .modal-body').load(link, function(){
+				window.parent.$.ajax({url: link, dataType: 'html', sameOriginOnly: true, success: function(html){
+					window.parent.$('#uiModal .modal-body').html(html);
+
 					window.parent.$('.modal-body :input').on('change', function(){
 						var target 	= window.parent.$('#e-save-form').attr('action');
 						var data 	= window.parent.$('#e-save-form').serialize();
@@ -217,7 +234,7 @@ TEMPL;
 
 					// Attach all registered behaviors to the new content.
 					window.parent.e107.attachBehaviors();
-				});
+				}});
 	
 				window.parent.$('#uiModal').modal('show');
 					

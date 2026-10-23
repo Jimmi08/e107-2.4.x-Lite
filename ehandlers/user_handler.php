@@ -707,7 +707,8 @@ class UserHandler
 	 *	Create user cookie
 	 *
 	 *	Regenerates the session id first, so anything holding the old one has to
-	 *	read it again. {@see e_session::regenerateId()}
+	 *	read it again. {@see e_session::regenerateId()} The token ends with the
+	 *	handle of the session's record among the account's sessions, {@see \e107\User\AccountSessions}.
 	 *
 	 *	@param array $lode - user information from DB - 'user_id' and 'user_password' required
 	 *	@param bool $autologin - ignored since v2.3.12; 'Remember Me' is discontinued
@@ -723,7 +724,68 @@ class UserHandler
 
 		e107::getSession()->regenerateId();
 
-		$_SESSION[e107::getPref('cookie_name')] = $lode['user_id'].'.'.md5($lode['user_password']);
+		$key = e107::getPref('cookie_name');
+		$previous = \e107\User\SignInToken::parse(isset($_SESSION[$key]) ? $_SESSION[$key] : '');
+		$token = new \e107\User\SignInToken($lode['user_id'], md5($lode['user_password']));
+
+		$_SESSION[$key] = (string) $token->withHandle($this->recordSignIn($previous, $token, isset($lode['user_name']) ? $lode['user_name'] : ''));
+	}
+
+	/**
+	 * Keeps the record of a session that signs in again or changes its password, and begins one for any other sign-in.
+	 *
+	 * @param \e107\User\SignInToken $previous what the session held, empty for a guest
+	 * @param \e107\User\SignInToken $token the sign-in
+	 * @param string $userName for the rolling log
+	 * @return string the handle of the session's record, '' when none could be stored
+	 */
+	private function recordSignIn(\e107\User\SignInToken $previous, \e107\User\SignInToken $token, $userName)
+	{
+		$sessions = e107::getSession()->getAccountSessions();
+		$accountId = $token->accountId();
+		$handle = $previous->accountId() === $accountId ? $previous->handle() : '';
+
+		if('' === $handle && '' !== $previous->handle())
+		{
+			$sessions->end($previous->accountId(), $previous->handle());
+		}
+
+		if('' !== $handle && $previous->passwordDigest() !== $token->passwordDigest())
+		{
+			$sessions->endOthers($accountId, $handle);
+
+			return $handle;
+		}
+
+		if('' === $handle)
+		{
+			$sessions->collect();
+		}
+
+		if(e107::getPref('disallowMultiLogin'))
+		{
+			$this->noteEndedSessions($accountId, $userName, $sessions->endOthers($accountId, $handle));
+		}
+
+		return '' === $handle ? $sessions->begin($accountId) : $handle;
+	}
+
+	/**
+	 * @param int $accountId
+	 * @param string $userName
+	 * @param \e107\User\AccountSession[] $ended
+	 * @return void
+	 */
+	private function noteEndedSessions($accountId, $userName, array $ended)
+	{
+		if(array() === $ended)
+		{
+			return;
+		}
+
+		$addresses = array_map(function (\e107\User\AccountSession $session) { return e107::getIPHandler()->ipDecode($session->ip()); }, $ended);
+
+		e107::getLog()->addEvent(4, __METHOD__, 'LOGIN', 'LAN_ROLL_LOG_07', 'Dropped existing user session: #'.$accountId.' '.$userName.' ('.implode(', ', $addresses).')', false, LOG_TO_ROLLING);
 	}
 
 
@@ -1127,7 +1189,7 @@ class e_user_provider
 	/**
 	 * Hybridauth object
 	 *
-	 * @var Hybridauth\Hybridauth
+	 * @var Hybridauth\Hybridauth|null null until {@see e_user_provider::getHybridauth()} first needs it
 	 */
 	protected $hybridauth;
 	protected $_config = array();
@@ -1135,6 +1197,14 @@ class e_user_provider
 	 * @var social_login_config|null
 	 */
 	protected $social_login_config_manager = null;
+
+	/**
+	 * @var string[] provider options only code may set, left out of the stored settings and the settings form
+	 */
+	private static $codeOnlyOptions = array(
+		'adapter', 'debug_mode', 'debug_file', 'curl_options', 'tokens',
+		'callback', 'endpoints', 'authorize_url_parameters',
+	);
 
 	/**
 	 * Create a new Hybridauth-backed social login provider
@@ -1168,26 +1238,15 @@ class e_user_provider
 		{
 			$this->_config = $config;
 		}
-		else
-		{
-			$this->_config = array(
-				"callback"   => $this->generateCallbackUrl($provider),
-				"providers"  => $this->social_login_config_manager->getSupportedConfiguredProviderConfigs(),
-				"debug_mode" => 'error',
-				"debug_file" => e_LOG . "hybridAuth.log"
-			);
-
-		}
 
 		try
 		{
-			$this->respawnHybridauth();
 			$this->setProvider($provider);
 
 			$providerId = $this->getProvider();
-			if ($providerId && $this->hybridauth->isConnectedWith($providerId))
+			if ($providerId && $this->getHybridauth()->isConnectedWith($providerId))
 			{
-				$this->adapter = $this->hybridauth->getAdapter($providerId);
+				$this->adapter = $this->getHybridauth()->getAdapter($providerId);
 			}
 		}
 		catch (\Hybridauth\Exception\InvalidArgumentException $e)
@@ -1205,7 +1264,21 @@ class e_user_provider
 	 */
 	private function respawnHybridauth()
 	{
-		$this->hybridauth = new Hybridauth\Hybridauth($this->_config);
+		$this->hybridauth = new Hybridauth\Hybridauth($this->getConfig(), null, new \e107\SocialLogin\SessionStorage());
+	}
+
+	/**
+	 * @return Hybridauth\Hybridauth built from {@see e_user_provider::getConfig()} on first use
+	 * @throws \Hybridauth\Exception\InvalidArgumentException
+	 */
+	private function getHybridauth()
+	{
+		if ($this->hybridauth === null)
+		{
+			$this->respawnHybridauth();
+		}
+
+		return $this->hybridauth;
 	}
 
 	/**
@@ -1225,7 +1298,7 @@ class e_user_provider
 	public function setBackUrl($url)
 	{
 		# system/xup/login by default
-		$this->_config['callback'] = $this->generateCallbackUrl($url);
+		$this->_config = array_merge($this->getConfig(), array('callback' => $this->generateCallbackUrl($url)));
 		$this->respawnHybridauth();
 	}
 
@@ -1243,7 +1316,47 @@ class e_user_provider
 	 */
 	public function getConfig()
 	{
+		if (empty($this->_config) && $this->social_login_config_manager !== null)
+		{
+			$this->_config = array(
+				"callback"   => $this->generateCallbackUrl(),
+				"providers"  => $this->storedProviderConfigs(),
+				"debug_mode" => 'error',
+				"debug_file" => e_LOG . "hybridAuth.log"
+			);
+		}
+
 		return $this->_config;
+	}
+
+	/**
+	 * @return array {@see social_login_config::getSupportedConfiguredProviderConfigs()} without the options only code may choose, or a key file outside the server's own files, and with requests kept to the web
+	 */
+	private function storedProviderConfigs()
+	{
+		$codeOnlyOptions = array_flip(self::$codeOnlyOptions);
+		$providerConfigs = $this->social_login_config_manager->getSupportedConfiguredProviderConfigs();
+
+		foreach ($providerConfigs as $providerName => $providerConfig)
+		{
+			if (!is_array($providerConfig))
+			{
+				continue;
+			}
+
+			$providerConfig = array_diff_key($providerConfig, $codeOnlyOptions);
+
+			if (isset($providerConfig['keys']['key_file']) && is_string($providerConfig['keys']['key_file'])
+				&& strpos($providerConfig['keys']['key_file'], '://') !== false)
+			{
+				unset($providerConfig['keys']['key_file']);
+			}
+
+			$providerConfig['curl_options'] = e_file::webOnlyCurlOptions();
+			$providerConfigs[$providerName] = $providerConfig;
+		}
+
+		return $providerConfigs;
 	}
 
 	/**
@@ -1363,7 +1476,9 @@ class e_user_provider
 	{
 		$standardFields = self::getStandardFieldsOf($providerName);
 		$supplementaryFields = self::getSupplementalFieldsOf($providerName);
-		return self::array_merge_recursive_distinct($standardFields, $supplementaryFields);
+		$fields = self::array_merge_recursive_distinct($standardFields, $supplementaryFields);
+
+		return array_diff_key($fields, array_flip(self::$codeOnlyOptions));
 	}
 
 	/**
@@ -1578,7 +1693,7 @@ class e_user_provider
 			return false;
 		}
 
-		$storage = new Hybridauth\Storage\Session();
+		$storage = new \e107\SocialLogin\SessionStorage();
 
 		foreach (array('authorization_state', 'request_token') as $handshakeKey)
 		{
@@ -1629,7 +1744,7 @@ class e_user_provider
 
 		$this->setBackUrl($redirectUrl);
 
-		$this->adapter = $this->hybridauth->authenticate($this->getProvider());
+		$this->adapter = $this->getHybridauth()->authenticate($this->getProvider());
 		$profile = $this->adapter->getUserProfile();
 
 		// returned back, if success...
@@ -1741,7 +1856,8 @@ class e_user_provider
 			if ($user->hasError())
 			{
 				e107::getLog()->add('XUP Signup Failure', $userdata, E_LOG_WARNING, "XUP_SIGNUP");
-				throw new Exception($user->renderMessages(), 5);
+				e107::getMessage()->addError($user->renderMessages(), 'default', true);
+				throw new Exception('', 5);
 			}
 
 
@@ -1794,7 +1910,7 @@ class e_user_provider
 	{
 		if (
 			!$this->adapter ||
-			!$this->hybridauth->isConnectedWith($this->getProvider())
+			!$this->getHybridauth()->isConnectedWith($this->getProvider())
 		) return true;
 		try
 		{
@@ -1869,11 +1985,11 @@ class e_user_provider
         try
         {
             // detect all currently connected providers
-            $connected = $this->hybridauth->getConnectedProviders();
+            $connected = $this->getHybridauth()->getConnectedProviders();
         }
         catch (Exception $e)
         {
-            e107::getMessage()->addError('[' . $e->getCode() . ']' . $e->getMessage(), 'default', true);
+            e107::getMessage()->addError('[' . $e->getCode() . ']' . e107::getParser()->attributeValue($e->getMessage()), 'default', true);
             $session = e107::getSession();
             $session->set('HAuthError', true);
             $connected = false;
@@ -1890,7 +2006,7 @@ class e_user_provider
         {
             try
             {
-                $adapter = $this->hybridauth->getAdapter($providerId);
+                $adapter = $this->getHybridauth()->getAdapter($providerId);
                 $profile = $adapter->getUserProfile();
             }
             catch (\Hybridauth\Exception\Exception $e)

@@ -15,11 +15,13 @@ class forum_search extends e_search // include plugin-folder in the name.
 
 		$catList[] = array('id' => 'all', 'title' => LAN_PLUGIN_FORUM_ALLFORUMS);
 
-		$forumQb = $sql->createQueryBuilder();
-		$forums = $forumQb
-			->select('f.forum_id', 'f.forum_name')
-			->from('forum', 'f')
-			->leftJoin('forum', 'fp', $forumQb->expr()->compareColumns('fp.forum_id', 'f.forum_parent'))
+		require_once(e_PLUGIN.'forum/forum_class.php');
+
+		$forums = $sql->createQueryBuilder()
+			->select('forum_id', 'forum_name')
+			->from('forum')
+			->whereIn('forum_id', e107forum::visibleForumIds())
+			->where('forum_parent', '!=', 0)
 			->fetchAll();
 		foreach($forums as $row)
 		{
@@ -105,7 +107,8 @@ class forum_search extends e_search // include plugin-folder in the name.
 	{
 		$tp = e107::getParser();
 
-		$qry = " f.forum_parent != 0 AND fp.forum_class IN (".USERCLASS_LIST.") AND f.forum_class IN (".USERCLASS_LIST.") AND ";
+		require_once(e_PLUGIN.'forum/forum_class.php');
+		$qry = " ".e107forum::threadVisibleSql('t')." AND ";
 
 		if (!empty($parm['forum']) && is_numeric($parm['forum']))
 		{
@@ -122,7 +125,7 @@ class forum_search extends e_search // include plugin-folder in the name.
 			$qry .= " (u.user_id = '".$tp -> toDB($parm['author'])."' OR u.user_name = '".$tp -> toDB($parm['author'])."') AND";
 		}
 
-		return $qry;
+		return \e107\Database\SqlFragment::raw($qry);
 	}
 
 

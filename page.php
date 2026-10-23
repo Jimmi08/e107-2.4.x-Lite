@@ -291,7 +291,7 @@ class pageClass
 		$books = e107::getPref('listBooks',false) ? $sql->createQueryBuilder()
 			->select('*')->from('page_chapters')
 			->where('chapter_parent', 0)
-			->whereIn('chapter_visibility', explode(',', USERCLASS_LIST))
+			->where(\e107\Userclass\Membership::current()->predicate('chapter_visibility'))
 			->orderBy('chapter_order', 'ASC')
 			->fetchAll() : array();
 
@@ -371,7 +371,7 @@ class pageClass
 			->select('chapter_name', 'chapter_template', 'chapter_icon', 'chapter_meta_description', 'chapter_meta_keywords')
 			->from('page_chapters')
 			->where('chapter_id', (int) $book)
-			->whereIn('chapter_visibility', explode(',', USERCLASS_LIST))
+			->where(\e107\Userclass\Membership::current()->predicate('chapter_visibility'))
 			->setMaxResults(1)
 			->fetchRow();
 		if(!$brow)
@@ -422,7 +422,7 @@ class pageClass
 		$chapters = $sql->createQueryBuilder()
 			->select('*')->from('page_chapters')
 			->where('chapter_parent', (int) $book)
-			->whereIn('chapter_visibility', explode(',', USERCLASS_LIST))
+			->where(\e107\Userclass\Membership::current()->predicate('chapter_visibility'))
 			->orderBy('chapter_order', 'ASC')
 			->fetchAll();
 
@@ -575,14 +575,14 @@ class pageClass
 		$tp 			= e107::getParser();
 		$this->batch 	= e107::getScBatch('page',null,'cpage');
 		$frm 			= e107::getForm();
-		$userClasses	= explode(',', USERCLASS_LIST);
+		$visitor		= \e107\Userclass\Membership::current();
 
 		// retrieve the template to use for this chapter.
 		$row = $sql->createQueryBuilder()
 			->select('chapter_id', 'chapter_icon', 'chapter_name', 'chapter_parent', 'chapter_image', 'chapter_meta_description', 'chapter_meta_keywords', 'chapter_template')
 			->from('page_chapters')
 			->where('chapter_id', (int) $chapt)
-			->whereIn('chapter_visibility', $userClasses)
+			->where($visitor->predicate('chapter_visibility'))
 			->setMaxResults(1)
 			->fetchRow();
 
@@ -647,11 +647,11 @@ class pageClass
 
 			if($layout == 'panel') // When in 'panel' mode, allow Menus to be rendered while checking menu_class.
 			{
-				$qb->whereIn('menu_class', $userClasses);
+				$qb->where($visitor->predicate('menu_class'));
 			}
 			else
 			{
-				$qb->where('page_title', '!=', '')->whereIn('page_class', $userClasses);
+				$qb->where('page_title', '!=', '')->where($visitor->predicate('page_class'));
 			}
 
 			$pageArray = $qb->where('page_chapter', (int) $chapt)
@@ -984,14 +984,13 @@ class pageClass
 
 			if(!empty($this->template['page']))
 			{
-				$ret = str_replace(array('{PAGE}', '{PAGECOMMENTS}'), array($arr['text'], '[[PAGECOMMENTS]]'), $this->template['page']);
+				$page = str_replace(array('{PAGE}', '{PAGECOMMENTS}'), array('[[PAGE]]', '[[PAGECOMMENTS]]'), $this->template['page']);
+				$ret = str_replace('[[PAGE]]', $arr['text'], e107::getParser()->parseTemplate($page, true, $this->batch));
 			}
 			else
 			{
 				$ret = $arr['text'];
 			}
-
-			$ret = e107::getParser()->parseTemplate($ret, true, $this->batch);
 
 			if(is_object($vars) && $vars->cachecontrol) $this->setCache($ret, $this->batch->sc_cpagetitle(), $this->page['page_comment_flag']);
 			
@@ -1105,7 +1104,10 @@ class pageClass
 		
 		$this->pageTitles = array();		// Notice removal
 
-		if(preg_match_all('/\[newpage.*?\]/si', $this->pageText, $pt))
+		$pageBreak = '/(\[newpage.*?\])/si';
+		$marked = e_parse::splitAtBBCodeTags($pageBreak, $this->pageText, PREG_SPLIT_DELIM_CAPTURE);
+
+		if(is_array($marked) && (count($marked) > 1))
 		{
 			if (substr($this->pageText, 0, 6) == '[html]')
 			{	// Need to strip html bbcode from wysiwyg on multi-page docs (handled automatically on single pages)
@@ -1118,7 +1120,7 @@ class pageClass
 					$this->pageText = (string) substr($this->pageText, 6);
 				}
 			}
-			$pages = preg_split("/\[newpage.*?\]/si", $this->pageText, -1, PREG_SPLIT_NO_EMPTY);
+			$pages = e_parse::splitAtBBCodeTags($pageBreak, $this->pageText, PREG_SPLIT_NO_EMPTY);
 			$this->multipageFlag = TRUE;
 		}
 		else
@@ -1129,9 +1131,12 @@ class pageClass
 			return;
 		}
 
-		foreach($pt[0] as $title)
+		foreach($marked as $key => $title)
 		{
-			$this->pageTitles[] = $title;
+			if($key % 2)
+			{
+				$this->pageTitles[] = $title;
+			}
 		}
 
 
