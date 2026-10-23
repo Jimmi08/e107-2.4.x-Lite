@@ -54,9 +54,15 @@ class news_shortcodes extends e_shortcode
 		}
 	}
 
+	/** {@see e_parse::shortcodeModifiersForAuthor()} for this news item's author. */
+	private function shortcodeModifiersForAuthor($modifiers)
+	{
+		return e107::getParser()->shortcodeModifiersForAuthor($modifiers, isset($this->news_item['news_author']) ? $this->news_item['news_author'] : 0);
+	}
+
 	function newsTitle($parm=null)
 	{
-		$text = e107::getParser()->toHTML($this->news_item['news_title'], TRUE, 'TITLE');
+		$text = e107::getParser()->toHTML($this->news_item['news_title'], TRUE, $this->shortcodeModifiersForAuthor('TITLE'));
 
 		if(!empty($parm['attribute']))
 		{
@@ -89,12 +95,12 @@ class news_shortcodes extends e_shortcode
 
 		if($parm != 'extended')
 		{
-			$news_body = $tp->toHTML($this->news_item['news_body'], true, 'BODY, fromadmin', $this->news_item['news_author']);
+			$news_body = $tp->toHTML($this->news_item['news_body'], true, $this->shortcodeModifiersForAuthor('BODY, fromadmin'), $this->news_item['news_author']);
 		}
 		
 		if($this->news_item['news_extended'] && (isset($_POST['preview']) || $action === 'extend') && ($parm !== 'noextend' && $parm !== 'body'))
 		{
-			$news_body .= $tp->toHTML($this->news_item['news_extended'], true, 'BODY, fromadmin', $this->news_item['news_author']);
+			$news_body .= $tp->toHTML($this->news_item['news_extended'], true, $this->shortcodeModifiersForAuthor('BODY, fromadmin'), $this->news_item['news_author']);
 		}
 
 		e107::getBB()->clearClass();
@@ -382,7 +388,7 @@ class news_shortcodes extends e_shortcode
 
 		if(!empty($user['user_signature']))
 		{
-			return e107::getParser()->toHTML($user['user_signature'], true, 'DESCRIPTION');
+			return e107::getParser()->toHTML($user['user_signature'], true, e107::getParser()->shortcodeModifiersForAuthor('DESCRIPTION', $this->news_item['user_id']));
 		}
 	}
 
@@ -811,13 +817,13 @@ class news_shortcodes extends e_shortcode
 
 	function sc_captionclass()
 	{
-		$news_title = e107::getParser()->toHTML($this->news_item['news_title'], TRUE,'TITLE');
+		$news_title = e107::getParser()->toHTML($this->news_item['news_title'], TRUE, $this->shortcodeModifiersForAuthor('TITLE'));
 		return "<div class='category".$this->news_item['news_category']."'>".($this->news_item['news_render_type'] == 1 ? "<a href='".e107::getUrl()->create('news/view/item', $this->news_item)."'>".$news_title."</a>" : $news_title)."</div>";
 	}
 
 	function sc_admincaption()
 	{
-		$news_title = e107::getParser()->toHTML($this->news_item['news_title'], TRUE,'TITLE');
+		$news_title = e107::getParser()->toHTML($this->news_item['news_title'], TRUE, $this->shortcodeModifiersForAuthor('TITLE'));
 		return "<div class='".(defined('ADMINNAME') ? ADMINNAME : "null")."'>".($this->news_item['news_render_type'] == 1 ? "<a href='".e107::getUrl()->create('news/view/item', $this->news_item)."'>".$news_title."</a>" : $news_title)."</div>";
 	}
 
@@ -1331,6 +1337,7 @@ class news_shortcodes extends e_shortcode
 		$var = $this->getScVar('news_item');
 
 		$db = e107::getDb();
+		$rule = \e107\Userclass\Membership::current()->predicate('n.news_class');
 
 		// The comparison operator and sort direction are chosen from a fixed
 		// ternary (no user input) and inlined as static keywords; every value is
@@ -1341,11 +1348,10 @@ class news_shortcodes extends e_shortcode
 				FROM #news AS n
 				LEFT JOIN #user AS u ON n.news_author = u.user_id
 				LEFT JOIN #news_category AS nc ON n.news_category = nc.category_id
-				WHERE n.news_class REGEXP :classRegexp AND NOT (n.news_class REGEXP :nobodyRegexp)
+				WHERE ".$rule->getSql()." AND NOT (n.news_class REGEXP :nobodyRegexp)
 				AND n.news_start < :now1 AND (n.news_end=0 || n.news_end > :now2)
 				AND (FIND_IN_SET('0', n.news_render_type) OR FIND_IN_SET(1, n.news_render_type))
-				AND n.news_datestamp ".(($type === 'next') ? '>=' : '<=')." :newsDatestamp AND n.news_id != :newsId ORDER by n.news_datestamp ".(($type === 'next') ? 'ASC' : 'DESC')." LIMIT 1", array(
-			'classRegexp'   => e_CLASS_REGEXP,
+				AND n.news_datestamp ".(($type === 'next') ? '>=' : '<=')." :newsDatestamp AND n.news_id != :newsId ORDER by n.news_datestamp ".(($type === 'next') ? 'ASC' : 'DESC')." LIMIT 1", $rule->getParameters() + array(
 			'nobodyRegexp'  => $nobody_regexp,
 			'now1'          => time(),
 			'now2'          => time(),

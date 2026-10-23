@@ -79,7 +79,7 @@ CREATE TABLE banlist (
   banlist_reason tinytext NOT NULL,
   banlist_notes tinytext NOT NULL,
   PRIMARY KEY  (banlist_id),
-  KEY banlist_ip (banlist_ip),
+  UNIQUE KEY banlist_ip (banlist_ip,banlist_bantype),
   KEY banlist_datestamp (banlist_datestamp),
   KEY banlist_banexpires (banlist_banexpires)
 ) ENGINE=InnoDB;
@@ -204,10 +204,10 @@ CREATE TABLE dblog (
 CREATE TABLE generic (
   gen_id int(10) unsigned NOT NULL auto_increment,
   gen_type varchar(80) NOT NULL default '',
-  gen_datestamp int(10) unsigned NOT NULL default '0',
+  gen_datestamp bigint(20) NOT NULL default '0',
   gen_user_id int(10) unsigned NOT NULL default '0',
   gen_ip varchar(80) NOT NULL default '',
-  gen_intdata int(10) unsigned NOT NULL default '0',
+  gen_intdata int(10) NOT NULL default '0',
   gen_chardata text NOT NULL,
   PRIMARY KEY  (gen_id),
   KEY gen_type (gen_type),
@@ -468,7 +468,7 @@ CREATE TABLE page_chapters (
   chapter_image varchar(250) NOT NULL default '',
   chapter_order int(6) unsigned NOT NULL default '0',
   chapter_template varchar(50) NOT NULL default '',
-  chapter_visibility tinyint(3) unsigned NOT NULL default '0',
+  chapter_visibility smallint(5) NOT NULL default '0',
   chapter_fields mediumtext,
   PRIMARY KEY  (chapter_id),
   KEY chapter_order (chapter_order)
@@ -679,6 +679,23 @@ CREATE TABLE user_extended_struct (
   user_extended_struct_order int(10) unsigned NOT NULL default '0',
   user_extended_struct_parent int(10) unsigned NOT NULL default '0',
   PRIMARY KEY  (user_extended_struct_id)
+) ENGINE=InnoDB;
+# --------------------------------------------------------
+
+#
+# Table structure for table `user_session`
+#
+
+CREATE TABLE user_session (
+  user_session_handle char(32) NOT NULL default '',
+  user_session_user int(10) unsigned NOT NULL default '0',
+  user_session_started int(10) unsigned NOT NULL default '0',
+  user_session_seen int(10) unsigned NOT NULL default '0',
+  user_session_ip varchar(45) NOT NULL default '',
+  user_session_agent varchar(255) NOT NULL default '',
+  PRIMARY KEY  (user_session_handle),
+  KEY user_session_user (user_session_user),
+  KEY user_session_seen (user_session_seen)
 ) ENGINE=InnoDB;
 # --------------------------------------------------------
 
