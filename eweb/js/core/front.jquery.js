@@ -72,6 +72,11 @@ var e107 = e107 || {'settings': {}, 'behaviors': {}};
 
 					var modalOptions = {show: true};
 
+					if(!e107.callbacks.isWebAddress(url))
+					{
+						return false;
+					}
+
 					if(backdrop !== undefined)
 					{
 						modalOptions['backdrop'] = backdrop;
@@ -92,8 +97,10 @@ var e107 = e107 || {'settings': {}, 'behaviors': {}};
 						height = $(this).attr('data-modal-height');
 					}
 
-					$('#uiModal .modal-body').html('<div><iframe id="e-modal-iframe" width="100%" height="' + height + 'px" frameborder="0" scrolling="auto" style="display:block;" allowtransparency="true" allowfullscreen src="' + url + '"></iframe></div>');
-					$('#uiModal .modal-caption').html(caption + ' <i id="e-modal-loading" class="fa fa-spin fa-spinner"></i>');
+					var $iframe = $('<iframe id="e-modal-iframe" width="100%" frameborder="0" scrolling="auto" style="display:block;" allowtransparency="true" allowfullscreen></iframe>')
+						.attr({height: height + 'px', src: url});
+					$('#uiModal .modal-body').empty().append($('<div></div>').append($iframe));
+					$('#uiModal .modal-caption').text(caption).append(' <i id="e-modal-loading" class="fa fa-spin fa-spinner"></i>');
 					$('#uiModal.modal').modal(modalOptions);
 
 					$("#e-modal-iframe").on("load", function ()
@@ -166,11 +173,8 @@ $(document).ready(function()
 			  type: 'POST',
 			  url: url + '?ajax_used=1&mode=submit',
 			  data: data,
-			  success: function(data) {
-			  	
-			//  	alert(data);
-			 // 	console.log(data);
-			  	var a = $.parseJSON(data);
+			  dataType: 'json',
+			  success: function(a) {
 
 				$(input).val('');
 				
@@ -236,10 +240,8 @@ $(document).ready(function()
 			  type: 'POST',
 			  url: url + '?ajax_used=1&mode=reply',
 			  data: { itemid: sp[3], table: table },
-			  success: function(data) {
-
-			 // 	alert(url);
-			  	var a = $.parseJSON(data);
+			  dataType: 'json',
+			  success: function(a) {
 
 				if(!a.error)
 				{
@@ -272,11 +274,15 @@ $(document).ready(function()
             return false;
         }
 
-        $(id).attr('contentEditable',true);
-        $(id).after("<div class='e-comment-edit-save'><input data-target='"+url+"' data-token='"+token+"' id='e-comment-edit-save-"+sp[3]+"' class='button btn btn-success e-comment-edit-save' type='button' value='Save' /></div>");
+        var comment = $(document).find(id);
+        var save = $("<input class='button btn btn-success e-comment-edit-save' type='button' value='Save' />")
+            .attr({'data-target': url, 'data-token': token, id: 'e-comment-edit-save-' + sp[3]});
+
+        comment.attr('contentEditable',true);
+        comment.after($("<div class='e-comment-edit-save'></div>").append(save));
         $('div.e-comment-edit-save').hide().fadeIn(800);
-        $(id).addClass("e-comment-edit-active");
-        $(id).focus();
+        comment.addClass("e-comment-edit-active");
+        comment.focus();
         return false;
 	});
 
@@ -287,10 +293,11 @@ $(document).ready(function()
 			var token 	= $(this).attr("data-token");
 			var sp 		= $(this).attr('id').split("-");
 			var id 		= "#comment-" + sp[4] + "-edit";
-			var comment = $(id).text();
+			var edited 	= $(document).find(id);
+			var comment = edited.text();
 
 
-			$(id).attr('contentEditable',false);
+			edited.attr('contentEditable',false);
 
 		        $.ajax({
 		            url: url + '?ajax_used=1&mode=edit',
@@ -300,9 +307,8 @@ $(document).ready(function()
 		            	itemid: sp[4],
 		            	'e-token': token
 		            },
-		            success:function (data) {
-		            
-		            	var a = $.parseJSON(data);
+		            dataType: 'json',
+		            success:function (a) {
 		            
 		            	if(!a.error)
 		            	{
@@ -324,14 +330,12 @@ $(document).ready(function()
 		                    .delay(1500)
 		                    .fadeOut('slow');				
 						}
-		            	$(id).removeClass("e-comment-edit-active");
+		            	edited.removeClass("e-comment-edit-active");
 		            	
 		            	setTimeout(function() {
 						  $('div.e-comment-edit-save').remove();
 						}, 2000);
 
-		            //	.delay(1000);
-		            //	alert(data);
 		            	return;
 		            }
 		        });
@@ -355,9 +359,8 @@ $(document).ready(function()
 			  type: 'POST',
 			  url: url + '?ajax_used=1&mode=delete',
 			  data: { id: sp[3], itemid: itemid, table: table, 'e-token': token },
-			  success: function(data) {
-			var a = $.parseJSON(data);
-			  
+			  dataType: 'json',
+			  success: function(a) {
 				if(!a.error)
 				{
 					$(id).hide('slow');
@@ -382,12 +385,8 @@ $(document).ready(function()
 			  type: 'POST',
 			  url: url + '?ajax_used=1&mode=approve',
 			  data: { itemid: sp[3], 'e-token': token },
-			  success: function(data) {
-	
-			  
-			var a = $.parseJSON(data);
-			
-	
+			  dataType: 'json',
+			  success: function(a) {
 				if(!a.error)
 				{		
 					//TODO modify status of html on page 	

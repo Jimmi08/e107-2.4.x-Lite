@@ -270,7 +270,7 @@ var e107 = e107 || {'settings': {}, 'behaviors': {}};
 						return true;
 					}
 
-					$(href).slideToggle('slow', function ()
+					$(document).find(href).slideToggle('slow', function ()
 					{
 						if($(this).is(':visible'))
 						{
@@ -408,7 +408,7 @@ var e107 = e107 || {'settings': {}, 'behaviors': {}};
 	{
 		try
 		{
-			var $element = $(selector);
+			$(document).find(selector);
 		} catch(error)
 		{
 			return false;
@@ -470,6 +470,34 @@ var e107 = e107 || {'settings': {}, 'behaviors': {}};
 			src = src.replace(oldVal, newVal);
 			$(navid).attr("data-src", src);
 		}
+	};
+
+	/**
+	 * Check if a link's target is a web address that core may load for it: http, https, or relative to the page.
+	 *
+	 * @param {string} url
+	 * @returns {boolean}
+	 */
+	e107.callbacks.isWebAddress = function (url)
+	{
+		if(typeof url !== 'string' || url === '')
+		{
+			return false;
+		}
+
+		var link = document.createElement('a');
+
+		try
+		{
+			link.href = url;
+			link.href = link.href;
+		}
+		catch(error)
+		{
+			return false;
+		}
+
+		return link.protocol === 'http:' || link.protocol === 'https:';
 	};
 
 	/**
@@ -566,7 +594,7 @@ var e107 = e107 || {'settings': {}, 'behaviors': {}};
 
 		if(options.loadingIcon != null && options.loadingTarget != null)
 		{
-			var loadHtml = '<i class="e-ajax-loading fa fa-spin '+ options.loadingIcon +'"></i>';
+			var loadHtml = $('<i class="e-ajax-loading fa fa-spin"></i>').addClass(options.loadingIcon);
 			$(options.loadingTarget).html(loadHtml);
 		}
 
@@ -610,6 +638,7 @@ var e107 = e107 || {'settings': {}, 'behaviors': {}};
 			type: options.type || 'POST',
 			url: options.url,
 			data: data,
+			sameOriginOnly: true,
 			complete: function ()
 			{
 				if(loadHtml)
@@ -887,7 +916,8 @@ $.ajaxSetup({
 });
 
 /**
- * Attach the CSRF token to same-origin POST requests.
+ * Attach the CSRF token to same-origin POST requests, and keep a request that is
+ * meant for this site alone from going anywhere else.
  *
  * A form built by JavaScript after load never passes through the output buffer,
  * so it never gets a token from e_token_injector. jQuery has already resolved
@@ -916,12 +946,51 @@ $.ajaxSetup({
 			return false;
 		}
 
-		if (anchor.protocol !== 'http:' && anchor.protocol !== 'https:') {
+		if (!e107.callbacks.isWebAddress(url)) {
 			return false;
 		}
 
 		return (anchor.protocol + '//' + anchor.host) === (window.location.protocol + '//' + window.location.host);
 	}
+
+	/**
+	 * An e-ajax element takes its address from markup an author may have written,
+	 * and puts whatever comes back into the page, scripts included, so it only
+	 * fetches from this site and only takes a page or JSON back: not an answer that
+	 * a redirect brought from elsewhere, not a file sent as it was uploaded, and
+	 * never a script, which jQuery would otherwise run while reading the answer.
+	 */
+	$.ajaxPrefilter(function (options, originalOptions, jqXHR) {
+		if (!options.sameOriginOnly) {
+			return;
+		}
+
+		if (!isSameOrigin(options.url)) {
+			jqXHR.abort();
+			return;
+		}
+
+		options.contents.script = false;
+
+		var request = null;
+		var createRequest = options.xhr;
+		var success = options.success;
+
+		options.xhr = function () {
+			request = createRequest.apply(this, arguments);
+			return request;
+		};
+
+		options.success = function () {
+			var type = jqXHR.getResponseHeader('Content-Type') || '';
+
+			if (!request || !request.responseURL || !isSameOrigin(request.responseURL) || !/^(text\/html|application\/json)\s*(;|$)/i.test(type)) {
+				return;
+			}
+
+			return success.apply(this, arguments);
+		};
+	});
 
 	$.ajaxPrefilter(function (options) {
 		if (!options.type || options.type.toUpperCase() !== 'POST') {
@@ -1077,7 +1146,7 @@ $(document).ready(function()
 				var id = $(this).attr("href");   	
 			}
 			      		    		     				
-			$(id).show("slow");
+			$(document).find(id).show("slow");
 			return false;
 		}); 
 		
@@ -1117,7 +1186,7 @@ $(document).ready(function()
 				var id = $(this).attr("href");   	
 			}
 					
-			$(id).hide("slow");
+			$(document).find(id).hide("slow");
 			return false;
 		});
 		
@@ -1444,6 +1513,12 @@ $(document).ready(function()
 			var readonly	= parseInt($(this).attr("data-readonly"));
 			var tmp 		= $(this).attr('id');
 			var hint		= $(this).attr("data-hint");
+
+			if(hint === undefined)
+			{
+				return;
+			}
+
 			var hintArray	= hint.split(',');
 			var t	 		= tmp.split('-');
 			var table 		= t[0];
@@ -1451,18 +1526,13 @@ $(document).ready(function()
 			var label 		= '#e-rate-'+ table + '-' + id;
 			var styles		= { 0: ' ', 0.5: 'label-important', 1: 'label-important', 1.5: 'label-warning', 2: 'label-warning', 2.5: 'label-default', 3: 'label-default' , 3.5: 'label-info', 4: 'label-info', 4.5: 'label-success', 5: 'label-success'};
 			
-			if($('#e-rate-'+tmp).length == 0)
-			{
-				var target = undefined;	
-			}
-			else
-			{
-				var target 		= '#e-rate-'+tmp;	
-			}
+			var $rate		= $(this);
+			var $status		= $rate.siblings('[id="e-rate-' + tmp + '"]');
+			var target		= $status.length ? $status : undefined;
 			
 			
 		
-    		$('#'+tmp).raty({
+    		$rate.raty({
     			path		: path,
     			half  		: true,
     			score    	: score,
@@ -1478,7 +1548,7 @@ $(document).ready(function()
   				targetFormat: '{score}',
   				targetKeep: true,
   			//	targetType : 'number',
-  				targetText : $('#e-rate-'+tmp).text(),			
+  				targetText : $('<span>').text($status.text()).html(),
     		//	cancel		: true,
     		//	css			: 'e-rate-star',
     		
@@ -1522,10 +1592,10 @@ $(document).ready(function()
 						bla = msg.split('|');
 						$(label).addClass(styles[score]);	
 											
-						$('#e-rate-'+tmp).text(bla[0]);
+						$status.text(bla[0]);
 						if(bla[1])
 						{
-							$('#e-rate-votes-'+tmp).text(bla[1]);	
+							$rate.siblings('[id="e-rate-votes-' + tmp + '"]').text(bla[1]);
 						}
 						
 					});
