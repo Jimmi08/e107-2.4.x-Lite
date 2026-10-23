@@ -87,7 +87,7 @@ class adminstyle_infopanel
 			$coreUpdateCheck = (e107::getSession()->get('core-update-status') === true) ? $coreUpdateFound : $coreUpdateNone;
 		}
 
-		if( e107::getSession()->get('addons-update-checked') !== true)
+		if((new e107\Admin\AddonUpdateStatus(e107::getCache(), e107::getSession()))->get() === null)
 		{
 			$addonUpdateCheck = "
 			$('#e-admin-addons-update').load('".e_ADMIN."admin.php?mode=addons&type=update&e-token=".defset('e_TOKEN')."');
@@ -570,7 +570,7 @@ class adminstyle_infopanel
 			$TEMPLATE = "{SETIMAGE: w=40&h=40}
 			<li id='comment-".$row['comment_id']."' class='media".$hide."'>
 				<span class='media-object pull-left'>{USER_AVATAR=".$row['comment_author_id']."}</span> 
-				<div class='btn-group pull-right'>
+				<div class='btn-group pull-right float-right float-end'>
 	            	<button data-target='".e_BASE."comment.php' data-comment-id='".$row['comment_id']."' data-comment-action='delete' class='btn btn-sm btn-mini btn-danger'><i class='fa fa-remove'></i> ".LAN_DELETE."</button>
 	            	<button data-target='".e_BASE."comment.php' data-comment-id='".$row['comment_id']."' data-comment-action='approve' class='btn btn-sm btn-mini btn-success'><i class='fa fa-check'></i> ".LAN_APPROVE."</button>
 	            </div>

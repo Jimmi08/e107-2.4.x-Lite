@@ -142,7 +142,7 @@ class news_cat_ui extends e_admin_ui
          	'category_meta_description' => array('title'=> LAN_DESCRIPTION,		'type' => 'textarea',	'data'=>'str',	'inline'=>true, 'width' => 'auto', 'thclass' => 'left','readParms' => 'expand=...&truncate=150&bb=1', 'readonly'=>FALSE, 'writeParms'=>array('size'=>'xxlarge')),
 			'category_meta_keywords' 	=> array('title'=> LAN_KEYWORDS,		'type' => 'tags',		'data'=>'str',	'inline'=>true, 'width' => 'auto', 'thclass' => 'left', 'readonly'=>FALSE),
 			'category_sef' 				=> array('title'=> LAN_SEFURL,	'type' => 'text', 'data'=>'str',	'inline'=>true,	'width' => 'auto', 'readonly'=>FALSE, 'writeParms'=>array('size'=>'xxlarge', 'sef'=>'category_name')), // Display name
-			'category_manager' 			=> array('title'=> LAN_MANAGER,'type' => 'userclass',	'tab'=>1,	'inline'=>true, 'width' => 'auto', 'data' => 'int','batch'=>TRUE, 'filter'=>TRUE),
+			'category_manager' 			=> array('title'=> LAN_MANAGER,'type' => 'userclass',	'tab'=>1,	'inline'=>true, 'width' => 'auto', 'data' => 'int','batch'=>TRUE, 'filter'=>TRUE, 'writeParms' => array('classlist' => 'public,guest,nobody,member,admin,main,classes,no-excludes')),
 			'category_template'         => array('title'=> LAN_TEMPLATE,        'type' => 'layouts', 'tab'=>1, 'width'=>'auto', 'thclass' => 'left', 'class'=> 'left', 'writeParms' => array(),'help'=>'Template to use as the default view' ),
 	
 					'category_order' 			=> array('title'=> LAN_ORDER,			'type' => 'text',	'tab'=>1,		'width' => 'auto', 'thclass' => 'right', 'class'=> 'right' ),
@@ -330,7 +330,7 @@ class news_sub_form_ui extends e_admin_form_ui
              <div class="modal-content">
 			    <div class="modal-header">
 			    <button type="button" class="close" data-dismiss="modal" aria-hidden="true">&times;</button>
-			   <h4>'.$tp->toHTML($submitnews_title,false,'TITLE').'</h4>
+			   <h4>'.$tp->toHTML($submitnews_title,false,'USER_TITLE').'</h4>
 			    </div>
 			    <div class="submitnews modal-body">
 			    <p>';
@@ -898,24 +898,14 @@ class news_admin_ui extends e_admin_ui
 	}
 
 
-	/**
-	 * Returns true when limit news post view/edit to self-authored content is active for the currently logged in administrator.
-	 * @return bool
-	 */
-	private function limitToSelfEnabled()
-	{
-		if((int) $limit = e107::getPref('news_limit_to_self', false))
-		{
-			return (check_class($limit) && !getperms('0'));
-		}
-
-		return false;
-	}
-
-
 	function init()
 	{
 		$this->addons = e107::getAddonConfig('e_admin',null, 'config', $this);
+
+		if($author = e107::getObject('news')->limitedToAuthor())
+		{
+			$this->listScope = 'news_author = '.$author;
+		}
 /*
 		if(!empty($_POST['save_prefs']))
 		{
@@ -1010,38 +1000,9 @@ class news_admin_ui extends e_admin_ui
 
 		parent::EditObserver();
 
-		$author = (int) $this->getModel()->get('news_author');
-
-		if($this->limitToSelfEnabled() && $author !== USERID)
-		{
-			$this->getRequest()->setAction('e403');
-			return false;
-		}
-
 		$this->initSEOFields();
 
 	}
-
-	function ListObserver()
-	{
-		if($this->limitToSelfEnabled())
-		{
-			$this->listQry .= " WHERE n.news_author = ".USERID;
-		}
-
-		parent::ListObserver();
-	}
-
-	function ListAjaxObserver()
-	{
-		if($this->limitToSelfEnabled())
-		{
-			$this->listQry .= " WHERE n.news_author = ".USERID;
-		}
-
-		parent::ListAjaxObserver();
-	}
-
 
 	function CreateObserver()
 	{
@@ -1683,7 +1644,7 @@ class news_form_ui extends e_admin_form_ui
 
 		$val = strpos($curVal, "[img]http") !== false ? $curVal : str_replace("[img]../", "[img]", $curVal);
 		$text .= "<div id='news-body-container' class='tab-pane active'>";
-		$text .= $frm->bbarea('news_body', $val, 'news', 'news');
+		$text .= $frm->bbarea('news_body', $this->asElementContent($val), 'news', 'news');
 		$text .= "</div>";
 		$text .= "<div id='news-extended-container' class='tab-pane'>";
 

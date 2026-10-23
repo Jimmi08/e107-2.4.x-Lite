@@ -23,21 +23,20 @@ if (!defined('e107_INIT'))
 	require_once(__DIR__.'/../class2.php');
 }
 
-// e_form::mediaUrl() points every image and file picker in the admin area at
-// action=dialog, so the dialog answers to any administrator; the upload tab
-// inside it is what asks for A or A1.
 $action = varset($_GET['action']);
+$route = new e_admin_request();
+$dialogSearch = e_AJAX_REQUEST && isset($_GET['search']) && $route->getMode() === 'main' && $route->getAction() === $action
+	&& in_array($action, array('image2', 'video', 'audio', 'glyph', 'icon', 'youtube'), true);
+$allowed = ($action === 'dialog' || $dialogSearch) ? ADMIN : getperms($action === 'youtube' ? 'A|A1' : 'A');
 
-if($action === 'dialog')
+if(!$allowed)
 {
-	if(!ADMIN)
+	if(e_AJAX_REQUEST)
 	{
-		e107::redirect('admin');
-		exit;
+		require_once(e_HANDLER.'js_helper.php');
+		e_jshelper::sendAjaxError(403, defset('ADLAN_86', 'Forbidden'), defset('ADLAN_87', 'Access denied!'));
 	}
-}
-elseif(!getperms($action === 'youtube' ? 'A|A1' : 'A'))
-{
+
 	e107::redirect('admin');
 	exit;
 }
@@ -438,7 +437,6 @@ class media_form_ui extends e_admin_form_ui
 	public function rotateImages($ids,$type)
 	{
 		$sql = e107::getDb();
-		$tp = e107::getParser();
 		$mes = e107::getMessage();
 		ini_set('memory_limit', '150M');
 		ini_set('gd.jpeg_ignore_warning', 1);
@@ -461,7 +459,12 @@ class media_form_ui extends e_admin_form_ui
 		{
 			foreach($rows as $row)
 			{
-				$original = $tp->replaceConstants($row['media_url']);
+				$original = $this->getController()->mediaFolderPath($row['media_url']);
+
+				if($original === false || $original === '')
+				{
+					continue;
+				}
 
 				$mes->addDebug("Attempting to rotate by {$degrees} degrees: ".basename($original));
 
@@ -521,7 +524,6 @@ class media_form_ui extends e_admin_form_ui
 		$sql = e107::getDb();
 		$sql2 = e107::getDb('sql2');
 		$mes = e107::getMessage();
-		$tp = e107::getParser();
 		$fl = e107::getFile();
 
 		// Max size is 6 megapixel. 
@@ -540,15 +542,20 @@ class media_form_ui extends e_admin_form_ui
 		{
 			foreach($rows as $row)
 			{
-				$path = $tp->replaceConstants($row['media_url']);
+				$path = $this->getController()->mediaFolderPath($row['media_url']);
 
-				$mes->addDebug('Attempting to resize: ' .basename($path));
+				if($path === false)
+				{
+					continue;
+				}
+
+				$mes->addDebug('Attempting to resize: ' .basename($row['media_url']));
 
 				if($this->resizeImage($path,$img_import_w,$img_import_h))
 				{
 
 					$info = $fl->getFileInfo($path);
-					$mes->addSuccess(LAN_IMA_004. ': ' .basename($path));
+					$mes->addSuccess(LAN_IMA_004. ': ' .basename($row['media_url']));
 					$mes->addSuccess(print_a($info,true));
 					$dim = (int) $info['img-width'] . ' x ' . (int) $info['img-height'];
 					$mediaDefs = $sql2->getFieldTypes('core_media');
@@ -560,7 +567,7 @@ class media_form_ui extends e_admin_form_ui
 				}
 				else
 				{
-					$mes->addError(LAN_IMA_004. ': ' .basename($path));
+					$mes->addError(LAN_IMA_004. ': ' .basename($row['media_url']));
 				}
 			}
 		}
@@ -601,7 +608,12 @@ class media_form_ui extends e_admin_form_ui
 
 		foreach($data as $row)
 		{
-			$path = $tp->replaceConstants($row['media_url']);
+			$path = $this->getController()->mediaFolderPath($row['media_url']);
+
+			if($path === false)
+			{
+				continue;
+			}
 
 			if($jpegFile = $mm->convertImageToJpeg($path,true))
 			{
@@ -1131,8 +1143,6 @@ class media_admin_ui extends e_admin_ui
 		$this->prefs['watermark_pos']['writeParms'] 		= $wm_pos;	
 		$this->prefs['watermark_pos']['readParms'] 			= $wm_pos;	
 	
-		e107::getCache()->clearAll('image');
-		
 		if(e_AJAX_REQUEST && isset($_GET['search']))
 		{
 			$parm = array('search' => $tp->filter($_GET['search']));
@@ -1172,6 +1182,8 @@ class media_admin_ui extends e_admin_ui
 
 			exit;
 		}
+
+		e107::getCache()->clearAll('image');
 
 
 
@@ -2731,8 +2743,6 @@ class media_admin_ui extends e_admin_ui
 
 				//	$path = basename($path);
 
-					$path = str_replace('../', '',$path); // clean the path.
-
 					$mes->addDebug('usr: '. (int) $usr .'  path: '.$path);
 
 					$image_type = 2;
@@ -2744,10 +2754,19 @@ class media_admin_ui extends e_admin_ui
 
 					//delete it from server
 					$deletePath = e_AVATAR.$tp->filter($path);
-					if(@unlink($deletePath))
+					$folder = dirname($deletePath);
+					$fileName = ltrim((string) substr($deletePath, strlen($folder)), '/'.DIRECTORY_SEPARATOR);
+					$avatarFolder = $this->folderInside($deletePath, e_AVATAR, LAN_IMA_FILE_KEPT_OUTSIDE_AVATARS, $path);
+
+					if($avatarFolder === false)
+					{
+						continue;
+					}
+
+					if($avatarFolder !== '' && @unlink($avatarFolder.DIRECTORY_SEPARATOR.$fileName))
 					{
 						$mes->addDebug('Deleted: '.$deletePath);
-						$message[] = basename($path); //admin log & sysmessage
+						$message[] = $fileName; //admin log & sysmessage
 					}
 					else
 					{
@@ -3126,7 +3145,24 @@ class media_admin_ui extends e_admin_ui
 		}
 		else // Update Only ?
 		{
-		
+			$fname = basename($new_data['media_url']);
+			$oldpath = null;
+
+			if(strpos($new_data['media_url'], '{e_IMPORT}') !== false)
+			{
+				$fname = strpos($new_data['media_url'], '{e_IMPORT}') === 0 ? $this->importFileName(substr($new_data['media_url'], strlen('{e_IMPORT}'))) : '';
+				$oldpath = e_IMPORT.$fname;
+
+				if(!is_file($oldpath))
+				{
+					$mes->addError(LAN_FILE_NOT_FOUND);
+
+					return false;
+				}
+
+				$new_data['media_url'] = '{e_IMPORT}'.$fname;
+			}
+
 			$img_data = $this->mediaData($new_data['media_url']);
 
 
@@ -3137,13 +3173,11 @@ class media_admin_ui extends e_admin_ui
 				return FALSE;
 			}
 			
-			$fname = basename($new_data['media_url']);
 			// move to the required place
-			if(strpos($new_data['media_url'], '{e_IMPORT}') !== FALSE)
+			if($oldpath !== null)
 		//	if(strpos($new_data['media_url'], '{e_MEDIA}temp/') !== FALSE)
 			{
 				$tp = e107::getParser();
-				$oldpath = $tp->replaceConstants($new_data['media_url']);
 				$newpath = $this->checkDupe($oldpath,$typePath.'/'.$fname);
 				
 			
@@ -3160,7 +3194,7 @@ class media_admin_ui extends e_admin_ui
 
 			if(!varset($new_data['media_name']))
 			{
-				$img_data['media_name'] = basename($new_data['media_url']);
+				$img_data['media_name'] = $fname;
 			}
 
 
@@ -3203,7 +3237,14 @@ class media_admin_ui extends e_admin_ui
 
 		if(!empty($deleted_data['media_url']))
 		{
-			$status = e107::getFile()->delete($deleted_data['media_url']);
+			$path = $this->mediaFolderPath($deleted_data['media_url']);
+
+			if($path === false)
+			{
+				return;
+			}
+
+			$status = is_file($path) && unlink($path);
 
 			$message = ($status !== false) ? LAN_UI_FILE_DELETED : LAN_UI_FILE_DELETED_FAILED;
 
@@ -3215,6 +3256,53 @@ class media_admin_ui extends e_admin_ui
 
 		}
 
+	}
+
+	/**
+	 * Expand an item's address, or say its file was kept when the folder the file is in lies outside the media folder.
+	 *
+	 * @param string $url media_url of the item
+	 * @return string|false the expanded address, '' when the folder it names is missing, or false when its file lies outside the media folder
+	 */
+	public function mediaFolderPath($url)
+	{
+		$path = e107::getParser()->replaceConstants($url);
+		$folder = $this->folderInside($path, e_MEDIA, LAN_IMA_FILE_KEPT_OUTSIDE_MEDIA, $url);
+
+		return $folder ? $path : $folder;
+	}
+
+	/**
+	 * Find the folder of a file inside a root folder, or say the file was kept when that folder lies outside it.
+	 *
+	 * @param string $path the file's path
+	 * @param string $root the folder the file must lie in
+	 * @param string $message the text saying the file was kept, with [x] for its name
+	 * @param string $name what the message calls the file
+	 * @return string|false the folder as resolved, '' when it is missing, or false when the file lies outside $root
+	 */
+	private function folderInside($path, $root, $message, $name)
+	{
+		$folder = dirname($path);
+
+		if(strpos($path, "\0") === false)
+		{
+			$resolved = e107::getFile()->resolveSendRoot($folder, array($root));
+
+			if($resolved !== false)
+			{
+				return $resolved;
+			}
+
+			if(!is_dir($folder))
+			{
+				return '';
+			}
+		}
+
+		e107::getMessage()->addInfo(e107::getParser()->lanVars($message, $name, true));
+
+		return false;
 	}
 
 	function getPath($mime)
@@ -3259,7 +3347,7 @@ class media_admin_ui extends e_admin_ui
 		
 		
 		$fl->setFileInfo('all');
-		$rejectArray = array('^\.ftpquota$','^index\.html$','^null\.txt$','\.bak$','^.tmp','.*\.xml$','^\.$','^\.\.$','^\/$','^CVS$','thumbs\.db','.*\._$','^\.htaccess$','index\.html','null\.txt');
+		$rejectArray = array('^\.ftpquota$','^index\.html$','^null\.txt$','\.bak$','^\.tmp','.*\.xml$','^\.$','^\.\.$','^\/$','^CVS$','thumbs\.db','.*\._$','^\.htaccess$','index\.html','null\.txt');
 		$fl->setFileFilter($rejectArray);
 	//	$files = $fl->get_files(e_MEDIA."temp/");
 		$files = $fl->get_files(e_IMPORT);
@@ -3461,19 +3549,32 @@ class media_admin_ui extends e_admin_ui
 	}
 
 	
+	/**
+	 * The name of the file in e_IMPORT that a posted import name stands for, or '' when it stands for none.
+	 *
+	 * @param mixed $name
+	 * @return string
+	 */
+	private function importFileName($name)
+	{
+		$name = is_string($name) ? e107::getParser()->filter($name, 'file') : '';
+
+		return in_array($name, array('.', '..'), true) ? '' : $name;
+	}
+
 	function batchDelete()
 	{
-		$tp = e107::getParser();
-
 		foreach($_POST['batch_selected'] as $key=>$file)
 		{
-			if(trim($file) == '')
+			$file = $this->importFileName($file);
+
+			if($file === '')
 			{
 				continue;
 			}	
 			
 		//	$oldpath = e_MEDIA."temp/".$file;
-			$oldpath = e_IMPORT . $tp->filter($file, 'file');
+			$oldpath = e_IMPORT . $file;
 			if(file_exists($oldpath))
 			{
 				unlink($oldpath);
@@ -3509,12 +3610,18 @@ class media_admin_ui extends e_admin_ui
 		
 		foreach($_POST['batch_selected'] as $key=>$file)
 		{
+			$file = $this->importFileName($file);
 
-			$oldpath = e_IMPORT.$tp->filter($file, 'file');
+			if($file === '')
+			{
+				continue;
+			}
+
+			$oldpath = e_IMPORT.$file;
 
 			if($_POST['batch_category'] === '_avatars_public' || $_POST['batch_category'] === '_avatars_private')
 			{
-				$newpath = ($_POST['batch_category'] === '_avatars_public') ? e_AVATAR_DEFAULT.$tp->filter($file, 'file') : $newpath = e_AVATAR_UPLOAD.$tp->filter($file, 'file');
+				$newpath = ($_POST['batch_category'] === '_avatars_public') ? e_AVATAR_DEFAULT.$file : e_AVATAR_UPLOAD.$file;
 
 				if(rename($oldpath,$newpath))
 				{
@@ -3646,7 +3753,7 @@ class media_admin_ui extends e_admin_ui
 }
 
 
-new media_admin();
+new media_admin(true, $route);
 
 require_once(e_ADMIN. 'auth.php');
 

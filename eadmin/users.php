@@ -70,6 +70,7 @@ class users_admin extends e_admin_dispatcher
 		'main/add'          => '4|U1|U0',
 		'main/prefs'        => '4|U2',
 		'main/maintenance'  => '4',
+		'main/ranks'        => '4|U3',
 	);
 
 
@@ -336,7 +337,7 @@ class users_admin_ui extends e_admin_ui
  		'user_loginname' 	=> array('title' => LAN_USER_02,	'tab'=>0, 'type' => 'text',	'data'=>'safestr', 'width' => 'auto'), // User name
  		'user_login' 		=> array('title' => LAN_USER_03,	'tab'=>0, 'type' => 'text',	'inline'=>true, 'data'=>'safestr', 'width' => 'auto'), // Real name (no real vetting)
  		'user_customtitle' 	=> array('title' => LAN_USER_04,	'tab'=>0, 'type' => 'text',	'inline'=>true, 'data'=>'safestr', 'width' => 'auto'), // No real vetting
- 		'user_password' 	=> array('title' => LAN_PASSWORD,	'tab'=>0, 'type' => 'method',	'data'=>'safestr', 'width' => 'auto'), //TODO add md5 option to form handler?
+ 		'user_password' 	=> array('title' => LAN_PASSWORD,	'tab'=>0, 'type' => 'method',	'data'=>'safestr', 'search'=>false, 'width' => 'auto'), //TODO add md5 option to form handler?
 		'user_sess' 		=> array('title' => LAN_SESSION,	'tab'=>0, 'noedit'=>true, 'type' => 'text',	'width' => 'auto'), // Photo
  		'user_image' 		=> array('title' => LAN_USER_07,	'tab'=>0, 'type' => 'method',	'data'=>'str', 'width' => 'auto','thclass'=>'center','class'=>'center'), // Avatar
  		'user_email' 		=> array('title' => LAN_EMAIL,		'tab'=>0, 'type' => 'text', 'inline'=>true, 'data'=>'safestr',	'width' => 'auto', 'writeParms'=>array('size'=>'xxlarge')),
@@ -1072,7 +1073,7 @@ class users_admin_ui extends e_admin_ui
 
 			//	$options['debug'] = 1;
 
-				if($ret =$sysuser->email('email', $options))
+				if($sysuser->email('email', $options) === true)
 				{
 					$mes->addSuccess(USRLAN_224." ".$sysuser->getName().' ('.$sysuser->getValue('email').')');
 				}
@@ -1600,9 +1601,7 @@ class users_admin_ui extends e_admin_ui
 	}
 
 	/**
-	 * The single-row delete route, which carries no rule of its own and reaches
-	 * {@see e_front_tree_model::delete()} without {@see e_admin_ui::beforeDelete()} whenever the
-	 * row is not on the loaded list page, so the rule cannot live in that callback.
+	 * The single-row delete route, which carries no rule of its own.
 	 *
 	 * @param array $posted rows the delete acts on, keyed by id
 	 * @return void
@@ -2019,12 +2018,12 @@ class users_admin_ui extends e_admin_ui
 		}
 		if ($lfile && is_readable($lfile))
 		{
-			require_once($lfile);
+			e107::includeLan($lfile);
 		}
 		else
 		{
 			//@FIXME use email templates by Language
-			require_once (e_LANGUAGEDIR.e_LANGUAGE."/lan_signup.php");
+			e107::includeLan(e_LANGUAGEDIR.e_LANGUAGE."/lan_signup.php");
 		}
 		if(!$lan) $lan = e_LANGUAGE;
 		
@@ -2063,7 +2062,7 @@ class users_admin_ui extends e_admin_ui
 			'user_password' => $newPwd
 		), $userInfo);
 		
-		if ($check)
+		if ($check === true)
 		{
 			$vars = array('x'=> $sysuser->getId(), 'y'=>$sysuser->getName(), 'z'=> $sysuser->getValue('email'));
 			$message = e107::getParser()->lanVars(USRLAN_167,$vars);
@@ -2434,11 +2433,11 @@ class users_admin_ui extends e_admin_ui
 					break;
 				}
 
-				if($check && $check !== -1)
+				if($check === true)
 				{
 					$mes->addSuccess(USRLAN_188);
 				}
-				elseif(!$check)
+				elseif($check !== -1)
 				{
 					$mes->addError(USRLAN_189);
 				}
@@ -2698,6 +2697,7 @@ class users_admin_ui extends e_admin_ui
 		e107::getCache()->clear_sys('nomd5_user_ranks');
 		if (e107::getDb()->createQueryBuilder()->delete('generic')
 			->where('gen_id', (int) $rankId)
+			->where('gen_type', 'user_rank_data')
 			->execute())
 		{
 			e107::getMessage()->addSuccess(LAN_DELETED);
@@ -3407,7 +3407,7 @@ class users_admin_form_ui extends e_admin_form_ui
 	//	$foot = "</select>";
 	//	$foot = "</div>";
 
-		$btn =  '<div class="btn-group pull-right">
+		$btn =  '<div class="btn-group pull-right float-right float-end">
 
 		<button aria-expanded="false" class="btn btn-default btn-secondary btn-user-action dropdown-toggle" data-toggle="dropdown" data-bs-toggle="dropdown">
 		<span class="user-action-indicators" id="user-action-indicator-'.$user_id.'">'.e107::getParser()->toGlyph('fa-cog').'</span>
@@ -3474,7 +3474,8 @@ class users_admin_form_ui extends e_admin_form_ui
 		protected $table			= 'generic';
 		protected $pid				= 'gen_id';
 		protected $perPage 			= 15;
-		protected $listQry			= "SELECT * FROM `#generic` WHERE gen_type='user_rank_data' ";
+		protected $listQry			= "SELECT * FROM `#generic`";
+		protected $listScope		= array('gen_type' => 'user_rank_data');
 		protected $listOrder     = " CASE gen_datestamp WHEN 1 THEN 1 WHEN 2 THEN 2 WHEN 3 THEN 3  WHEN 0 THEN 4 END, gen_intdata ";
 
 		protected $fields 		= array (

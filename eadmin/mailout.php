@@ -582,7 +582,7 @@ class mailout_main_ui extends e_admin_ui
 		
 		$eml = array('subject'=>'Test Bounce',	'body'	=> 'Test Bounce Email address','e107_header'=>99999999, 'extra_header' => 'X-Bounce-Test: true');
 		
-		if(e107::getEmail()->sendEmail($sendto, 'Bounce handler', $eml))
+		if(e107::getEmail()->sendEmail($sendto, 'Bounce handler', $eml) === true)
 		{
 			$mes->addSuccess('Test Bounce sent to '.$sendto);
 		}
@@ -964,6 +964,7 @@ class mailout_main_ui extends e_admin_ui
 		}
 		
 		$other['mail_selectors'] = $this->mailAdmin->getAllSelectors();
+		$other['mail_body_author'] = (int) e107::getUser()->getId();
 		
 		
 		$ret['mail_attach']			= trim($new_data['mail_attach']);
@@ -1636,11 +1637,20 @@ class mailout_main_ui extends e_admin_ui
 
 class mailout_admin_form_ui extends e_admin_form_ui
 {
-	
+	/**
+	 * @param e_admin_model $model
+	 * @return array the email the model's row holds, its sender, copies and attachment included {@see e107MailManager::dbToMail()}
+	 */
+	private function storedEmail($model)
+	{
+		$row = $model->getData();
+
+		return $this->getController()->mailAdmin->dbToMail($row);
+	}
+
 	public function mail_selectors($curval, $mode)
 	{
-		$val 	= stripslashes($this->getController()->getModel()->get('mail_other'));		
-		$data 	= e107::unserialize($val);
+		$data 	= $this->storedEmail($this->getController()->getModel());
 		
 		switch($mode)
 		{
@@ -1667,8 +1677,7 @@ class mailout_admin_form_ui extends e_admin_form_ui
 	
 	public function mail_send_style($curVal, $mode)
 	{
-		$val 	= stripslashes($this->getController()->getModel()->get('mail_other'));		
-		$data 	= e107::unserialize($val);
+		$data 	= $this->storedEmail($this->getController()->getModel());
 		
 		switch($mode)
 		{
@@ -1697,14 +1706,12 @@ class mailout_admin_form_ui extends e_admin_form_ui
 		switch($mode)
 		{
 			case 'read':
-				$val 	= stripslashes($this->getController()->getListModel()->get('mail_other'));		
-				$data 	= e107::unserialize($val);
+				$data 	= $this->storedEmail($this->getController()->getListModel());
 				return $data[$field];
 			break;
 
 			case 'write':
-				$val 	= stripslashes($this->getController()->getModel()->get('mail_other'));		
-				$data 	= e107::unserialize($val);
+				$data 	= $this->storedEmail($this->getController()->getModel());
 				
 				if($field == 'mail_sender_name' && !vartrue($data['mail_sender_name']))
 				{
@@ -1753,15 +1760,13 @@ class mailout_admin_form_ui extends e_admin_form_ui
 	{
 		if($mode == 'read')
 		{
-			$val 	= stripslashes($this->getController()->getListModel()->get('mail_other'));		
-			$data 	= e107::unserialize($val);
+			$data 	= $this->storedEmail($this->getController()->getListModel());
 			return basename($data['mail_attach']);	
 		}
 		
 		if($mode == 'write')
 		{
-			$val 	= stripslashes($this->getController()->getModel()->get('mail_other'));		
-			$data 	= e107::unserialize($val);
+			$data 	= $this->storedEmail($this->getController()->getModel());
 			return $this->filepicker('mail_attach',$data['mail_attach'], $mode);	
 		}
 		

@@ -695,6 +695,80 @@ function update_core_database($type = '')
 			}
 		}
 
+		$banlistKey = array();
+		$banlistKeyUnique = false;
+		foreach($sql->schema()->getIndexes('banlist') as $part)
+		{
+			if($part['Key_name'] === 'banlist_ip')
+			{
+				$banlistKey[(int) $part['Seq_in_index']] = $part['Column_name'];
+				$banlistKeyUnique = ((int) $part['Non_unique'] === 0);
+			}
+		}
+		ksort($banlistKey);
+
+		if(!$banlistKeyUnique || array_values($banlistKey) !== array('banlist_ip', 'banlist_bantype'))
+		{
+			if($just_check)
+			{
+				return update_needed("The ban list can hold the same entry twice, which lets parallel requests ban one address several times.");
+			}
+
+			$now = time();
+			$duplicates = array();
+			$groups = $sql->createQueryBuilder()->select('banlist_ip', 'banlist_bantype')->from('banlist')
+				->groupBy(array('banlist_ip', 'banlist_bantype'))->havingCount('>', 1)
+				->fetchAll();
+
+			foreach($groups as $group)
+			{
+				$rows = $sql->createQueryBuilder()->select('banlist_id', 'banlist_banexpires')->from('banlist')
+					->where('banlist_ip', $group['banlist_ip'])->where('banlist_bantype', (int) $group['banlist_bantype'])
+					->orderBy('banlist_id')
+					->fetchAll();
+
+				$keep = (int) $rows[0]['banlist_id'];
+				foreach($rows as $row)
+				{
+					if((int) $row['banlist_banexpires'] === 0 || (int) $row['banlist_banexpires'] > $now)
+					{
+						$keep = (int) $row['banlist_id'];
+						break;
+					}
+				}
+
+				foreach($rows as $row)
+				{
+					if((int) $row['banlist_id'] !== $keep)
+					{
+						$duplicates[] = (int) $row['banlist_id'];
+					}
+				}
+			}
+
+			foreach(array_chunk($duplicates, 500) as $chunk)
+			{
+				$sql->createQueryBuilder()->delete('banlist')->whereIn('banlist_id', $chunk)->execute();
+			}
+
+			$alter = $sql->schema()->table('banlist');
+			if(!empty($banlistKey))
+			{
+				$alter->dropIndex('banlist_ip');
+			}
+			if($alter->addIndex(Index::unique('banlist_ip', array('banlist_ip', 'banlist_bantype')))->execute() === false)
+			{
+				e107::getMessage()->addError("The ban list could not be given its one-entry-per-address-and-type key, so this update is still due.");
+			}
+
+			if(!empty($duplicates))
+			{
+				e107::getIPHandler()->regenerateFiles();
+				$log->addEvent(4, __FILE__, "UPDATE", 'LAN_UPDATE',
+					"Removed ".count($duplicates)." duplicate ban list entries, keeping the first live entry of each address and type.", false, LOG_TO_ROLLING);
+			}
+		}
+
 		if(empty($pref['ban_durations_login_default_applied']))
 		{
 			if(empty($pref['ban_durations'][eIPHandler::BAN_TYPE_LOGINS]))
@@ -811,6 +885,30 @@ function update_core_database($type = '')
 		}
 
 
+		$searchPref = e107::getConfig('search');
+		$pluginToRefreshOnRemoval = array('news' => '', 'downloads' => '', 'pages' => 'page', 'users' => '');
+
+		foreach($pluginToRefreshOnRemoval as $handler => $plugin)
+		{
+			if(!$searchPref->getPref('core_handlers/'.$handler))
+			{
+				continue;
+			}
+
+			if($just_check)
+			{
+				return update_needed('Core search handlers need to be updated.');
+			}
+
+			$searchPref->removePref('core_handlers/'.$handler)->save(false,true,false);
+
+			if($plugin)
+			{
+				e107::getSingleton('e107plugin')->refresh($plugin);
+			}
+		}
+
+
 		// Sealed tokens provision their own key on first use. Doing it here
 		// means an upgraded site is never the one paying for that, and an
 		// operator finds out now if the preference cannot be written.
@@ -875,16 +973,18 @@ function update_core_database($type = '')
 		}
 
 
-		// Session rows still keyed by the raw session id.
+		// Live session rows still keyed by the raw session id.
 		require_once(e_HANDLER.'session_handler.php');
 
 		$sessionHashed = 0;
+		$sessionRemoved = 0;
 		$sessionSeen = 0;
 		$sessionSkipped = 0;
 
 		while($sessionLegacy = $sql->createQueryBuilder()
 			->select('session_id')->from('session')
 			->whereNotLike('session_id', e_session_db::KEY_ALGO.'$%')
+			->where('session_expires', '>', time())
 			->orderBy('session_id')
 			->setFirstResult($sessionSkipped)
 			->setMaxResults($just_check ? 1 : 200)
@@ -898,13 +998,25 @@ function update_core_database($type = '')
 			foreach($sessionLegacy as $sessionRow)
 			{
 				$sessionSeen++;
+				$sessionKey = e_session_db::storageKey($sessionRow['session_id']);
+
+				$sql->createQueryBuilder()->delete('session')
+					->where('session_id', $sessionKey)
+					->where('session_expires', '<=', time())
+					->execute();
 
 				if($sql->createQueryBuilder()->update('session')
-					->set('session_id', e_session_db::storageKey($sessionRow['session_id']))
+					->set('session_id', $sessionKey)
 					->where('session_id', $sessionRow['session_id'])
 					->execute())
 				{
 					$sessionHashed++;
+				}
+				elseif($sql->createQueryBuilder()->delete('session')
+					->where('session_id', $sessionRow['session_id'])
+					->execute())
+				{
+					$sessionRemoved++;
 				}
 				else
 				{
@@ -915,7 +1027,7 @@ function update_core_database($type = '')
 
 		if($sessionSeen)
 		{
-			$log->addDebug('Stored session ids hashed: '.$sessionHashed.' of '.$sessionSeen);
+			$log->addDebug('Stored session ids hashed: '.$sessionHashed.', removed as unmovable: '.$sessionRemoved.', of '.$sessionSeen);
 		}
 
 
@@ -1927,7 +2039,7 @@ function update_706_to_800($type='')
 	$dl_files = $fl->get_files(e_FILE.'downloads', "","standard",5); // don't use e_DOWNLOAD or a loop may occur.
 
 	
-	$publicFilter = array('_FT', '^thumbs\.db$','^Thumbs\.db$','.*\._$','^\.htaccess$','^\.cvsignore$','^\.ftpquota$','^index\.html$','^null\.txt$','\.bak$','^.tmp'); // Default file filter (regex format)
+	$publicFilter = array('_FT', '^thumbs\.db$','^Thumbs\.db$','.*\._$','^\.htaccess$','^\.cvsignore$','^\.ftpquota$','^index\.html$','^null\.txt$','\.bak$','^\.tmp'); // Default file filter (regex format)
 //	$publicFilter = array(1);
 	$public_files = $fl->get_files(e_FILE.'public','',$publicFilter);
 	
@@ -2007,29 +2119,6 @@ function update_706_to_800($type='')
 		$med->importIcons(e_IMAGE."icons/");
 		$med->importIcons(e_THEME.$pref['sitetheme']."/images/");
 		$log->addDebug("Icon category added");
-	}
-	
-	// Search Clean up ----------------------------------
-	
-	$searchPref = e107::getConfig('search');
-
-	if($searchPref->getPref('core_handlers/news'))
-	{
-		if ($just_check) return update_needed('Core search handlers need to be updated.');
-		$searchPref->removePref('core_handlers/news')->save(false,true,false);
-	}
-
-	if($searchPref->getPref('core_handlers/downloads'))
-	{
-		if ($just_check) return update_needed('Core search handlers need to be updated.');
-		$searchPref->removePref('core_handlers/downloads')->save(false,true,false);
-	}
-
-	if($searchPref->getPref('core_handlers/pages'))
-	{
-		if ($just_check) return update_needed('Core search handlers need to be updated.');
-		$searchPref->removePref('core_handlers/pages')->save(false,true,false);
-		e107::getSingleton('e107plugin')->refresh('page');
 	}
 	
 	// Clean up news keywords. - remove spaces between commas.
