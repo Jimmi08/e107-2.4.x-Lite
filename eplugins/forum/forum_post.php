@@ -70,21 +70,9 @@ class forum_post_handler
 		$this->post     = (int) varset($_GET['post'], 0); // post ID if needed.
 
 
-		// issue #3619: In case the post id is not set
-		// use the thread id to look for the moderator ids
-		if (!empty($this->post))
-		{
-			$moderatorUserIds = $forum->getModeratorUserIdsByPostId($this->post);
-		}
-		else
-		{
-			$moderatorUserIds = $forum->getModeratorUserIdsByThreadId($this->id);
-		}
-
-		define('MODERATOR', (USER && in_array(USERID, $moderatorUserIds) || getperms('0')));
-
-
 		$this->data = $this->processGet();
+
+		define('MODERATOR', $this->forumObj->canModerateForum($this->data['forum_id']));
 
 		$this->checkPerms($this->data['forum_id']);
 
@@ -166,7 +154,9 @@ class forum_post_handler
 			case "report":
 			case 'split':
 				$postInfo               = $this->forumObj->postGet($this->post, 'post');
-				$forumInfo              = $this->forumObj->forumGet($postInfo['post_forum']);
+				$this->id               = (int) varset($postInfo['post_thread'], 0);
+				$thread                 = $this->forumObj->threadGet($this->id, false);
+				$forumInfo              = $this->forumObj->forumGet(varset($thread['thread_forum_id'], 0));
 				$data                   = array_merge($postInfo ,$forumInfo);
 				$data['action']         = $this->action;
 				$data['initial_post']   = $this->forumObj->threadDetermineInitialPost($this->post);
@@ -197,12 +187,6 @@ class forum_post_handler
 	 */
 	function processPosted()
 	{
-
-		if(!empty($_POST['action'])) // override from 'quote' mode to 'rp' mode.
-		{
-			$this->action = $_POST['action'];
-		}
-
 		if(isset($_POST['newthread']) || isset($_POST['reply']))
 		{
 			$this->insertPost();
@@ -213,7 +197,7 @@ class forum_post_handler
 			$this->updateThread();
 		}
 
-		if(!empty($_POST['move_thread']))
+		if(!empty($_POST['move_thread']) && $this->action === 'move')
 		{
 			$this->moveThread($_POST);
 		}
@@ -421,7 +405,7 @@ class forum_post_handler
 
 		$data['forum_name'] = $tp->toHTML($data['forum_name'], true);
 
-		define('e_PAGETITLE', ($this->action == 'rp' ? LAN_FORUM_3003.": ".$data['thread_name'] : LAN_FORUM_1018).' / '.$data['forum_name'].' / '.LAN_FORUM_1001);
+		define('e_PAGETITLE', ($this->action == 'rp' ? LAN_FORUM_3003.": ".$tp->attributeValue($data['thread_name']) : LAN_FORUM_1018).' / '.$data['forum_name'].' / '.LAN_FORUM_1001);
 
 
 	}
@@ -434,7 +418,7 @@ class forum_post_handler
 		$mes = e107::getMessage();
 		$ns = e107::getRender();
 
-		if (!$this->forumObj->checkPerm($forumId, 'post')) // check user has permission to post to this thread.
+		if (!$this->forumObj->checkPerm($forumId, $this->action === 'nt' ? 'thread' : 'post'))
 		{
 			require_once(HEADERF);
 			$mes->addError(LAN_FORUM_3001);
@@ -814,7 +798,7 @@ class forum_post_handler
 		<td >".LAN_FORUM_3042."</td>
 		<td>
 
-		".$frm->text('new_thread_title', $tp->toForm($this->data['thread_name'], 250))."
+		".$frm->text('new_thread_title', $this->offeredThreadName())."
 
 		</div></td>
 		</tr>
@@ -879,6 +863,11 @@ class forum_post_handler
 					continue;
 				}
 
+				if(!$this->offersAsDestination($f['forum_id']))
+				{
+					continue;
+				}
+
 				$id = $f['forum_id'];
 				$opts[$id] = $for_name;
 			}
@@ -886,6 +875,17 @@ class forum_post_handler
 
 
 		return e107::getForm()->select($name, $opts, $curVal, $opts, $currentName);
+	}
+
+	/**
+	 * Whether the split and move forms list a forum as a destination.
+	 *
+	 * @param int $forumId
+	 * @return bool
+	 */
+	private function offersAsDestination($forumId)
+	{
+		return getperms('0') || ($this->forumObj->checkPerm($forumId, 'view') && $this->forumObj->canModerateForum($forumId));
 	}
 
 
@@ -920,7 +920,7 @@ class forum_post_handler
 		<tr>
 		<td>".LAN_FORUM_3011.": </td>
 		<td>
-		".$tp->toHTML($this->data['thread_name'],true)."
+		".e107forum::threadNameHtml($this->data['thread_name'], $tp, e107::getBB())."
 		</td>
 		</tr>
 		<tr><td></td>
@@ -941,7 +941,7 @@ class forum_post_handler
 		".$frm->radio('rename_thread', 'add', false, array('label'=> $tp->lanVars(LAN_FORUM_5024,'<b> ['.LAN_FORUM_5021.']</b> '))). "
 		</div>
 		<div class='radio'>".$frm->radio('rename_thread','rename', false, array('label'=>LAN_FORUM_5025))."
-		".$frm->text('newtitle', $tp->toForm($this->data['thread_name'], 250))."
+		".$frm->text('newtitle', $this->offeredThreadName())."
 		</div>
 		</div></td>
 		</tr>
@@ -1002,7 +1002,7 @@ class forum_post_handler
 		$tp = e107::getParser();
 		$frm = e107::getForm();
 
-		$thread_name = e107::getParser()->toHTML($this->data['thread_name'], true, 'no_hook, emotes_off');
+		$thread_name = e107forum::threadNameHtml($this->data['thread_name'], $tp, e107::getBB());
 	//	define('e_PAGETITLE', LAN_FORUM_1001.' / '.LAN_FORUM_2024.': '.$thread_name);
 	//	$url = e107::getUrl()->create('forum/thread/post', array('id' => $postId, 'name' => $postInfo['thread_name'], 'thread' => $threadId));
 	//	$actionUrl = e107::getUrl()->create('forum/thread/report', "id={$threadId}&post={$postId}");
@@ -1120,7 +1120,7 @@ class forum_post_handler
 		}
 		else
 		{
-			$poster = ($_POST['anonname']) ? $_POST['anonname'] : LAN_ANONYMOUS;
+			$poster = ($_POST['anonname']) ? $tp->attributeValue($_POST['anonname']) : LAN_ANONYMOUS;
 		}
 
 		$postdate = e107::getDate()->convert_date(time(), "forum");
@@ -1129,14 +1129,14 @@ class forum_post_handler
 
 		if (empty($tsubject))
 		{
-			$tsubject = $this->data['thread_name'];
+			$tsubject = $tp->attributeValue($this->data['thread_name']);
 		}
 
-		if ($_POST['poll_title'] != '' && check_class($this->forumObj->prefs->get('poll')))
+		if ($_POST['poll_title'] != '' && $this->forumObj->canAttachPoll())
 		{
 			require_once(e_PLUGIN."poll/poll_class.php");
 			$poll = new poll;
-			$poll_text = $poll->render_poll($_POST, 'forum', 'notvoted', true);
+			$poll_text = $poll->render_poll(array('poll_admin_id' => USERID) + $_POST, 'forum', 'notvoted', true);
 		}
 		else
 		{
@@ -1226,7 +1226,7 @@ class forum_post_handler
 				exit;
 			}
 
-			$hasPoll = ($this->action == 'nt' && varset($_POST['poll_title']) && $_POST['poll_option'][0] != '' && $_POST['poll_option'][1] != '');
+			$hasPoll = ($this->action == 'nt' && $this->forumObj->canAttachPoll() && varset($_POST['poll_title']) && $_POST['poll_option'][0] != '' && $_POST['poll_option'][1] != '');
 
 
 			if (USER)
@@ -1238,9 +1238,10 @@ class forum_post_handler
 			}
 			else
 			{
-				$postInfo['post_user_anon']         = $_POST['anonname'];
-				$threadInfo['thread_lastuser_anon'] = $_POST['anonname'];
-				$threadInfo['thread_user_anon']     = $_POST['anonname'];
+				$anonName = e107::getParser()->toDB($_POST['anonname']);
+				$postInfo['post_user_anon']         = $anonName;
+				$threadInfo['thread_lastuser_anon'] = $anonName;
+				$threadInfo['thread_user_anon']     = $anonName;
 			}
 
 			$time = time();
@@ -1283,6 +1284,7 @@ class forum_post_handler
 				// Reply only.  Add the post, update thread record with latest post info.
 				// Update forum with latest post info
 				case 'rp':
+				case 'quote':
 					$postInfo['post_thread']        = $this->id;
 					$newPostId = $this->forumObj->postAdd($postInfo);
 					break;
@@ -1346,7 +1348,7 @@ class forum_post_handler
 
 
 			//If a poll was submitted, let's add it to the poll db
-			if ($this->action == 'nt' && varset($_POST['poll_title']) && $_POST['poll_option'][0] != '' && $_POST['poll_option'][1] != '')
+			if ($hasPoll)
 			{
 				require_once(e_PLUGIN.'poll/poll_class.php');
 				$_POST['iid'] = $threadId;
@@ -1409,7 +1411,6 @@ class forum_post_handler
 			return false;
 		}
 
-		$tp = e107::getParser();
 		$mes = e107::getMessage();
 
 		$newThreadTitle = '';
@@ -1421,19 +1422,16 @@ class forum_post_handler
 		}
 		elseif($posted['rename_thread'] == 'rename' && trim($posted['newtitle']) != '')
 		{
-			$newThreadTitle = $tp->toDB($posted['newtitle']);
+			$newThreadTitle = $this->threadName($posted['newtitle'], $this->offeredThreadName());
 			$newThreadTitleType = 1;
 		}
 
 		$threadId = intval($_GET['id']);
 		$toForum = intval($posted['forum_move']);
 
-		/* MODERATOR is worked out once for the page and answers for neither end
-		 * of a move. Both have to be checked: without the second, a moderator can
-		 * push a thread into a forum they have no rights over at all. */
-		if(!$this->forumObj->canModerateThread($threadId) || !$this->forumObj->canModerateForum($toForum))
+		if(!$this->maySendPosts($threadId, $toForum))
 		{
-			e107::getDebug()->log("Move Thread attempted without moderator rights over both ends");
+			e107::getDebug()->log("Move Thread attempted into a category or without moderator rights over both ends");
 
 			return false;
 		}
@@ -1463,10 +1461,19 @@ class forum_post_handler
 			return false;
 		}
 
+		$toForum = (!empty($post['forum_split'])) ? intval($post['forum_split']) : (int) $this->data['forum_id'];
+
+		if(!$this->maySendPosts($this->data['post_thread'], $toForum))
+		{
+			e107::getDebug()->log("Split Thread attempted into a category or without moderator rights over both ends");
+
+			return false;
+		}
+
 		$threadInfo = array();
 		$threadInfo['thread_sticky']    = 0;
-		$threadInfo['thread_name']      = $post['new_thread_title'];
-		$threadInfo['thread_forum_id']  = (!empty($post['forum_split'])) ? intval($post['forum_split']) : $this->data['post_forum'];
+		$threadInfo['thread_name']      = $this->threadName($post['new_thread_title'], $this->offeredThreadName());
+		$threadInfo['thread_forum_id']  = $toForum;
 		$threadInfo['thread_active']    = 1;
 		$threadInfo['thread_datestamp'] = $this->data['post_datestamp'];
 		$threadInfo['thread_views']      = 0;
@@ -1537,6 +1544,53 @@ class forum_post_handler
 	}
 
 
+	/**
+	 * Whether a thread's posts may go to $toForum: a forum rather than a category, moderated by the caller as the thread's own is.
+	 *
+	 * @param int $threadId
+	 * @param int $toForum
+	 * @return bool
+	 */
+	private function maySendPosts($threadId, $toForum)
+	{
+		return $this->holdsThreads($toForum) && $this->forumObj->canModerateThread($threadId) && $this->forumObj->canModerateForum($toForum);
+	}
+
+	/**
+	 * Whether a forum id names a forum, which holds threads, rather than a category, which holds forums.
+	 *
+	 * @param int $forumId
+	 * @return bool
+	 */
+	private function holdsThreads($forumId)
+	{
+		$forum = $this->forumObj->forumGet($forumId);
+
+		return !empty($forum['forum_parent']);
+	}
+
+	/**
+	 * The name to store for a title posted from a box that offered the thread's name as $offered.
+	 *
+	 * @param string $title
+	 * @param string $offered
+	 * @return string
+	 */
+	private function threadName($title, $offered)
+	{
+		return $title === $offered ? $this->data['thread_name'] : e107::getParser()->toDB($title);
+	}
+
+	/**
+	 * The thread's name as the split and move forms offer it.
+	 *
+	 * @return string
+	 */
+	private function offeredThreadName()
+	{
+		return e107::getParser()->toForm($this->data['thread_name']);
+	}
+
 
 	function updateThread()
 	{
@@ -1550,7 +1604,7 @@ class forum_post_handler
 		}
 		else
 		{
-			if (!$this->isAuthor())
+			if (!$this->isAuthor() || empty($this->data['initial_post']))
 			{
 				$mes->addError(LAN_FORUM_3009);
 				return;
@@ -1562,7 +1616,7 @@ class forum_post_handler
 			if($uploadResult = $this->processAttachments())
 			{
 				// $attachments = explode(',', $this->data['post_attachments']);
-				$newValues   = e107::unserialize($this->data['post_attachments']);
+				$newValues   = forum_attachments::asServed(e107::unserialize($this->data['post_attachments']));
 				foreach($uploadResult as $ur)
 				{
 				//	$_tmp = $ur['type'].'*'.$ur['file'];
@@ -1589,12 +1643,19 @@ class forum_post_handler
 
 			if(!empty($_POST['subject']))
 			{
-				$threadVals['thread_name'] 	 = $_POST['subject'];
+				$threadVals['thread_name'] 	 = $this->threadName($_POST['subject'], e107::getParser()->post_toForm($this->data['thread_name']));
 			}
 
-			$threadVals['thread_sticky'] = (MODERATOR ? (int)$_POST['threadtype'] : 0);
+			if(MODERATOR && isset($_POST['threadtype']))
+			{
+				$threadVals['thread_sticky'] = (int) $_POST['threadtype'];
+			}
 
-			$this->forumObj->threadUpdate($this->data['post_thread'], $threadVals);
+			if($threadVals)
+			{
+				$this->forumObj->threadUpdate($this->data['post_thread'], $threadVals);
+			}
+
 			$this->forumObj->postUpdate($this->data['post_id'], $postVals);
 
 			e107::getCache()->clear('newforumposts');
@@ -1642,7 +1703,7 @@ class forum_post_handler
 
 		if($uploadResult = $this->processAttachments())
 		{
-			$newValues   = e107::unserialize($this->data['post_attachments']);
+			$newValues   = forum_attachments::asServed(e107::unserialize($this->data['post_attachments']));
 
 			foreach($uploadResult as $ur)
 			{
@@ -1794,7 +1855,7 @@ class forum_post_handler
 						$_thumb = '';
 						$_fname = '';
 						$fpath = '';
-						if(strpos($upload['type'], 'image') !== false)
+						if(strpos($upload['type'], 'image') !== false && !forum_attachments::isSvg($upload['name']))
 						{
 							$_type = 'img';
 
@@ -1912,7 +1973,7 @@ class forum_post_handler
 
 			foreach($entries as $index => $entry)
 			{
-				$name = (string) (is_array($entry) ? varset($entry['file'], '') : $entry);
+				$name = (string) forum_attachments::fileName($entry);
 
 				if($name === '' || strpos($name, "\0") !== false || $name !== basename($name))
 				{
@@ -1963,7 +2024,7 @@ class forum_post_handler
 			{
 				foreach((array) $entries as $entry)
 				{
-					$allowed[] = (string) (is_array($entry) ? varset($entry['file'], '') : $entry);
+					$allowed[] = (string) forum_attachments::fileName($entry);
 				}
 			}
 		}
@@ -1972,7 +2033,7 @@ class forum_post_handler
 		{
 			foreach((array) $entries as $index => $entry)
 			{
-				$name = (string) (is_array($entry) ? varset($entry['file'], '') : $entry);
+				$name = (string) forum_attachments::fileName($entry);
 
 				if(!in_array($name, $allowed, true))
 				{
@@ -1994,12 +2055,14 @@ class forum_post_handler
 			$attachmentsJsonErrors = json_last_error();
 			if($attachmentsJsonErrors === JSON_ERROR_NONE)
 			{
+				require_once(e_PLUGIN.'forum/forum_attachments.php');
+
 				$postedAttachments = $this->filterAttachmentNames($postedAttachments);
 				$postedAttachments = $this->filterGuestAttachmentNames($postedAttachments, $existingValues, $uploaded);
 
 		        if($existingValues)
 		        {
-		          $existingValues = e107::unserialize($existingValues);
+		          $existingValues = forum_attachments::asServed(e107::unserialize($existingValues));
 		          return e107::serialize(array_merge_recursive($existingValues,$postedAttachments));
 		        }
 		        else

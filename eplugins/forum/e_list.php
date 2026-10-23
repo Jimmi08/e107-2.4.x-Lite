@@ -120,7 +120,7 @@ class list_forum
 					$row['parent_name'] = $row['thread_name'];
 				}
 
-				$rowheading = $this->parent->parse_heading($row['parent_name']);
+				$rowheading = e107::getParser()->attributeValue($this->parent->parse_heading($row['parent_name']));
 				$record['heading'] = '<a href="' . e107::url('forum', 'topic', array('thread_id' => $row['thread_id'], 'thread_sef' => eHelper::title2sef($row['parent_name']), 'forum_sef' => $row['forum_sef'])) . '">' . $rowheading . '</a>';
 
 				if(empty($row['thread_user_anon']))
@@ -130,7 +130,7 @@ class list_forum
 				}
 				else
 				{
-					$author = e107::getParser()->toHTML($row['thread_user_anon']);
+					$author = e107::getParser()->attributeValue($row['thread_user_anon']);
 				}
 
 				$record['author'] = ($this->parent->settings['author'] ? $author : "");

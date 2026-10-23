@@ -175,11 +175,7 @@ $postList = $forum->PostGet($thread->threadId, $num * $thread->perPage, $thread-
 // SEO - meta description (auto)
 if(count($postList))
 {
-	define("META_DESCRIPTION", $tp->text_truncate(
-		str_replace(
-			//array('"', "'"), '', strip_tags($tp->toHTML($postList[0]['post_entry']))
-			array('"', "'"), '', $tp->toText($postList[0]['post_entry'])
-	), 250, '...'));
+	e107::meta('description', $tp->text_truncate($tp->toText($postList[0]['post_entry']), 250, '...'));
 }
 
 //---- Orphan $gen????
@@ -293,6 +289,10 @@ $forend = $tp->parseTemplate($FORUMEND, true, $sc);
 $lastPostDetectionCounter = count($postList);
 $sc->setScVar('thisIsTheLastPost', false);
 
+$e_hide_hidden = LAN_FORUM_2008;
+$e_hide_allowed = $forum->mayReadHidden($thread->threadInfo['thread_id']);
+$e_hide_unseal = array($forum, 'unsealHidden');
+
 foreach ($postList as $c => $postInfo)
 {
 	$postInfo['thread_active'] = $thread->threadInfo['thread_active'];
@@ -311,13 +311,6 @@ foreach ($postList as $c => $postInfo)
 	$tnum = $i;
 
 	$i++;
-
-	//TODO: Look into fixing this, to limit to a single query per pageload
-	$threadId = $thread->threadInfo['thread_id'];
-	$e_hide_query = "SELECT post_id FROM `#forum_post` WHERE (`post_thread` = {$threadId} AND post_user= " . USERID . ' LIMIT 1';
-	$e_hide_hidden = LAN_FORUM_2008;
-	$e_hide_allowed = USER;
-
 
 	$sc->wrapper('forum_viewtopic/replies'); // default.
 
@@ -361,6 +354,8 @@ foreach ($postList as $c => $postInfo)
 
 }
 unset($loop_uid);
+$e_hide_allowed = false;
+$e_hide_unseal = null;
 
 
 
@@ -587,6 +582,7 @@ class e107ForumThread
 
 	public $message;
 	public $threadId;
+	public $threadInfo;
 	public $forumId;
 	public $perPage;
 	public $noInc;
@@ -611,42 +607,29 @@ class e107ForumThread
 		}
 		
 		
-		//If threadId doesn't exist, or not given, redirect to main forum page
-		if (!$this->threadId || !$this->threadInfo = $forum->threadGet($this->threadId))
-		{
-			if(E107_DEBUG_LEVEL > 0)
-			{
-				e107::getMessage()->addError("Thread not found or query error: ". __METHOD__ .' Line: '.__LINE__ );
-				return;
-			//	exit;
-			}
-
-			$url = e107::url('forum','index','full');
-			e107::getRedirect()->go($url);
-
-		//	header('Location:' . $e107->url->create('forum/forum/main', array(), 'encode=0&full=1'));
-			exit;
-		}
-
-		//If not permitted to view forum, redirect to main forum page
-		if (!$forum->checkPerm($this->threadInfo['thread_forum_id'], 'view'))
-		{
-
-			if(E107_DEBUG_LEVEL > 0)
-			{
-				echo __METHOD__ .' Line: '.__LINE__;
-				exit;
-			}
-			$url = e107::url('forum','index','full');
-			e107::getRedirect()->go($url);
-
-		//	header('Location:' . $e107->url->create('forum/forum/main', array(), 'encode=0&full=1'));
-			exit;
-		}
+		$this->threadInfo = $this->threadId ? $forum->threadGet($this->threadId) : false;
+		$this->refuseUnlessViewable($this->threadInfo);
 
 		$totalPosts = $this->threadInfo['thread_total_replies'] + 1; // add +1 for the original post. ie. not a reply.
 		$this->pages = ceil(($totalPosts)  / $this->perPage);
 		$this->noInc = false;
+	}
+
+	/**
+	 * Sends the caller to the forum index unless $threadInfo is a thread in a forum they may view.
+	 *
+	 * @param array|false $threadInfo a forum_thread row, false when there is none
+	 * @return void
+	 */
+	private function refuseUnlessViewable($threadInfo)
+	{
+		global $forum;
+
+		if(empty($threadInfo) || !$forum->checkPerm($threadInfo['thread_forum_id'], 'view'))
+		{
+			e107::getRedirect()->go(e107::url('forum', 'index'));
+			exit;
+		}
 	}
 
 /*
@@ -701,6 +684,8 @@ class e107ForumThread
 			case 'post':
 				$postId = varset($_GET['id']);
 				$postInfo = $forum->postGet($postId,'post');
+				$this->refuseUnlessViewable($forum->threadGet(varset($postInfo['post_thread'], 0), false));
+
 				$postNum = $forum->postGetPostNum($postInfo['post_thread'], $postId);
 				$postPage = ceil($postNum / $forum->prefs->get('postspage'));
 

@@ -85,8 +85,12 @@ class e107forum
 	private $permList = array();
 	public $modArray, $prefs;
 
-	/** @var array moderator rows keyed by userclass, for authorisation only */
+	/** @var array moderator rows keyed by userclass */
 	private $moderatorsByClass = array();
+
+	/** @var string what {@see e107forum::sealHidden()} seals for, which keeps its key apart from every other sealed token */
+	private static $hiddenPurpose = 'forum hidden block';
+	private $hiddenToken = null;
 	private $forumData = array();
 
 	public function __construct($update= false)
@@ -191,12 +195,12 @@ class e107forum
 	}
 
 	/**
-	 * Grab the forum data up front to reduce LEFT JOIN usage. Currently only forum_id and forum_sef but may be expanded as needed.
+	 * Grab the forum data up front to reduce LEFT JOIN usage.
 	 */
 	private function getForumData()
 	{
 		$data = e107::getDb()->createQueryBuilder()
-			->select('forum_id', 'forum_sef', 'forum_class')->from('forum')
+			->select('forum_id', 'forum_sef', 'forum_class', 'forum_parent', 'forum_name')->from('forum')
 			->fetchAll(); // no ordering for better performance.
 
 		$newData = array();
@@ -325,11 +329,12 @@ class e107forum
             ->select('post_user', 'post_attachments')->from('forum_post')
             ->where('post_id', $post_id)
             ->fetchRow();
-        $attach = e107::unserialize($array['post_attachments']);
+        require_once(e_PLUGIN.'forum/forum_attachments.php');
+
+        $attach = forum_attachments::asServed(e107::unserialize($array['post_attachments']));
         $entry  = isset($attach['file'][$file_id]) ? $attach['file'][$file_id] : '';
 
-        $filename = is_array($entry) ? varset($entry['file'], '') : $entry;
-        $filename = basename((string) $filename);
+        $filename = basename((string) forum_attachments::fileName($entry));
 
         $file 	= $this->getAttachmentPath($array['post_user']).$filename;
 
@@ -448,7 +453,7 @@ class e107forum
 			}
 			else
 			{
-				$postInfo['post_user_anon'] = varset($_POST['anonname'], '');
+				$postInfo['post_user_anon'] = $tp->toDB(varset($_POST['anonname'], ''));
 			}
 
 			$postInfo['post_entry'] = $_POST['text'];
@@ -710,18 +715,10 @@ class e107forum
 
 
 	/**
-	 * Moderators of one userclass, for deciding permission.
-	 *
-	 * Kept apart from forumGetMods(), which memoises a single list on the
-	 * instance whatever class it is asked for. Templates read that memo to
-	 * render a forum's moderator list, so it cannot simply be keyed without
-	 * changing what they show. The page also primes it before any write is
-	 * authorised, which meant every permission question in the request was
-	 * answered for the forum named in the URL rather than for the thread or
-	 * post being acted on.
+	 * Moderators of one userclass, memoised per class; permission checks read this, never $modArray.
 	 *
 	 * @param int|string $uclass value of forum.forum_moderators
-	 * @return array moderator rows keyed by user id
+	 * @return array moderator rows keyed by user id, none for a class a guest holds
 	 */
 	private function moderatorsOfClass($uclass)
 	{
@@ -746,9 +743,19 @@ class e107forum
 				$mods[$row['user_id']] = $row;
 			}
 		}
-		else
+		elseif(!in_array((int) $uclass, array(e_UC_PUBLIC, e_UC_READONLY, e_UC_GUEST), true))
 		{
-			$mods = e107::getUserClass()->getUsersInClass($uclass, 'user_name', true);
+			$qb = e107::getDb('sql_r')->createQueryBuilder();
+			$rows = $qb->select('u.user_id', 'u.user_name')->from('user', 'u')
+				->where($this->trackClassHeld($qb, $uclass))
+				->orderBy('u.user_id', 'ASC')
+				->fetchAll();
+
+			foreach($rows as $row)
+			{
+				$row['user_id'] = (int) $row['user_id'];
+				$mods[$row['user_id']] = $row;
+			}
 		}
 
 		return $this->moderatorsByClass[$key] = $mods;
@@ -797,6 +804,17 @@ class e107forum
 	public function canModerateForum($forumId)
 	{
 		return $this->actorModerates($this->getModeratorUserIdsByForumId($forumId));
+	}
+
+
+	/**
+	 * Whether the visitor may attach a poll to a thread they start.
+	 *
+	 * @return bool
+	 */
+	public function canAttachPoll()
+	{
+		return e107::isInstalled('poll') && check_class($this->prefs->get('poll'));
 	}
 
 
@@ -1053,18 +1071,14 @@ class e107forum
 
 
 	/**
-	 * The forum ids checkPerm($id, $type) accepts for this caller.
+	 * The forum ids whose $type class column admits this caller.
 	 *
 	 * The list holds the id of every forum whose own class column admits the
 	 * caller and whose parent row's column admits them too, plus the ids of
 	 * those parent rows, so a category containing at least one permitted forum
 	 * is a member of the list in its own right.
 	 *
-	 * Two levels only. forum_sub, the third, is not consulted here and is not
-	 * consulted by forum_viewforum.php either: a sub-forum's forum_parent names
-	 * its category, so it is the category and not the parent forum that is
-	 * asked. Feeds built on this list are therefore exactly as permissive as
-	 * the site route, which is the property that matters.
+	 * A sub-forum is in the view list only while its forum is, at any depth; its posting classes are its own.
 	 *
 	 * @param string $type view, post or thread
 	 * @return int[]
@@ -1074,6 +1088,24 @@ class e107forum
 		$permList = self::permList();
 
 		return isset($permList[$type]) ? $permList[$type] : array();
+	}
+
+	/**
+	 * A post's text without the [hide] blocks {@see e_bbcode::hideBlocks()} finds, each left as a space, for a rendering that cannot decide who may read one.
+	 *
+	 * @param string $text
+	 * @return string
+	 */
+	public static function withoutHiddenBlocks($text)
+	{
+		$text = (string) $text;
+
+		foreach(array_reverse(e107::getBB()->hideBlocks($text)) as $block)
+		{
+			$text = substr_replace($text, ' ', $block['start'], $block['length']);
+		}
+
+		return $text;
 	}
 
 
@@ -1148,15 +1180,42 @@ class e107forum
 
 	
 	
+	/**
+	 * Whether the caller holds $type in a forum; a forum the caller may not view grants nothing, and a thread also takes the posting class and a forum that lists threads.
+	 *
+	 * @param int $forumId
+	 * @param string $type view, post or thread
+	 * @return bool
+	 */
 	function checkPerm($forumId, $type='view')
 	{
-	//	print_a( $this->permList[$type]);
-		if(empty($this->permList[$type]))
+		if(empty($this->permList[$type]) || empty($this->permList['view']))
 		{
 			return false;
 		}
 
-		return (in_array($forumId, $this->permList[$type]));
+		if($type === 'thread' && (!$this->listsThreads($forumId) || !$this->checkPerm($forumId, 'post')))
+		{
+			return false;
+		}
+
+		return in_array($forumId, $this->permList['view']) && in_array($forumId, $this->permList[$type]);
+	}
+
+	/**
+	 * Whether a forum lists threads: a category, whose parent is 0, holds forums, and a forum named with a leading '*' holds only its sub-forums.
+	 *
+	 * @param int $forumId
+	 * @return bool
+	 */
+	private function listsThreads($forumId)
+	{
+		if(empty($this->forumData[$forumId]['forum_parent']))
+		{
+			return false;
+		}
+
+		return strpos((string) $this->forumData[$forumId]['forum_name'], '*') !== 0;
 	}
 
 
@@ -1180,6 +1239,32 @@ class e107forum
 		}
 
 		return $alias.'.thread_forum_id IN ('.implode(',', array_map('intval', $visible)).')';
+	}
+
+	/**
+	 * A thread's stored name as HTML, with core's inline bbcode rendered, every other code stripped to its text, and nothing else in it taken as markup.
+	 *
+	 * @param string   $name
+	 * @param e_parse  $tp
+	 * @param e_bbcode $bb
+	 * @return string
+	 */
+	public static function threadNameHtml($name, e_parse $tp, e_bbcode $bb)
+	{
+		$strip = array('html', 'php', 'scode');
+
+		foreach ($bb->getRegistered() as $code => $location)
+		{
+			$word = ltrim($code, '_');
+
+			if ($location !== 'core' || !in_array($word, array('b', 'i', 'u', 'color', 'size', 'spoiler', 'time', 'br', 'nobr', 'sanitised'), true))
+			{
+				$strip[] = $code;
+				$strip[] = $word;
+			}
+		}
+
+		return $tp->toHTML($tp->attributeValue($name), implode(',', array_unique($strip)), 'USER_TITLE');
 	}
 
 
@@ -1508,9 +1593,6 @@ class e107forum
 		$qb = $sql->createQueryBuilder()->update('forum_thread')->set('thread_forum_id', $newForumId);
 		if(!empty($threadTitle))
 		{
-			// toDB() is the storage transform for thread_name; the value is bound.
-			$threadTitle = e107::getParser()->toDB($threadTitle);
-
 			if($titleType == 0)
 			{
 				//prepend to existing title
@@ -1568,6 +1650,12 @@ class e107forum
 
 	function postUpdate($postId, $postInfo)
 	{
+		if(isset($postInfo['post_entry']))
+		{
+			$author = (int) e107::getDb()->createQueryBuilder()->select('post_user')->from('forum_post')->where('post_id', (int) $postId)->fetchOne();
+			$postInfo['post_entry'] = e107::getParser()->toDB($postInfo['post_entry'], false, false, false, $author);
+		}
+
 		$info = array();
 		$info['data'] = $postInfo;
 //		$info['_FIELD_TYPES'] = $this->fieldTypes['forum_post'];
@@ -1805,12 +1893,7 @@ class e107forum
 	 */
 	private function unlinkAttachment($baseDir, $entry, $kind, $log)
 	{
-		if(is_array($entry))
-		{
-			$entry = isset($entry['file']) ? $entry['file'] : '';
-		}
-
-		$entry = (string) $entry;
+		$entry = (string) forum_attachments::fileName($entry);
 
 		if($entry === '' || strpos($entry, "\0") !== false || $entry !== basename($entry)
 			|| $entry === '.' || $entry === '..')
@@ -2142,27 +2225,17 @@ class e107forum
 
 	function forumGetMods($uclass = e_UC_ADMIN, $force=false)
 	{
-		$sql = e107::getDb();
 		if(count($this->modArray) && !$force)
 		{
 			return $this->modArray;
 		}
-		if($uclass == e_UC_ADMIN || trim($uclass) == '')
+
+		if($force)
 		{
-			$rows = $sql->createQueryBuilder()
-				->select('user_id', 'user_name')->from('user')
-				->where('user_admin', 1)->orderBy('user_name', 'ASC')
-				->fetchAll();
-			foreach($rows as $row)
-			{
-				$this->modArray[$row['user_id']] = $row;
-			}
-		}
-		else
-		{
-			$this->modArray = e107::getUserClass()->getUsersInClass($uclass, 'user_name', true);
+			unset($this->moderatorsByClass[(string) $uclass]);
 		}
 
+		$this->modArray = $this->moderatorsOfClass($uclass);
 
 		return $this->modArray;
 	}
@@ -2176,6 +2249,12 @@ class e107forum
 
 
 
+	/**
+	 * The forum rows for the index, grouped by level: only those the caller may view unless $all, so a caller who may view no forum gets none.
+	 *
+	 * @param bool $all every row, whatever the caller may view
+	 * @return array|false keyed parents, forums, subs and all; false when no row is listed
+	 */
 	function forumGetForumList($all=false)
 	{
 		$sql = e107::getDb();
@@ -2183,9 +2262,9 @@ class e107forum
 		$qb = $sql->createQueryBuilder()
 			->select('f.*', 'u.user_name')->from('forum', 'f')
 			->leftJoin('user', 'u', SqlFragment::raw('f.forum_lastpost_user IS NOT NULL AND u.user_id = f.forum_lastpost_user'));
-		if(!$all && !empty($this->permList['view_list']))
+		if(!$all)
 		{
-			$qb->whereIn('forum_id', $this->permList['view']);
+			$qb->whereIn('forum_id', $this->getForumPermList('view'));
 		}
 		$rows = $qb->orderBy('f.forum_order', 'ASC')->fetchAll();
 		if ($rows)
@@ -2394,32 +2473,46 @@ class e107forum
 
 
 	/**
-	 * The two user classes a thread's forum is read through.
-	 *
-	 * forum_track records a user and a thread and nothing else, so where the
-	 * subscription was taken out has to be recovered before anyone can be judged
-	 * on it. A thread names its forum, and the forum's parent carries the second
-	 * half of the view permission, exactly as buildPermList() reads it. The
-	 * INNER JOIN to the parent is also what refuses a forum sitting at the top
-	 * level, which buildPermList() spells forum_parent != 0.
+	 * The user classes a thread is read through: its forum's and that forum's category's, and the same of every forum a sub-forum sits in.
 	 *
 	 * @param int $threadId
-	 * @return array|false forum_class and parent_class, or false when the thread
-	 *                     names no forum readable by anybody
+	 * @return int[]|false the classes, or false when the thread names no forum
+	 *                     readable by anybody
 	 */
 	private function trackForumClasses($threadId)
 	{
-		$qb = e107::getDb()->createQueryBuilder();
-		$expr = $qb->expr();
-
-		$row = $qb->selectAs('f.forum_class', 'forum_class')->selectAs('fp.forum_class', 'parent_class')
-			->from('forum_thread', 'th')
-			->innerJoin('forum', 'f', $expr->compareColumns('th.thread_forum_id', 'f.forum_id'))
-			->innerJoin('forum', 'fp', $expr->compareColumns('f.forum_parent', 'fp.forum_id'))
-			->where('th.thread_id', (int) $threadId)
+		$thread = e107::getDb()->createQueryBuilder()
+			->select('thread_forum_id')->from('forum_thread')
+			->where('thread_id', (int) $threadId)
 			->fetchRow();
 
-		return empty($row) ? false : $row;
+		$forumId = empty($thread) ? 0 : (int) $thread['thread_forum_id'];
+		$classes = array();
+		$seen = array();
+
+		while($forumId !== 0 && !isset($seen[$forumId]))
+		{
+			$seen[$forumId] = true;
+
+			$qb = e107::getDb()->createQueryBuilder();
+			$row = $qb->selectAs('f.forum_class', 'forum_class')->selectAs('fp.forum_class', 'parent_class')
+				->selectAs('f.forum_sub', 'forum_sub')
+				->from('forum', 'f')
+				->innerJoin('forum', 'fp', $qb->expr()->compareColumns('f.forum_parent', 'fp.forum_id'))
+				->where('f.forum_id', $forumId)
+				->fetchRow();
+
+			if(empty($row))
+			{
+				return false;
+			}
+
+			$classes[] = (int) $row['forum_class'];
+			$classes[] = (int) $row['parent_class'];
+			$forumId = (int) $row['forum_sub'];
+		}
+
+		return ($forumId !== 0 || $classes === array()) ? false : array_values(array_unique($classes));
 	}
 
 
@@ -2445,36 +2538,39 @@ class e107forum
 
 		$qb = e107::getDb()->createQueryBuilder();
 
-		return $qb->select('u.user_id', 'u.user_name', 'u.user_email', 'u.user_lastvisit')
+		$qb->select('u.user_id', 'u.user_name', 'u.user_email', 'u.user_lastvisit')
 			->from('forum_track', 't')
 			->innerJoin('user', 'u', $qb->expr()->compareColumns('t.track_userid', 'u.user_id'))
-			->where('t.track_thread', (int) $threadId)
-			->where($this->trackClassHeld($qb, $classes['forum_class']))
-			->where($this->trackClassHeld($qb, $classes['parent_class']))
-			->fetchAll();
+			->where('t.track_thread', (int) $threadId);
+
+		foreach($classes as $classId)
+		{
+			$qb->where($this->trackClassHeld($qb, $classId));
+		}
+
+		return $qb->fetchAll();
 	}
 
 
 	/**
-	 * "The recipient, aliased u, holds user class $classId", as SQL.
+	 * "The user, aliased u, holds user class $classId", as SQL.
 	 *
 	 * The rule being answered is e_user_model::_setClassList(): a signed-in user
 	 * holds every class written in user_class along with everything those
 	 * inherit, plus the fixed classes their own row answers for. So the
 	 * predicate is a match against user_class, ORed with whichever property of
 	 * the user row the class is a name for, shaped after
-	 * user_class::getUsersInClass(). It answers readability and nothing else;
-	 * whether an address is worth writing to is the mailer's question.
+	 * user_class::getUsersInClass(). It answers holding and nothing else.
 	 *
-	 * e_UC_PUBLIC, e_UC_READONLY and e_UC_MEMBER are held by every account, and
-	 * the join to user is what establishes that there is one.
+	 * e_UC_PUBLIC, e_UC_READONLY and e_UC_MEMBER are held by every account, so
+	 * every row of user answers them.
 	 *
 	 * e_UC_GUEST and e_UC_NOBODY answer nobody rather than being matched against
 	 * user_class, one being the absence of an account and the other the refusal
 	 * of every one. That is narrower than checkPerm(), which would grant either
 	 * to a row carrying the id literally, and deliberately so.
 	 *
-	 * @param QueryBuilder $qb the query the recipient is aliased u in
+	 * @param QueryBuilder $qb the query the user is aliased u in
 	 * @param int $classId
 	 * @return SqlFragment
 	 */
@@ -2591,7 +2687,7 @@ class e107forum
 		$thread_name = $tp->toText($threadData['thread_name']);
 	//	$thread_name = str_replace('&quot;', '"', $thread_name);		// This not picked up by toText();
 		$datestamp = $tp->toDate($post['post_datestamp']);
-		$email_post = $tp->toHTML($post['post_entry'], true);
+		$email_post = $tp->toHTML($post['post_entry'], true, 'USER_BODY');
 
 	//	$mail_link = "<a href='".SITEURL.$PLUGINS_DIRECTORY."forum/forum_viewtopic.php?".$thread_parent.".last'>".SITEURL.$PLUGINS_DIRECTORY."forum/forum_viewtopic.php?".$thread_parent.".last</a>";
 
@@ -2630,7 +2726,7 @@ class e107forum
 
 		$vars = array('x'=>USERNAME, 'y'=>$thread_name, 'z'=>$datestamp);
 
-		$message = "[html]".$tp->lanVars(LAN_FORUM_8001, $vars,true)."<br /><br /><blockquote>".$tp->toEmail($email_post, false)."</blockquote><br />".LAN_FORUM_8002."<br /><a href='".$mail_link."'>".$mail_link."</a>[/html]";
+		$message = "[html]".$tp->lanVars(LAN_FORUM_8001, $vars,true)."<br /><br /><blockquote>".$tp->toEmail($email_post, false, 'no_make_clickable')."</blockquote><br />".LAN_FORUM_8002."<br /><a href='".$mail_link."'>".$mail_link."</a>[/html]";
 
 
 			// Create the mail body
@@ -3134,7 +3230,7 @@ class e107forum
 				$threadInfo['thread_id'] = intval($threadInfo['thread_id']);
 			}
 			$search 	= array('{THREAD_TITLE}', '{THREAD_HREF}');
-			$replace 	= array(vartrue($threadInfo['thread_name']), ''); // $thread->threadInfo - no reference found
+			$replace 	= array($tp->attributeValue(vartrue($threadInfo['thread_name'])), ''); // $thread->threadInfo - no reference found
 
 
 			$FORUM_CRUMB['thread']['value'] = str_replace($search, $replace, varset($FORUM_CRUMB['thread']['value']));
@@ -3172,7 +3268,7 @@ class e107forum
 
 			if(strlen($thread_title))
 			{
-				$BREADCRUMB .= $dfltsep.$thread_title;
+				$BREADCRUMB .= $dfltsep.$tp->attributeValue($thread_title);
 			}
 		}
 
@@ -3207,7 +3303,7 @@ class e107forum
 
 		if(vartrue($forumInfo['thread_name']))
 		{
-			$breadcrumb[]	= array('text'=> $forumInfo['thread_name'] , 'url'=>null);
+			$breadcrumb[]	= array('text'=> $tp->attributeValue($forumInfo['thread_name']) , 'url'=>null);
 		}
 		
 		
@@ -3410,6 +3506,99 @@ class e107forum
 				}
 			}
 
+	}
+
+
+	/**
+	 * Whether the current reader may see what a [hide] block in thread $threadId holds: a member who may view its forum and has posted in it; with $postId, only while that post is still in the thread.
+	 *
+	 * @param int $threadId
+	 * @param int $postId
+	 * @return bool
+	 */
+	public function mayReadHidden($threadId, $postId = 0)
+	{
+		$reader = e107::getUser();
+
+		if(!$reader->isUser())
+		{
+			return false;
+		}
+
+		$db = e107::getDb();
+		$own = $db->createQueryBuilder()
+			->select('post_forum')
+			->from('forum_post')
+			->where('post_thread', (int) $threadId)
+			->where('post_user', (int) $reader->getId())
+			->limit(1)
+			->fetchRow();
+
+		if(empty($own) || !$this->checkPerm((int) $own['post_forum'], 'view'))
+		{
+			return false;
+		}
+
+		return empty($postId) || (bool) $db->createQueryBuilder()
+			->select('post_id')
+			->from('forum_post')
+			->where('post_id', (int) $postId)
+			->where('post_thread', (int) $threadId)
+			->limit(1)
+			->fetchRow();
+	}
+
+
+	/**
+	 * Seal the text of a [hide] block from post $postId in thread $threadId, so that a quote can carry it without showing it.
+	 *
+	 * @param int    $threadId
+	 * @param int    $postId
+	 * @param string $text
+	 * @return string|false the sealed text, or false when it could not be sealed or would be too long to open
+	 */
+	public function sealHidden($threadId, $postId, $text)
+	{
+		$claims = array('thread' => (int) $threadId, 'post' => (int) $postId, 'text' => (string) $text);
+		$sealed = $this->hiddenToken()->seal($claims, PHP_INT_MAX - time() - 3600);
+
+		return (is_string($sealed) && strlen($sealed) <= \e107\Security\Jwe\Compact::MAX_LENGTH) ? $sealed : false;
+	}
+
+
+	/**
+	 * The text {@see e107forum::sealHidden()} sealed in $token, when the current reader may see hidden blocks in the thread it came from and its post is still there.
+	 *
+	 * @param string $token
+	 * @return string|null
+	 */
+	public function unsealHidden($token)
+	{
+		$claims = $this->hiddenToken()->open($token);
+
+		if(!is_array($claims) || !isset($claims['thread'], $claims['post'], $claims['text']) || !is_int($claims['thread']) || !is_int($claims['post']) || !is_string($claims['text']))
+		{
+			return null;
+		}
+
+		return $this->mayReadHidden($claims['thread'], $claims['post']) ? $claims['text'] : null;
+	}
+
+
+	/**
+	 * The token that seals and opens [hide] blocks for quotes, bound to the site's key and not to the address it answers at.
+	 *
+	 * @return forum_hidden_token
+	 */
+	private function hiddenToken()
+	{
+		if($this->hiddenToken === null)
+		{
+			require_once(e_PLUGIN.'forum/forum_hidden_token.php');
+			$this->hiddenToken = new forum_hidden_token(self::$hiddenPurpose);
+		}
+
+		return $this->hiddenToken;
 	}
 
 }

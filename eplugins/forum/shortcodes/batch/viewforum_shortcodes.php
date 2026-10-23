@@ -120,7 +120,7 @@
 		    $text .= '
 		    	<span class="sr-only">Toggle Dropdown</span>
 			</button>
-		    	<ul class="dropdown-menu pull-right float-right dropdown-menu-end">
+		    	<ul class="dropdown-menu dropdown-menu-right dropdown-menu-end">
 		    	';
 
 			//--	foreach($jumpList as $key => $val)
@@ -400,11 +400,19 @@
 
 				foreach($subList[$this->var['forum_parent']][$forumId] as $subInfo)
 				{
+					if(!$forum->checkPerm($subInfo['forum_id'], 'view'))
+					{
+						continue;
+					}
+
 					$this->addVars($subInfo);
 					$sub_info .= $tp->parseTemplate($FORUM_VIEW_SUB, false, $this);
 				}
 
-				$text = $tp->parseTemplate($FORUM_VIEW_SUB_START) . $sub_info . $tp->parseTemplate($FORUM_VIEW_SUB_END);
+				if($sub_info !== '')
+				{
+					$text = $tp->parseTemplate($FORUM_VIEW_SUB_START) . $sub_info . $tp->parseTemplate($FORUM_VIEW_SUB_END);
+				}
 			}
 
 			return $text;
@@ -537,7 +545,7 @@
 							$lp_name = $this->var['forum_lastpost_user_anon'];
 						}
 				--*/
-				$lp_name = ($this->var['user_name']) ? "<a href='" . e107::getUrl()->create('user/profile/view', array('id' => $this->var['forum_lastpost_user'], 'name' => $this->var['user_name'])) . "'>{$this->var['user_name']}</a>" : $this->var['forum_lastpost_user_anon'];
+				$lp_name = ($this->var['user_name']) ? "<a href='" . e107::getUrl()->create('user/profile/view', array('id' => $this->var['forum_lastpost_user'], 'name' => $this->var['user_name'])) . "'>{$this->var['user_name']}</a>" : e107::getParser()->attributeValue($this->var['forum_lastpost_user_anon']);
 				/*----
 						$tVars['SUB_LASTPOST'] = $lp_date.'<br />'.$lp_name.' '.$lp_thread;
 
@@ -664,7 +672,7 @@
 				{
 //----				$tVars['LASTPOST'] = $tp->toHTML($this->var['thread_lastuser_anon']);
 //----				$tVars['LASTPOSTUSER'] = $tp->toHTML($this->var['thread_lastuser_anon']);
-					$LASTPOST = $LASTPOSTUSER = e107::getParser()->toHTML($this->var['thread_lastuser_anon']);
+					$LASTPOST = $LASTPOSTUSER = e107::getParser()->attributeValue($this->var['thread_lastuser_anon']);
 					/*--
 								}
 
@@ -1049,7 +1057,7 @@
 		$text = '<div class="btn-group"><button class="btn btn-default btn-secondary btn-sm btn-mini dropdown-toggle" data-toggle="dropdown" data-bs-toggle="dropdown">
     <span class="caret"></span>
     </button>
-    <ul class="dropdown-menu pull-right dropdown-menu-end float-right">	
+    <ul class="dropdown-menu dropdown-menu-right dropdown-menu-end">	
    ';
 
 		//FIXME - not fully working.
@@ -1122,7 +1130,7 @@
 			--*/
 //		else
 //		{
-			return (($this->var['user_name']) ? "<a href='" . e107::getUrl()->create('user/profile/view', array('id' => $this->var['thread_user'], 'name' => $this->var['user_name'])) . "'>" . $this->var['user_name'] . "</a>" : (($this->var['thread_user_anon']) ? e107::getParser()->toHTML($this->var['thread_user_anon']) : LAN_FORUM_1015));
+			return (($this->var['user_name']) ? "<a href='" . e107::getUrl()->create('user/profile/view', array('id' => $this->var['thread_user'], 'name' => $this->var['user_name'])) . "'>" . $this->var['user_name'] . "</a>" : (($this->var['thread_user_anon']) ? e107::getParser()->attributeValue($this->var['thread_user_anon']) : LAN_FORUM_1015));
 //		}
 //	}
 		}

@@ -189,6 +189,68 @@ class forum_attachments
 	}
 
 	/**
+	 * A stored post_attachments value with every svg moved from 'img' to the end of 'file', as the topic page and the download route both read it.
+	 *
+	 * @param mixed $attachments a stored post_attachments value, unserialised
+	 * @return array
+	 */
+	public static function asServed($attachments)
+	{
+		if(!is_array($attachments))
+		{
+			return array();
+		}
+
+		if(empty($attachments['img']) || !is_array($attachments['img']))
+		{
+			return $attachments;
+		}
+
+		$moved = array();
+
+		foreach($attachments['img'] as $key => $entry)
+		{
+			if(self::isSvg($entry))
+			{
+				$moved[] = $entry;
+				unset($attachments['img'][$key]);
+			}
+		}
+
+		if($moved !== array())
+		{
+			$files = (isset($attachments['file']) && is_array($attachments['file'])) ? $attachments['file'] : array();
+			$attachments['file'] = array_merge($files, $moved);
+		}
+
+		return $attachments;
+	}
+
+	/**
+	 * Whether a stored entry, or a stored file name, names an svg, whatever the case of its extension.
+	 *
+	 * @param array|string $entry
+	 * @return bool
+	 */
+	public static function isSvg($entry)
+	{
+		$file = self::fileName($entry);
+
+		return is_string($file) && strtolower(pathinfo($file, PATHINFO_EXTENSION)) === 'svg';
+	}
+
+	/**
+	 * The file a stored entry names, from either shape an entry is stored in.
+	 *
+	 * @param mixed $entry one entry of a stored post_attachments value
+	 * @return mixed
+	 */
+	public static function fileName($entry)
+	{
+		return is_array($entry) ? varset($entry['file'], '') : $entry;
+	}
+
+	/**
 	 * Whether every caller may read the attachment, decided without working out
 	 * who is asking.
 	 *
@@ -201,7 +263,16 @@ class forum_attachments
 	 */
 	public function admitsEveryone()
 	{
-		return $this->mayRead(array(e_UC_PUBLIC));
+		$forums = $this->postForums();
+
+		if($forums === array())
+		{
+			return false;
+		}
+
+		return self::forumRows(function ($qb, $column) {
+			return $qb->expr()->eq($column, e_UC_PUBLIC);
+		}, 'forum_class', $forums) !== array();
 	}
 
 	/**
@@ -235,7 +306,8 @@ class forum_attachments
 	 * permission rule written twice is a permission rule that can drift apart.
 	 * A forum grants nothing unless its parent grants it too, and a forum at
 	 * the top level grants nobody anything, which is why the join is not
-	 * decoration.
+	 * decoration. A sub-forum is visible only while the forum it sits in is,
+	 * at any depth; its posting classes are its own.
 	 *
 	 * It lives in this file rather than in forum_class.php because this file
 	 * loads into thumb.php's bootstrap and forum_class.php cannot: forum_class
@@ -246,7 +318,7 @@ class forum_attachments
 	 * @param array $classes userclass ids the caller holds
 	 * @param string $column one of the three forum class columns
 	 * @param array $forumIds forum ids to consider, empty for all of them
-	 * @return array rows of forum_id and forum_parent
+	 * @return array rows of forum_id, forum_parent and forum_sub
 	 */
 	public static function readableForumRows(array $classes, $column, array $forumIds = array())
 	{
@@ -264,29 +336,87 @@ class forum_attachments
 			return array();
 		}
 
+		$membership = \e107\Userclass\Membership::fromList($classes);
+
+		return self::forumRows(function ($qb, $column) use ($membership) {
+			return $membership->predicate($column);
+		}, $column, $forumIds);
+	}
+
+	/**
+	 * The forums, among $forumIds or all of them, whose $column and whose parent's $column both satisfy $rule.
+	 *
+	 * @param callable $rule function(\e107\Database\QueryBuilder $qb, string $column): \e107\Database\SqlFragment
+	 * @param string $column one of the three forum class columns
+	 * @param array $forumIds forum ids to consider, empty for all of them
+	 * @return array rows of forum_id, forum_parent and forum_sub
+	 */
+	private static function forumRows($rule, $column, array $forumIds)
+	{
 		$qb = e107::getDb()->createQueryBuilder();
-
-		$placeholders = array();
-
-		foreach($classes as $class)
-		{
-			$placeholders[] = $qb->createNamedParameter($class);
-		}
-
-		$placeholders = implode(', ', $placeholders);
-
-		$qb->select('f.forum_id', 'f.forum_parent')->from('forum', 'f')
-			->leftJoin('forum', 'fp', $qb->raw('f.forum_parent = fp.forum_id AND fp.' . $column . ' IN (' . $placeholders . ')'))
-			->where($qb->raw('f.' . $column . ' IN (' . $placeholders . ')'))
+		$qb->select('f.forum_id', 'f.forum_parent', 'f.forum_sub')->from('forum', 'f')
+			->leftJoin('forum', 'fp', $qb->expr()->allOf($qb->expr()->compareColumns('f.forum_parent', 'fp.forum_id'), $rule($qb, 'fp.'.$column)))
+			->where($rule($qb, 'f.'.$column))
 			->where('f.forum_parent', '!=', 0)
 			->where($qb->expr()->isNotNull('fp.forum_id'));
 
-		if($forumIds !== array())
+		return self::amongForums(self::withinVisibleForums($qb->fetchAll(), $column), $forumIds);
+	}
+
+	/**
+	 * $rows without the sub-forums whose forum is not among them, repeated until none is left out; for the view column only.
+	 *
+	 * @param array $rows rows of forum_id, forum_parent and forum_sub
+	 * @param string $column the class column the rows were read through
+	 * @return array
+	 */
+	private static function withinVisibleForums(array $rows, $column)
+	{
+		if($column !== 'forum_class')
 		{
-			$qb->whereIn('f.forum_id', $forumIds);
+			return $rows;
 		}
 
-		return $qb->fetchAll();
+		do
+		{
+			$ids = array_flip(array_map('intval', array_column($rows, 'forum_id')));
+			$kept = array();
+
+			foreach($rows as $row)
+			{
+				if((int) $row['forum_sub'] === 0 || isset($ids[(int) $row['forum_sub']]))
+				{
+					$kept[] = $row;
+				}
+			}
+
+			$dropped = count($kept) !== count($rows);
+			$rows = $kept;
+		}
+		while($dropped);
+
+		return $rows;
+	}
+
+	/**
+	 * $rows limited to the forums among $forumIds, or all of them when it is empty.
+	 *
+	 * @param array $rows
+	 * @param array $forumIds
+	 * @return array
+	 */
+	private static function amongForums(array $rows, array $forumIds)
+	{
+		if($forumIds === array())
+		{
+			return $rows;
+		}
+
+		$forumIds = array_flip(array_map('intval', $forumIds));
+
+		return array_values(array_filter($rows, function ($row) use ($forumIds) {
+			return isset($forumIds[(int) $row['forum_id']]);
+		}));
 	}
 
 	/**
@@ -396,6 +526,28 @@ class forum_attachments
 	}
 
 	/**
+	 * An attachment's display name as HTML text, from either shape a stored entry takes.
+	 *
+	 * @param array|string $entry one entry of a stored post_attachments value
+	 * @param e_parse $tp
+	 * @return string
+	 */
+	public static function label($entry, e_parse $tp)
+	{
+		if(is_array($entry))
+		{
+			$name = !empty($entry['name']) ? $entry['name'] : self::fileName($entry);
+		}
+		else
+		{
+			$parts = explode('_', (string) $entry, 3);
+			$name = isset($parts[2]) ? $parts[2] : $entry;
+		}
+
+		return is_scalar($name) ? $tp->attributeValue($name) : '';
+	}
+
+	/**
 	 * Whether a stored post_attachments value names $name.
 	 *
 	 * @param string $stored serialised post_attachments
@@ -415,7 +567,7 @@ class forum_attachments
 		{
 			foreach((array) $entries as $entry)
 			{
-				$file = is_array($entry) ? varset($entry['file'], '') : $entry;
+				$file = self::fileName($entry);
 
 				if((string) $file === $name)
 				{

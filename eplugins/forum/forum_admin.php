@@ -136,7 +136,7 @@ e107::css('inline',"
 			'forum_icon'               	=> 	 array ('title' => LAN_ICON, 'type' => 'icon', 'data' => 'str', 'width' => 'auto', 'help' => FORLAN_HELP_ICON_DISPLAY, 'readParms' => '', 'writeParms' => '', 'class' => 'left', 'thclass' => 'center',),
 			'forum_parent'              =>   array ( 'title' => FORLAN_75, 'type' => 'dropdown', 'data' => 'int', 'width' => '10%', 'help' => '', 'readParms' => '', 'writeParms' => '', 'class' => 'left', 'thclass' => 'left',  ),
 			'forum_sub'                 =>   array ( 'title' => LAN_FORUM_1002, 'type' => 'dropdown', 'data' => 'int', 'width' => 'auto', 'help' => '', 'readParms' => array(), 'writeParms' => array(), 'class' => 'center', 'thclass' => 'center',  ),
-			'forum_moderators'          =>   array ( 'title' => LAN_FORUM_2003, 'type' => 'userclass', 'inline'=>true, 'data' => 'int', 'width' => 'auto', 'help' => '', 'readParms' => 'classlist=admin,main,classes', 'writeParms' => "classlist=admin,main,mods,classes", 'class' => 'left', 'thclass' => 'left',  ),
+			'forum_moderators'          =>   array ( 'title' => LAN_FORUM_2003, 'type' => 'userclass', 'inline'=>true, 'data' => 'int', 'width' => 'auto', 'help' => '', 'readParms' => 'classlist=admin,main,classes', 'writeParms' => "classlist=admin,main,mods,classes,no-excludes", 'class' => 'left', 'thclass' => 'left',  ),
 			'forum_threads'             =>   array ( 'title' => LAN_FORUM_1003, 'type' => 'number', 'data' => 'int', 'noedit'=>true, 'width' => 'auto', 'help' => '', 'readParms' => '', 'writeParms' => '', 'class' => 'center', 'thclass' => 'center',  ),
 			'forum_replies'             =>   array ( 'title' => LAN_FORUM_0003, 'type' => 'number', 'data' => 'int', 'noedit'=>true, 'width' => 'auto', 'help' => '', 'readParms' => '', 'writeParms' => '', 'class' => 'center', 'thclass' => 'center',  ),
 			'forum_lastpost_user'       =>   array ( 'title' => LAN_AUTHOR, 'type' => 'hidden', 'noedit'=>true, 'data' => 'int', 'width' => 'auto', 'help' => '', 'readParms' => '', 'writeParms' => '', 'class' => 'left', 'thclass' => 'left',  ),
@@ -1026,14 +1026,16 @@ e107::css('inline',"
 		protected $table			= 'generic';
 		protected $pid				= 'gen_id';
 		protected $perPage 			= 10;
-		protected $listQry			= "SELECT g.*,u.user_name FROM `#generic` AS g LEFT JOIN `#user` AS u ON g.gen_user_id = u.user_id WHERE g.gen_type='reported_post' OR g.gen_type='Reported Forum Post' ORDER BY g.gen_datestamp DESC";
+		protected $listQry			= "SELECT g.*,u.user_name FROM `#generic` AS g LEFT JOIN `#user` AS u ON g.gen_user_id = u.user_id";
+		protected $listScope		= array('gen_type' => array('reported_post', 'Reported Forum Post'));
+		protected $listOrder		= 'g.gen_datestamp DESC';
 
 		protected $fields 		= array (
 			'checkboxes' =>   array ( 'title' => '', 'type' => null, 'data' => null, 'width' => '5%', 'thclass' => 'center', 'forced' => '1', 'class' => 'center', 'toggle' => 'e-multiselect',  ),
             'gen_id' 				=> array ( 'title' => LAN_ID,	 'nolist'=>true,	'data' => 'int', 'width' => '5%', 'help' => '', 'readParms' => '', 'writeParms' => '', 'class' => 'left', 'thclass' => 'left',  ),
 			//	  'gen_type' 			=> array ( 'title' => LAN_BAN, 	'type' => 'method', 'data' => 'str', 'width' => 'auto', 'batch' => true, 'filter' => true, 'inline' => true, 'help' => '', 'readParms' => '', 'writeParms' => '', 'class' => 'left', 'thclass' => 'left',  ),
             'gen_datestamp' 		=> array ( 'title' => LAN_DATESTAMP, 'type' => 'datestamp', 'data' => 'int', 'width' => '10%', 'filter' => true, 'help' => '', 'readParms' => '', 'writeParms' => '', 'class' => 'left', 'thclass' => 'left',  ),
-			'gen_ip' 				=> array ( 'title' => FORLAN_209, 'type' => 'text', 'data' => 'str', 'width' => '20%', 'help' => '', 'readParms' => '', 'writeParms' => '', 'class' => 'left', 'thclass' => 'left',  ),
+			'gen_ip' 				=> array ( 'title' => FORLAN_209, 'type' => 'method', 'data' => 'str', 'width' => '20%', 'help' => '', 'readParms' => '', 'writeParms' => '', 'class' => 'left', 'thclass' => 'left',  ),
 			'gen_chardata' 		=> array ( 'title' => FORLAN_210, 'type' => 'method', 'data' => 'str', 'width' => 'auto', 'help' => '', 'readParms' => '', 'writeParms' => '', 'class' => 'left', 'thclass' => 'left',  ),
 			'gen_user_id' 		=> array ( 'title' => FORLAN_211, 'type' => 'user', 'batch'=>true, 'data' => 'int', 'width' => '5%', 'help' => '', 'readParms' => '', 'writeParms' => '', 'class' => 'left', 'thclass' => 'left nowrap',  ),
 	      	'gen_intdata' 		=> array ( 'title' =>  FORLAN_209, 'type' => 'number', 'nolist'=>true, 'batch'=>false, 'data' => 'int', 'width' => 'auto', 'help' => '', 'readParms' => '', 'writeParms' => '', 'class' => 'center', 'thclass' => 'center',  ),
@@ -1089,6 +1091,27 @@ e107::css('inline',"
 			}
 		}
 
+		/**
+		 * The reported thread's name, as text.
+		 *
+		 * @param string $curVal
+		 * @param string $mode
+		 * @return string|null
+		 */
+		function gen_ip($curVal, $mode)
+		{
+			switch($mode)
+			{
+				case 'read':
+					return e107::getParser()->attributeValue($curVal);
+
+				case 'write':
+					return e107::getForm()->text('gen_ip', $curVal);
+			}
+
+			return null;
+		}
+
 		// Custom Method/Function
 		function gen_chardata($curVal,$mode)
 		{
@@ -1120,7 +1143,7 @@ e107::css('inline',"
 				$topic = $this->getController()->getListModel()->get('gen_ip');
 				$topidId = $this->getController()->getListModel()->get('gen_intdata');
 				$text = "<div class='btn-group'>";
-				$text .= "<a class='e-modal btn btn-default'  data-modal-caption='Topic: ".$topic."'  href='".e_SELF."?mode=post&action=list&id=". $topidId."' rel='external'>".defset('ADMIN_VIEW_ICON')."</a>";
+				$text .= "<a class='e-modal btn btn-default'  data-modal-caption='Topic: ".$this->gen_ip($topic, 'read')."'  href='".e_SELF."?mode=post&action=list&id=". $topidId."' rel='external'>".defset('ADMIN_VIEW_ICON')."</a>";
 
 				$text .= $this->renderValue('options',$value,array('readParms'=>'edit=0'), $id);
 				$text .= "</div>";
@@ -1190,29 +1213,26 @@ e107::css('inline',"
 			switch($mode)
 			{
 				case 'read': // List Page
+					require_once(e_PLUGIN.'forum/forum_attachments.php');
+
 					$data = e107::unserialize($curVal);
 					$tp = e107::getParser();
 					$fl = e107::getFile();
 
 					$text = '';
 
-					if(!empty($data['img']))
+					foreach(array('img' => 'fa-file-image-o', 'file' => 'fa-file-text-o') as $type => $glyph)
 					{
-						$text .= "<ul class='list-unstyled'>";
-						foreach($data['img'] as $v)
+						if(empty($data[$type]) || !is_array($data[$type]))
 						{
-							$text .= "<li><span class='label label-primary'>".$tp->toGlyph('fa-file-image-o').$v['name']."</span> <small>".$fl->file_size_encode($v['size'])."</small></li>";
+							continue;
 						}
 
-						$text .= "</ul>";
-					}
-
-					if(!empty($data['file']))
-					{
 						$text .= "<ul class='list-unstyled'>";
-						foreach($data['file'] as $v)
+						foreach($data[$type] as $v)
 						{
-							$text .= "<li><span class='label label-primary'>".$tp->toGlyph('fa-file-text-o').$v['name']."</span> <small>".$fl->file_size_encode($v['size'])."</small></li>";
+							$size = is_array($v) ? (int) varset($v['size'], 0) : 0;
+							$text .= "<li><span class='label label-primary'>".$tp->toGlyph($glyph).forum_attachments::label($v, $tp)."</span> <small>".$fl->file_size_encode($size)."</small></li>";
 						}
 
 						$text .= "</ul>";
