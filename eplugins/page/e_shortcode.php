@@ -182,8 +182,8 @@ class page_shortcodes extends e_shortcode
 				$qb->select('*')
 					->from('page', 'p')
 					->leftJoin('page_chapters', 'ch', $qb->expr()->compareColumns('p.page_chapter', 'ch.chapter_id'))
-					->whereIn('ch.chapter_visibility', explode(',', USERCLASS_LIST))
-					->whereIn('p.menu_class', explode(',', USERCLASS_LIST))
+					->where(\e107\Userclass\Membership::current()->predicate('ch.chapter_visibility'))
+					->where(\e107\Userclass\Membership::current()->predicate('p.menu_class'))
 					->where('ch.chapter_sef', $sef)
 					->orderBy('p.page_order', 'ASC');
 
@@ -204,12 +204,9 @@ class page_shortcodes extends e_shortcode
 			$editable = array(
 				'table' => 'page',
 				'pid'   => 'page_id',
-				'perms' => '5',
+				'perms' => 'J',
 				'shortcodes' => array(
-					'cpagetitle' => array('field'=>'page_subtitle','type'=>'text', 'container'=>'span'),
-					'cpagebody' => array('field'=>'page_text','type'=>'html', 'container'=>'div'),
 					'cmenubody' => array('field'=>'menu_text','type'=>'html', 'container'=>'div'),
-
 				)
 			);
 
@@ -340,7 +337,7 @@ class page_shortcodes extends e_shortcode
 
 				$qb = e107::getDb()->createQueryBuilder();
 				$qb->select('*')->from('page_chapters')
-					->whereIn('chapter_visibility', explode(',', USERCLASS_LIST))
+					->where(\e107\Userclass\Membership::current()->predicate('chapter_visibility'))
 					->where('chapter_parent', (int) $bookID)
 					->orderBy('chapter_order', 'ASC')
 					->setMaxResults($limit);
