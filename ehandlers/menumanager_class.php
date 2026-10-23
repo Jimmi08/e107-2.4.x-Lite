@@ -343,6 +343,12 @@ class e_menuManager
 		}
 
 		$file = urldecode($_GET['path']).".php";
+
+		if(!preg_match('#^(?:[\w-]+/)*(?:config|[\w-]*_menu_config)\.php$#', $file))
+		{
+			return;
+		}
+
 		$file = e107::getParser()->filter($file);
 		$newurl = e_PLUGIN_ABS.$file."?id=".intval($_GET['id']).'&iframe=1';
 
@@ -2315,7 +2321,7 @@ class e_mm_layout
 
 		$text .= '
 
-		    <div class="dropdown pull-right e-mm-selector-container">
+		    <div class="dropdown pull-right float-right float-end e-mm-selector-container">
 
 		        <a class="btn btn-primary btn-sm e-mm-selector " title="' . LAN_ACTIVATE . '">' . LAN_ADD . " " . e107::getParser()->toGlyph('fa-chevron-right') . '</a>';
 
@@ -2323,7 +2329,7 @@ class e_mm_layout
 
 		foreach($layouts['menus'] as $name => $areas)
 		{
-			$text .= '<ul class="dropdown-menu e-mm-selector ' . $name . '" >
+			$text .= '<ul class="dropdown-menu dropdown-menu-right dropdown-menu-end e-mm-selector ' . $name . '" >
 					<li><div>';
 
 			foreach($areas as $menu_act)
@@ -2648,9 +2654,9 @@ class e_mm_layout
 		$visibilityLink = e_SELF.'?'.http_build_query(array('lay' => $layout, 'vis' => $area.'-'.$c, 'iframe' => 1, 'class' => $row['class'], 'pages' => $row['pages']), '', '&');
 
 
-		$text .= "<a href='#'  class='menuOption menu-btn menu-btn-mini menu-btn-danger deleteMenu pull-right' data-area='area-".$area."' data-delete='".$uniqueId."'>&times;</a>"; // $('.hello').remove();
+		$text .= "<a href='#'  class='menuOption menu-btn menu-btn-mini menu-btn-danger deleteMenu pull-right float-right float-end' data-area='area-".$area."' data-delete='".$uniqueId."'>&times;</a>"; // $('.hello').remove();
 
-		$text .= '<a class="menuOption e-menumanager-option menu-btn pull-right" data-modal-caption="'.LAN_VISIBILITY.'" href="'.$visibilityLink.'" title="'.LAN_VISIBILITY.'"><i class="icon-search"></i></a>';
+		$text .= '<a class="menuOption e-menumanager-option menu-btn pull-right float-right float-end" data-modal-caption="'.LAN_VISIBILITY.'" href="'.$visibilityLink.'" title="'.LAN_VISIBILITY.'"><i class="icon-search"></i></a>';
 
 
 

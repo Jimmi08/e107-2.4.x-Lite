@@ -151,9 +151,10 @@ class comment
 		$row = $sql->createQueryBuilder()
 			->select('*')->from('comments')
 			->where('comment_id', (int) $id)
+			->where('comment_blocked', 0)
 			->setMaxResults(1)
 			->fetchRow();
-		if($row)
+		if($row && $this->canReadComments($row['comment_type'], $row['comment_item_id']))
 		{
 			// [comment_id] =&gt; 65
 
@@ -714,6 +715,91 @@ class comment
 
 
 	/**
+	 * Whether the visitor may read the comments on an item, asked as the item's own page asks before it shows them.
+	 *
+	 * @param string|int $table comment type, or the core table name it maps to
+	 * @param int        $id    id of the item in that table
+	 * @return bool false for a comment type core does not model
+	 */
+	public function canReadComments($table, $id)
+	{
+		$id = (int) $id;
+		$type = $this->getCommentType($table);
+		$visitor = \e107\Userclass\Membership::current();
+		$qb = e107::getDb()->createQueryBuilder();
+
+		switch ($this->getTable(is_numeric($type) ? (int) $type : $type))
+		{
+			case 'news':
+				$now = time();
+				return (bool) $qb->select('news_id')->from('news')
+					->where('news_id', $id)
+					->where($visitor->predicate('news_class'))
+					->where($qb->expr()->not($qb->expr()->regexp('news_class', e_NOBODY_REGEXP)))
+					->where('news_start', '<', $now)
+					->where($qb->expr()->anyOf(
+						$qb->expr()->eq('news_end', 0),
+						$qb->expr()->gt('news_end', $now)
+					))
+					->where('news_allow_comments', 0)
+					->fetchRow();
+
+			case 'download':
+				return e107::isInstalled('download') && (bool) $qb->select('d.download_id')->from('download', 'd')
+					->innerJoin('download_category', 'dc', $qb->expr()->compareColumns('d.download_category', 'dc.download_category_id'))
+					->where('d.download_id', $id)
+					->where($visitor->predicate('dc.download_category_class'))
+					->where($visitor->predicate('d.download_visible'))
+					->where('d.download_active', '>', 0)
+					->where('d.download_comment', '>', 0)
+					->fetchRow();
+
+			case 'poll':
+				return e107::isInstalled('poll') && (bool) $qb->select('poll_id')->from('polls')
+					->where('poll_id', $id)
+					->where('poll_type', 1)
+					->fetchRow();
+
+			case 'page':
+				$page = $qb->select('page_password')->from('page')
+					->where('page_id', $id)
+					->where($visitor->predicate('page_class'))
+					->where('page_comment_flag', '>', 0)
+					->fetchRow();
+				return $page && $this->pageUnlocked($id, $page['page_password']);
+
+			case 'user':
+			case 'profile':
+				$user = e107::getUser();
+				return !empty(e107::pref('core', 'profile_comments'))
+					&& ($user->getId() === $id || $user->checkClass(e107::pref('core', 'memberlist_access', 253)))
+					&& (bool) $qb->select('user_id')->from('user')->where('user_id', $id)->fetchRow();
+		}
+
+		return false;
+	}
+
+	/**
+	 * Whether a page's password, if it has one, has been given, as page.php records it in a cookie.
+	 *
+	 * @param int    $id
+	 * @param string $password page_password
+	 * @return bool
+	 */
+	private function pageUnlocked($id, $password)
+	{
+		if (empty($password))
+		{
+			return true;
+		}
+
+		$cookie = e_COOKIE.'_page_'.$id;
+
+		return isset($_COOKIE[$cookie]) && is_string($_COOKIE[$cookie])
+			&& hash_equals(md5($password.e107::getUser()->getId()), $_COOKIE[$cookie]);
+	}
+
+	/**
 	 * Whether the item accepts comments; a comment type core models no switch for passes.
 	 *
 	 * @param string|int $table comment type, or the core table name it maps to
@@ -813,6 +899,8 @@ class comment
 
 		if (!$this->itemAcceptsComments($table, $id)) return false;
 
+		if (!$this->canReadComments($table, $id)) return false;
+
 		if ($user_func = e107::getOverride()->check($this,'enter_comment'))
 		{
 			return call_user_func($user_func, array('data'=>$data, 'comment'=>$comment, 'table'=>$table, 'id'=>$id, 'pid'=>$pid, 'subject'=>$subject, 'rateindex'=>$rateindex));
@@ -856,7 +944,7 @@ class comment
 			->from('comments')
 			->where('comment_comment', $comment)
 			->where('comment_item_id', (int) $id)
-			->where('comment_type', $tp->toDB($type, true))
+			->where('comment_type', (string) $tp->toDB($type, true))
 			->count();
 		if (!$existing)
 		{
@@ -1119,7 +1207,7 @@ class comment
 		$count_comments = $sql->createQueryBuilder()
 			->from('comments')
 			->where('comment_item_id', (int) $id)
-			->where('comment_type', $tp->toDB($type, true))
+			->where('comment_type', (string) $tp->toDB($type, true))
 			->count();
 
 		return (int) $count_comments;
@@ -1460,7 +1548,7 @@ class comment
 				$qb->expr()->eq('r.rate_table', 'comments')
 			))
 			->where('c.comment_item_id', (int) $id)
-			->where('c.comment_type', $tp->toDB($type, true));
+			->where('c.comment_type', (string) $tp->toDB($type, true));
 
 		if($topOnly)
 		{
@@ -1548,7 +1636,7 @@ class comment
 				->addSelect(SqlFragment::raw('DISTINCT(comment_author_id) AS author'))
 				->from('comments')
 				->where('comment_item_id', $id)
-				->where('comment_type', $comment_type)
+				->where('comment_type', (string) $comment_type)
 				->groupBy('author')
 				->fetchColumn('author');
 
@@ -1574,7 +1662,7 @@ class comment
 			$num_deleted = $sql->createQueryBuilder()
 				->delete('comments')
 				->where('comment_item_id', $id)
-				->where('comment_type', $type)
+				->where('comment_type', (string) $type)
 				->execute();
 
 			$this->recalc_user_comments($author_list);
@@ -1714,7 +1802,7 @@ class comment
 			if ($comment_total = $sql->execute($query))
 			{
 				$width = 0;
-				while ($row = $sql->fetch())
+				foreach ($sql->rows() as $row)
 				{
 					$ret = array();
 					//date
@@ -1737,13 +1825,14 @@ class comment
 							$nqb = $sql2->createQueryBuilder();
 							$row2 = $nqb->select('*')->from('news')
 								->where('news_id', $row['comment_item_id'])
-								->where($nqb->expr()->regexp('news_class', e_CLASS_REGEXP))
+								->where(\e107\Userclass\Membership::current()->predicate('news_class'))
 								->where($nqb->expr()->not($nqb->expr()->regexp('news_class', e_NOBODY_REGEXP)))
 								->where('news_start', '<', $now)
 								->where($nqb->expr()->anyOf(
 									$nqb->expr()->eq('news_end', 0),
 									$nqb->expr()->gt('news_end', $now)
 								))
+								->where('news_allow_comments', 0)
 								->fetchRow();
 							if ($row2)
 							{
@@ -1758,15 +1847,19 @@ class comment
 						case '1': //	article, review or content page - defunct category, but filter them out
 							break;
 						case '2': //	downloads
-							$classList = array_map('intval', explode(',', USERCLASS_LIST));
+							if (!e107::isInstalled('download'))
+							{
+								break;
+							}
 							$dqb = $sql2->createQueryBuilder();
 							$row2 = $dqb->select('d.download_name', 'dc.download_category_class', 'dc.download_category_id', 'dc.download_category_name')
 								->from('download', 'd')
 								->innerJoin('download_category', 'dc', $dqb->expr()->compareColumns('d.download_category', 'dc.download_category_id'))
 								->where('d.download_id', $row['comment_item_id'])
-								->where($dqb->expr()->regexp('dc.download_category_class', e_CLASS_REGEXP))
-								->whereIn('d.download_visible', $classList)
+								->where(\e107\Userclass\Membership::current()->predicate('dc.download_category_class'))
+								->where(\e107\Userclass\Membership::current()->predicate('d.download_visible'))
 								->where('d.download_active', '>', 0)
+								->where('d.download_comment', '>', 0)
 								->fetchRow();
 							if ($row2)
 							{
@@ -1779,9 +1872,14 @@ class comment
 							break;
 						// '3' was FAQ
 						case '4': //	poll
+							if (!e107::isInstalled('poll'))
+							{
+								break;
+							}
 							$row2 = $sql2->createQueryBuilder()
 								->select('*')->from('polls')
 								->where('poll_id', $row['comment_item_id'])
+								->where('poll_type', 1)
 								->fetchRow();
 							if ($row2)
 							{
@@ -1795,7 +1893,7 @@ class comment
 						// '6' was bugtracker
 						// 'ideas' was implemented
 						case 'profile': //	userprofile
-							if (USER)
+							if ($this->canReadComments('profile', $row['comment_item_id']))
 							{
 								$ret['comment_type'] = COMLAN_TYPE_8;
 								$ret['comment_title'] = $comment_author_name;
@@ -1806,7 +1904,9 @@ class comment
 							$pqb = $sql2->createQueryBuilder();
 							$row2 = $pqb->select('*')->from('page')
 								->where('page_id', $row['comment_item_id'])
-								->where($pqb->expr()->regexp('page_class', e_CLASS_REGEXP))
+								->where(\e107\Userclass\Membership::current()->predicate('page_class'))
+								->where('page_password', '')
+								->where('page_comment_flag', '>', 0)
 								->fetchRow();
 							if ($row2)
 							{
@@ -1924,7 +2024,7 @@ class comment
 				$nested->expr()->eq('r.rate_table', 'comments')
 			))
 			->where('c.comment_item_id', (int) $id)
-			->where('c.comment_type', $type)
+			->where('c.comment_type', (string) $type)
 			->where('c.comment_pid', '>', 0)
 			->orderBy('c.comment_datestamp', $sort)
 			->fetchAll();

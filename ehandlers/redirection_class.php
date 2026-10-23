@@ -123,7 +123,7 @@ class redirection
 	{
 		$this->self_exceptions = array(e_SIGNUP, SITEURL.'fpw.php', e_LOGIN, SITEURL.'membersonly.php');
 		$this->page_exceptions = array('e_jslib.php', 'sitedown.php',e_LOGIN, 'secimg.php');
-		$this->query_exceptions = array('logout');
+		$this->query_exceptions = array(\e107\User\LogoutConfirmation::QUERY_WORD);
 		$this->staticDomains    = defset('e_HTTP_STATIC');
 		$this->domain           = defset('e_DOMAIN');
 		$this->subdomain        = defset('e_SUBDOMAIN');
@@ -192,29 +192,57 @@ class redirection
 	 */
 	public function getPreviousUrl()
 	{
-		return $this->getCookie('_previousUrl');
+		return $this->rememberedAddress('_previousUrl');
+	}
+
+	/**
+	 * @param string $name a value stored with {@see redirection::setCookie()}
+	 * @return string|false the session's copy if it is current and {@see redirection::isSafeLanding()}, never a cookie's
+	 */
+	private function rememberedAddress($name)
+	{
+		$url = $this->sessionCopy($name);
+
+		return ($url && $this->isSafeLanding($url)) ? $url : false;
+	}
+
+	/**
+	 * @param string $name a value stored with {@see redirection::setCookie()}
+	 * @return mixed the session's copy, false once it has expired, null when the session holds none
+	 */
+	private function sessionCopy($name)
+	{
+		$session = e107::getSession();
+
+		if(!$session->has($name))
+		{
+			return null;
+		}
+
+		// expired - cookie like session implementation
+		if((int) $session->get($name.'_expire') < time())
+		{
+			$session->clear($name.'_expire')
+				->clear($name);
+			return false;
+		}
+
+		return $session->get($name);
 	}
 		
 	/**
-	 * Get value stored with self::setCookie()
+	 * Get a value stored with {@see redirection::setCookie()}: the session's copy, else a cookie that any host on the domain can write.
 	 * @param string $name
 	 * @return mixed
 	 */
 	public function getCookie($name) //TODO move to e107_class or a new user l class. 
 	{	
 		$cookiename = e_COOKIE."_".$name;
-		$session = e107::getSession();
-		
-		if($session->has($name))
+		$copy = $this->sessionCopy($name);
+
+		if($copy !== null)
 		{
-			// expired - cookie like session implementation
-			if((int) $session->get($name.'_expire') < time())
-			{
-				$session->clear($name.'_expire')
-					->clear($name);
-				return false;
-			}
-			return $session->get($name);
+			return $copy;
 		}
 		// fix - prevent null values
 		elseif(isset($_COOKIE[$cookiename]) && $_COOKIE[$cookiename])
@@ -237,13 +265,11 @@ class redirection
 		$cookiename = e_COOKIE."_".$name;
 		$session = e107::getSession();
 		
-		if(!$forceCookie && e107::getPref('cookie_name') != 'cookie')
-		{
-			// expired - cookie like session implementation
-			if(null !== $expire) $session->set($name.'_expire', time() + (int) $expire);
-			$session->set($name, $value);
-		}
-		else
+		// expired - cookie like session implementation
+		if(null !== $expire) $session->set($name.'_expire', time() + (int) $expire);
+		$session->set($name, $value);
+
+		if($forceCookie || e107::getPref('cookie_name') == 'cookie')
 		{
 			cookie($cookiename, $value, time() + (int) $expire, e_HTTP, e107::getLanguage()->getCookieDomain());
 		}
@@ -427,7 +453,7 @@ class redirection
 	 */
 	private function restoreMembersOnlyUrl()
 	{
-		$url = $this->getCookie('_afterlogin');
+		$url = $this->rememberedAddress('_afterlogin');
 		if(USER && $url)
 		{
 			//session_set(e_COOKIE.'_afterlogin', FALSE, -1000);
@@ -442,9 +468,11 @@ class redirection
 	 */
 	protected function queryIsExcepted($query)
 	{
+		$request = new \e107\Http\Request('GET', $query);
+
 		foreach($this->query_exceptions as $exception)
 		{
-			if($query === $exception || strpos($query, $exception.'&') === 0)
+			if($request->hasLeadingQueryWord($exception))
 			{
 				return true;
 			}
@@ -526,6 +554,11 @@ class redirection
 			return false;
 		}
 
+		if(!$this->isSafeLanding($url))
+		{
+			return false;
+		}
+
 		// Reject static assets by extension (issue #5218).
 		$path = parse_url($url, PHP_URL_PATH);
 		if(is_string($path) && $path !== '')
@@ -560,6 +593,47 @@ class redirection
 		}
 
 		return true;
+	}
+
+	/**
+	 * Is $url safe to land on after sign-in, judged by its spelling alone and not its host: it parses, its query holds no character e107 rewrites before reading it, and once decoded it names neither e-token nor ajax_used?
+	 *
+	 * @param string $url
+	 * @return bool
+	 */
+	public function isSafeLanding($url)
+	{
+		$parts = is_string($url) ? parse_url($url) : false;
+
+		if($parts === false || !preg_match('#^[A-Za-z0-9_.,:=&-]*$#', isset($parts['query']) ? $parts['query'] : ''))
+		{
+			return false;
+		}
+
+		$plain = str_replace(array('{', '}', '.'), array('', '', '_'), self::fullyDecoded($url));
+
+		return (stripos($plain, 'e-token') === false) && (stripos($plain, 'ajax_used') === false);
+	}
+
+	/**
+	 * @param string $text
+	 * @return string $text with percent-encoding and HTML entities undone, up to ten times
+	 */
+	private static function fullyDecoded($text)
+	{
+		for($i = 0; $i < 10; $i++)
+		{
+			$decoded = html_entity_decode(rawurldecode($text), ENT_QUOTES, 'UTF-8');
+
+			if($decoded === $text)
+			{
+				break;
+			}
+
+			$text = $decoded;
+		}
+
+		return $text;
 	}
 
 	/**
@@ -774,7 +848,7 @@ class redirection
 
 		$probe = $this->normaliseAsUrlParser($url);
 
-		if(preg_match('#^([a-z][a-z0-9+.\-]*):#i', $probe, $scheme))
+		if(preg_match('#^([a-z][a-z0-9+.\-]*):#', eShims::strtolower($probe), $scheme))
 		{
 			if(strcasecmp($scheme[1], 'http') !== 0 && strcasecmp($scheme[1], 'https') !== 0)
 			{
@@ -877,7 +951,7 @@ class redirection
 			}
 		}
 
-		return $this->verifyDestinationUrl($claims['dest']);
+		return $this->isSafeLanding($claims['dest']) ? $this->verifyDestinationUrl($claims['dest']) : false;
 	}
 
 	/**

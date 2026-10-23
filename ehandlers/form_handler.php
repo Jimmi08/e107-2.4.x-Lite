@@ -1461,7 +1461,7 @@ class e_form
 			$parms['type'] = 'icon';
 		}
 
-		$preview = e107::getMedia()->previewTag($default,$parms);
+		$preview = e107::getMedia()->previewTag($tp->attributeValue($default), $parms);
 
 		$cat = $tp->toDB(vartrue($parms['media']));
 
@@ -1667,12 +1667,12 @@ class e_form
 		}	
 		else
 		{
-			$ret .=	"<input type='hidden' name='{$name}' id='{$name_id}' value='{$default}' style='width:400px' />"; 	
+			$ret .=	"<input" . $this->attributes(['type' => 'hidden', 'name' => $name, 'id' => $name_id, 'value' => $default]) . " style='width:400px' />";
 		}
 
 
 		$default_label 				= ($default) ?: LAN_CHOOSE_FILE;
-		$label 						= "<span id='{$name_id}_prev' class='btn btn-default btn-secondary btn-small'>".basename($default_label). '</span>';
+		$label 						= "<span id='{$name_id}_prev' class='btn btn-default btn-secondary btn-small'>".$this->asElementContent(basename($default_label)). '</span>';
 
 		$sc_parameters['mode'] 		= 'main';
 		$sc_parameters['action'] 	= 'dialog';	
@@ -2432,6 +2432,15 @@ class e_form
 				'cols' => $cols,
 			]) . $this->get_attributes($options, $name) . ">{$value}</textarea>" .
 			($counter !== false ? $this->hidden('__' . $name . 'autoheight_opt', $counter) : '');
+	}
+
+	/**
+	 * @param string $value text with its entities decoded
+	 * @return string the text as an element's content, its markup characters encoded so it cannot close the element
+	 */
+	protected function asElementContent($value)
+	{
+		return str_replace(array('&', '<', '>'), array('&amp;', '&lt;', '&gt;'), (string) $value);
 	}
 
 	/**
@@ -3736,7 +3745,7 @@ var_dump($select_options);*/
 
 		$ltitle = is_string($option_title) ? strtolower($option_title) : $option_title;
 
-		$label = ($ltitle === 'true' || $ltitle === 'false') ? $option_title : defset($option_title, $option_title);
+		$label = ($ltitle === 'true' || $ltitle === 'false') ? $option_title : $this->storedTextAsHtml(defset($option_title, $option_title));
 
 		return "<option" . $this->attributes(['value' => $value]) . $this->get_attributes($options) . '>'
 			. $label .
@@ -4482,7 +4491,7 @@ var_dump($select_options);*/
 				case 'tabindex':
 					if($optval)
 					{
-						$ret .= " tabindex='{$optval}'";
+						$ret .= $this->attributes([$option => intval($optval)]);
 					}
 					elseif($optval === false || !$this->_tabindex_enabled)
 					{
@@ -4763,9 +4772,9 @@ var_dump($select_options);*/
 
 	// navbar-header nav-header
 	// navbar-header nav-header
-		$text = '<div class="col-selection dropdown e-tip pull-right float-right" data-placement="left">
+		$text = '<div class="col-selection dropdown e-tip pull-right float-right float-end" data-placement="left">
     <a class="dropdown-toggle" title="'.LAN_EFORM_008.'" data-toggle="dropdown" data-bs-toggle="dropdown" href="#">'.e107::getParser()->toGlyph('fa-sliders.glyph').'</a>
-    <ul class="list-group dropdown-menu  col-selection e-noclick" role="menu" aria-labelledby="dLabel">
+    <ul class="list-group dropdown-menu dropdown-menu-right dropdown-menu-end col-selection e-noclick" role="menu" aria-labelledby="dLabel">
 
     <li class="list-group-item "><h5 class="list-group-item-heading">'.LAN_EFORM_009.'</h5></li>
     <li class="list-group-item col-selection-list">
@@ -5342,6 +5351,26 @@ var_dump($select_options);*/
 	}
 
 	/**
+	 * @param mixed $value a text field's value as toDB() stored it, or a label built from one
+	 * @return mixed the value with each tag toDB() stored, its quotes written as entities, turned back into HTML; a tag that holds a quote is already HTML and is left as it is; all of it as text if the pattern fails
+	 */
+	protected function storedTextAsHtml($value)
+	{
+		if (!is_string($value) || strpos($value, '<') === false)
+		{
+			return $value;
+		}
+
+		$tp = $this->tp;
+		$html = preg_replace_callback('#<[a-z](?:[^<>"\'&]++|&quot;(?:[^"\'&]++|&(?!quot;))*+&quot;|&\#039;(?:[^"\'&]++|&(?!\#039;))*+&\#039;|&(?!quot;|\#039;))*+>#i', function ($tag) use ($tp)
+		{
+			return $tp->toHTML($tag[0], false, 'defaults_off,scripts_on,nobreak,retain_nl');
+		}, $value);
+
+		return ($html === null) ? htmlspecialchars($value, ENT_QUOTES, 'UTF-8') : $html;
+	}
+
+	/**
 	 * Check if a value should be linked and wrap in <a> tag if required.
 	 * @todo global pref for the target option?
 	 * @param mixed $value
@@ -5561,6 +5590,15 @@ var_dump($select_options);*/
 
 		return $text;
 
+	}
+
+	/**
+	 * @param string $address a stored address, entities encoded as toDB() stores them
+	 * @return string the href a list links it with: decoded once, encoded for the attribute, and empty for a scheme {@see e_parse::toUrlAttribute()} does not link
+	 */
+	private function listLinkHref($address)
+	{
+		return $this->tp->toUrlAttribute(html_entity_decode($address, ENT_QUOTES | ENT_HTML5, 'UTF-8'));
 	}
 
 	/**
@@ -5832,7 +5870,7 @@ var_dump($select_options);*/
 					$value = $ret;
 				}
 
-				$value = ($value ? vartrue($parms['pre']).defset($value, $value).vartrue($parms['post']) : '');
+				$value = ($value ? vartrue($parms['pre']).$this->storedTextAsHtml(defset($value, $value)).vartrue($parms['post']) : '');
 
 				if(empty($attributes['noedit']) && !empty($parms['editable']) && empty($parms['link'])) // avoid bad markup, better solution coming up
 				{				
@@ -5894,7 +5932,8 @@ var_dump($select_options);*/
 					$value = $tp->htmlwrap($value, (int) $parms['wrap'], varset($parms['wrapChar'], ' '));
 				}
 
-				$value = $this->renderLink($value,$parms,$id);
+				$editValue = $value;
+				$value = $this->renderLink($this->storedTextAsHtml($value),$parms,$id);
 
 				if(empty($value))
 				{
@@ -5907,7 +5946,7 @@ var_dump($select_options);*/
 
 					if($attributes['type'] === 'tags' && !empty($value))
 					{
-						$setValue = $value;
+						$setValue = $editValue;
 						$value = str_replace(',', ', ', $value); // add spaces so it wraps, but don't change the actual values.
 					}
 				}
@@ -5925,7 +5964,7 @@ var_dump($select_options);*/
 					$maxlength = vartrue($parms['maxlength'], 80);
 					unset($parms['maxlength']);
 
-					$tpl = $this->text($field, $value, $maxlength, $options);
+					$tpl = $this->text($field, $editValue, $maxlength, $options);
 
 					$mode = preg_replace('/[\W]/', '', vartrue($_GET['mode']));
 					$value = "<a" . $this->attributes([
@@ -5972,7 +6011,8 @@ var_dump($select_options);*/
 					$value = $tp->htmlwrap($value, (int)$parms['wrap'], varset($parms['wrapChar'], ' '));
 				}
 
-				$value = $this->renderLink($value,$parms,$id);
+				$editValue = $value;
+				$value = $this->renderLink($this->storedTextAsHtml($value),$parms,$id);
 
 
 				if(empty($value))
@@ -5990,7 +6030,7 @@ var_dump($select_options);*/
 
 				if(empty($attributes['noedit']) && !empty($parms['editable']) && empty($parms['link'])) // avoid bad markup, better solution coming up
 				{
-					$value = $this->renderInline($field,$id,$attributes['title'],$value, $value);
+					$value = $this->renderInline($field,$id,$attributes['title'],$editValue, $value);
 				}
 
 				$value = vartrue($parms['pre']).$value.vartrue($parms['post']);
@@ -6004,7 +6044,7 @@ var_dump($select_options);*/
 
 				if($attributes['type'] === 'textarea' && !vartrue($attributes['noedit']) && vartrue($parms['editable']) && !vartrue($parms['link'])) // avoid bad markup, better solution coming up
 				{
-					return $this->renderInline($field,$id,$attributes['title'],$value,substr($value,0,50). '...','textarea'); //FIXME.
+					return $this->renderInline($field,$id,$attributes['title'],$value,substr(strip_tags($this->storedTextAsHtml($value)),0,50). '...','textarea'); //FIXME.
 				}
 
 
@@ -6025,7 +6065,7 @@ var_dump($select_options);*/
 					if($ttl == 1)
 					{
 						$dataAttr = "data-text-more='" . LAN_MORE . "' data-text-less='" . LAN_LESS . "'";
-						$ttl = $expand."<button class='btn btn-default btn-secondary btn-xs btn-mini pull-right' {$dataAttr}>" . LAN_MORE . '</button>';
+						$ttl = $expand."<button class='btn btn-default btn-secondary btn-xs btn-mini pull-right float-right float-end' {$dataAttr}>" . LAN_MORE . '</button>';
 					}
 
 					$expands = '<a href="#'.$elid.'-expand" class="e-show-if-js e-expandit e-expandit-inline">'.defset($ttl, $ttl). '</a>';
@@ -6071,7 +6111,7 @@ var_dump($select_options);*/
 					$url = $this->tp->replaceConstants($value, 'full');
 				}
 				$name = basename($value);
-				$value = '<a href="'.$url.'" title="Direct link to '.$name.'" rel="external">'.$name.'</a>';
+				$value = '<a href="'.$this->listLinkHref($url).'" title="Direct link to '.$name.'" rel="external">'.$name.'</a>';
 			break;
 
 			case 'image': //js tooltip...
@@ -6261,7 +6301,7 @@ var_dump($select_options);*/
 			break;
 
 			case 'userclass':
-				$dispvalue = $this->_uc->getName($value);
+				$dispvalue = $this->storedTextAsHtml($this->_uc->getName($value));
 					// Inline Editing.  
 				if(empty($attributes['noedit']) && !empty($parms['editable']) && empty($parms['link'])) // avoid bad markup, better solution coming up
 				{
@@ -6291,7 +6331,7 @@ var_dump($select_options);*/
 						continue;
 					}
 
-					$uv[] = $this->_uc->getName($cid);
+					$uv[] = $this->storedTextAsHtml($this->_uc->getName($cid));
 				}
 
 
@@ -6375,7 +6415,7 @@ var_dump($select_options);*/
 
 					$value = '<a' . $this->attributes([
 							'class'              => "e-modal",
-							'data-modal-caption' => "User #$id : $ttl",
+							'data-modal-caption' => "User #$id : " . html_entity_decode($ttl, ENT_QUOTES, 'UTF-8'),
 							'href'               => $link,
 							'title'              => LAN_EFORM_011
 						]) . '>' . $ttl . '</a>';
@@ -6489,7 +6529,7 @@ var_dump($select_options);*/
 				{
 					break;
 				}
-				$ttl = $value;
+				$ttl = $this->storedTextAsHtml($value);
 				if (!empty($parms['href']))
 				{
 					return $tp->replaceConstants(vartrue($parms['pre']) . $value, varset($parms['replace_mod'], 'abs'));
@@ -6505,7 +6545,7 @@ var_dump($select_options);*/
 				$value = '<a' . $this->attributes([
 						'target' => $target,
 						'class'  => $class,
-						'href'   => $tp->replaceConstants(vartrue($parms['pre']) . $value, 'abs'),
+					]) . " href='" . $this->listLinkHref($tp->replaceConstants(vartrue($parms['pre']) . $value, 'abs')) . "'" . $this->attributes([
 						'title'  => $value,
 					]) . ">" . $ttl . '</a>';
 				break;
@@ -6515,7 +6555,7 @@ var_dump($select_options);*/
 				{
 					break;
 				}
-				$ttl = $value;
+				$ttl = $this->storedTextAsHtml($value);
 				if (!empty($parms['truncate']))
 				{
 					$ttl = $tp->text_truncate($value, $parms['truncate'], '...');
@@ -6721,12 +6761,6 @@ var_dump($select_options);*/
 		{
 			$value = e107::unserialize($value);
 		}
-		elseif (is_string($value))
-		{
-			// Workaround for accepting poorly normalized values from the database where the data would have been stored
-			// with HTML entities escaped.
-			$value = html_entity_decode($value, ENT_QUOTES);
-		}
 
 		$tp = $this->tp;
 		$ret = '';
@@ -6770,6 +6804,15 @@ var_dump($select_options);*/
 			$value = $parms['default'];
 		}
 
+		$stored = $value;
+
+		if (is_string($value) && empty($attributes['linkAddress']))
+		{
+			// Workaround for accepting poorly normalized values from the database where the data would have been stored
+			// with HTML entities escaped.
+			$value = html_entity_decode($value, ENT_QUOTES);
+		}
+
 		// Two modes of read-only. 1 = read-only, but only when there is a value, 2 = read-only regardless.
 		if(!empty($attributes['readonly']) && (!empty($value) || vartrue($attributes['readonly'])===2)) // quick fix (maybe 'noedit'=>'readonly'?)
 		{
@@ -6778,7 +6821,7 @@ var_dump($select_options);*/
 				$attributes['readParms'] = $attributes['writeParms'];
 			}
 
-			$ret = $this->renderValue($key, $value, $attributes);
+			$ret = $this->renderValue($key, $stored, $attributes);
 
 		//	if(!is_array($value)) // avoid value of 'Array'
 			{
@@ -6960,7 +7003,7 @@ var_dump($select_options);*/
 				{
 					$attributes['readParms'] = 'bb=1';
 
-					$text = $this->renderValue($key, $value, $attributes);					
+					$text = $this->renderValue($key, $stored, $attributes);
 					$text .= '<br />';
 					$value = '';
 
@@ -6996,14 +7039,14 @@ var_dump($select_options);*/
 						]) . ">" . $charMsg . "</small>";
 				}
 
-				$text .= vartrue($parms['pre']).$this->textarea($key, $value, vartrue($parms['rows'], 5), vartrue($parms['cols'], 40), vartrue($parms['__options'],$parms), varset($parms['counter'], false)).vartrue($parms['post']);
+				$text .= vartrue($parms['pre']).$this->textarea($key, $this->asElementContent($value), vartrue($parms['rows'], 5), vartrue($parms['cols'], 40), vartrue($parms['__options'],$parms), varset($parms['counter'], false)).vartrue($parms['post']);
 				$ret =  $text;
 			break;
 
 			case 'bbarea':
 				$options = array('counter' => varset($parms['counter'], false)); 
 				// Media = media-category owner used by media-manager. 
-				$ret =  vartrue($parms['pre']).$this->bbarea($key, $value, vartrue($parms['template']), vartrue($parms['media'],'_common_image'), vartrue($parms['size'], 'medium'),$options ).vartrue($parms['post']);
+				$ret =  vartrue($parms['pre']).$this->bbarea($key, $this->asElementContent($value), vartrue($parms['template']), vartrue($parms['media'],'_common_image'), vartrue($parms['size'], 'medium'),$options ).vartrue($parms['post']);
 			break;
 
 			case 'video':
@@ -7423,15 +7466,17 @@ var_dump($select_options);*/
 
 			case 'hidden':
 
-				$value = (isset($parms['value'])) ? $parms['value'] : $value;
 				if(!empty($parms['show']))
 				{
-					$ret = ($value ?: varset($parms['empty'], $value));
+					$ret = isset($parms['value']) ? $parms['value'] : (is_string($value) ? $this->asElementContent($value) : $value);
+					$ret = ($ret ?: varset($parms['empty'], $ret));
 				}
 				else
 				{
 					$ret = '';
 				}
+
+				$value = (isset($parms['value'])) ? $parms['value'] : $value;
 
 				if(is_array($value) && ($attributes['data'] === 'json'))
 				{
@@ -7846,7 +7891,7 @@ var_dump($select_options);*/
 						{OPTIONS}
 						</div>
 					</div>
-					<div class="panel-footer">{TITLE}<span class="pull-right">{CHECKBOX}</span></div>
+					<div class="panel-footer">{TITLE}<span class="pull-right float-right float-end">{CHECKBOX}</span></div>
 					</div>';
 				}
 				else
@@ -8161,7 +8206,7 @@ var_dump($select_options);*/
 
 				if(empty($writeParms['show'])) // hidden field and not displayed. Render element after the field-set.
 				{
-					$hidden_fields[] = $this->renderElement($keyName, $model->getIfPosted($valPath), $att, varset($model_required[$key], array()));
+					$hidden_fields[] = $this->renderElement($keyName, $this->createFieldValue($model, $valPath, $att), $att, varset($model_required[$key], array()));
 
 					continue;
 				}
@@ -8206,7 +8251,7 @@ var_dump($select_options);*/
 				$leftCell = "<span{$required_class}>".defset(vartrue($att['title']), vartrue($att['title'])). '</span>' .$required.$label;
 
 				$leftCell .= $this->help(varset($att['help']));
-				$rightCell = $this->renderElement($keyName, $model->getIfPosted($valPath), $att, varset($model_required[$key], array()), $model->getId());
+				$rightCell = $this->renderElement($keyName, $this->createFieldValue($model, $valPath, $att), $att, varset($model_required[$key], array()), $model->getId());
 
 
 				$att['writeParms'] = $writeParms;
@@ -8245,6 +8290,17 @@ var_dump($select_options);*/
 		return false;
 
 
+	}
+
+	/**
+	 * @param e_front_model $model
+	 * @param string        $path the field's data path
+	 * @param array         $att  the field's declaration
+	 * @return mixed the field's value as its create or edit form shows it: a link address as posted or stored, byte for byte, any other value through {@see e_front_model::getIfPosted()}
+	 */
+	private function createFieldValue($model, $path, $att)
+	{
+		return empty($att['linkAddress']) ? $model->getIfPosted($path) : $model->getPostedData($path, $model->getData($path));
 	}
 
 

@@ -87,6 +87,9 @@ if (!defined('e107_INIT'))
  */
 class e_parse_shortcode
 {
+	/** The $_SESSION key the front-end inline editor's maps are filed under, which {@see e107InlineEdit} reads them back from. */
+	const EDITABLE_SESSION_KEY = 'inline_editable';
+
 	protected $scList               = array();  // The actual code - added by parsing files or when plugin codes encountered. Array key is the shortcode name.
 	protected $parseSCFiles         = true;     // True if individual shortcode files are to be used
 	protected $addedCodes           = null;     // Pointer to a class or array to be used on a single call
@@ -882,7 +885,7 @@ class e_parse_shortcode
 					// TODO use Library Manager...
 					e107::js('footer', '{e_WEB}js/jquery.contenteditable.js', 'jquery', 2);
 					$token = defset('e_TOKEN','token-missing');
-					$_SESSION['editable'][$token] = $this->editableCodes;
+					$_SESSION[self::EDITABLE_SESSION_KEY][$token] = $this->editableCodes;
 
 					e107::js('footer-inline', '$(".e-editable-front").each(function ()
 					{
@@ -1580,6 +1583,32 @@ class e_parse_shortcode
 
 
 	/**
+	 * Whether a row holds every column value the editable map's 'where' holds its saves to.
+	 *
+	 * @param array|ArrayAccess $row the row the shortcode renders
+	 * @return bool
+	 */
+	private function editableRowAllowed($row)
+	{
+		$where = isset($this->editableCodes['where']) ? $this->editableCodes['where'] : array();
+
+		if(!is_array($where))
+		{
+			return false;
+		}
+
+		foreach($where as $field => $value)
+		{
+			if(!isset($row[$field]) || (string) $row[$field] !== (string) $value)
+			{
+				return false;
+			}
+		}
+
+		return true;
+	}
+
+	/**
 	 * Add Editable Container to shortcode (when detected)
 	 * @param string $text
 	 * @param string $code
@@ -1619,6 +1648,10 @@ class e_parse_shortcode
 			$var = $this->addedCodes->getVars();
 		}
 
+		if(!$this->editableRowAllowed($var))
+		{
+			return $text;
+		}
 
 		$container  = empty($this->editableCodes['shortcodes'][$lcode]['container']) ? 'span' : $this->editableCodes['shortcodes'][$lcode]['container'];
 		$pid        = $this->editableCodes['pid'];

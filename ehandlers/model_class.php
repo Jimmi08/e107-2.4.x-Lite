@@ -1575,11 +1575,11 @@ class e_model extends e_object
 			// position (WHERE <idcol> = {ID}), so bind it rather than splice the
 			// id in: the placeholder became a persistent-injection conduit when
 			// callers forwarded an unvalidated request id (e.g. getSystemUser()).
-			$params = array();
+			$params = (array) $this->getParam('db_params', array());
 			if(strpos($dbQuery, '{ID}') !== false)
 			{
 				$dbQuery = str_replace('{ID}', ':modelLoadId', $dbQuery);
-				$params = array('modelLoadId' => $id);
+				$params['modelLoadId'] = $id;
 			}
 			$res = $sql->execute($dbQuery, $params);
 		}
@@ -1769,8 +1769,8 @@ class e_model extends e_object
 	/**
 	 * Set parameter array
 	 * Core implemented:
-	 * - db_query: string db query to be passed to load() ($sql->gen())
-	 * - db_query
+	 * - db_query: string db query to be passed to load() ($sql->execute())
+	 * - db_params: name => value binds for the :named placeholders in db_query
 	 * - db_fields
 	 * - db_where
 	 * - db_debug
@@ -2156,10 +2156,21 @@ class e_front_model extends e_model
 		{
 			// FIXED - double post_toFom() and toDB(post_toForm()) problems
 			// setPosted|setPostedData|addPostedData methods are storing RAW data now
-			return e107::getParser()->post_toForm($posted);
+			return $this->postedForForm($posted);
 		}
 		return e107::getParser()->toForm($this->getData((string) $key, $default, $index));
     }
+
+	/**
+	 * @param mixed $posted a value as it was posted
+	 * @return mixed a string as {@see e_parse::post_toForm()} gives it with its ampersands written as entities too; an array as {@see e_parse::post_toForm()} gives it
+	 */
+	private function postedForForm($posted)
+	{
+		$tp = e107::getParser();
+
+		return is_array($posted) ? $tp->post_toForm($posted) : $tp->post_toForm(str_replace('&', '&amp;', (string) $posted));
+	}
 
     /**
      * Overwrite posted data in the object for a single field. Key is not parsed.
@@ -3431,7 +3442,8 @@ class e_tree_model extends e_front_model
 					.$this->getParam('db_order')
 					.$this->getParam('db_limit')
 				:
-					$this->getParam('db_query');
+					preg_replace('/:[A-Za-z_]\w*/', '?', $this->getParam('db_query'))
+					.serialize(array_values((array) $this->getParam('db_params', array())));
 
 			return $this->setCacheString($this->getCacheString().'_'.md5($str));
 		}
@@ -3600,8 +3612,7 @@ class e_tree_model extends e_front_model
 	 */
 	protected function getRowsList($sql)
 	{
-		// Caller-built SQL (db_query param) - run it bound (no local values to bind).
-		$success = $sql->execute($this->getParam('db_query'));
+		$success = $sql->execute($this->getParam('db_query'), (array) $this->getParam('db_params', array()));
 		if (!$success) return false;
 
 		return $sql->rows();
@@ -3618,8 +3629,7 @@ class e_tree_model extends e_front_model
 		// Workaround: Parse and modify db_query param for simulated custom ordering
 		$this->prepareSimulatedCustomOrdering();
 
-		// Caller-built SQL (db_query param) - run it bound (no local values to bind).
-		$success = $sql->execute($this->getParam('db_query'));
+		$success = $sql->execute($this->getParam('db_query'), (array) $this->getParam('db_params', array()));
 		if (!$success) return false;
 
 		$rows_tree = self::arrayToTree($sql->rows(),
@@ -3765,10 +3775,10 @@ class e_tree_model extends e_front_model
 
 			$QRY = self::buildCountQuery($countQry);
 
-			// Caller-built COUNT(*) wrapper (pre-assembled developer SQL, no values to
-			// bind) -> bound execute() + fetch(), replacing the deprecated retrieve()
-			// string form. execute($var) is an opaque dynamic-SQL passthrough boundary.
-			$result = ($sql->execute($QRY) !== false) ? $sql->fetch() : array();
+			// Caller-built COUNT(*) wrapper -> bound execute() + fetch(), replacing the
+			// deprecated retrieve() string form. execute($var) is an opaque dynamic-SQL
+			// passthrough boundary.
+			$result = ($sql->execute($QRY, (array) $this->getParam('db_params', array())) !== false) ? $sql->fetch() : array();
 			if(!is_array($result)) $result = array();
 			$total = isset($result['e_tree_total']) ? $result['e_tree_total'] : 0;
 

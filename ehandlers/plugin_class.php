@@ -259,12 +259,18 @@ class e_plugin
 			e107::getDebug()->log("\$this->_plugdir is empty ".__FILE__." ". __CLASS__ ."::".__METHOD__);
 		}
 
-		if(isset($this->_data[$this->_plugdir]['@attributes']['installRequired']))
-		{
-			return $this->_data[$this->_plugdir]['@attributes']['installRequired'] !== 'false';
-		}
+		return self::isInstallRequired(varset($this->_data[$this->_plugdir], array()));
+	}
 
-		return false;
+	/**
+	 * Whether plugin metadata, as parsed from a plugin.xml or plugin.php, asks for the plugin to be installed before it is used.
+	 *
+	 * @param array $meta the parsed metadata, with the root element's attributes under '@attributes'
+	 * @return bool
+	 */
+	public static function isInstallRequired(array $meta)
+	{
+		return isset($meta['@attributes']['installRequired']) && $meta['@attributes']['installRequired'] !== 'false';
 	}
 
 
@@ -2619,8 +2625,8 @@ class e107plugin
 
 	/**
 	 * @param $action
-	 * @param $comment_id
-	 * @return int|void
+	 * @param string|string[] $comment_id the comment types to act on; 'remove' refuses an empty list
+	 * @return int|false|void
 	 */
 	function manage_comments($action, $comment_id)
 	{
@@ -2631,11 +2637,19 @@ class e107plugin
 		$tmp = array();
 		if ($action == 'remove')
 		{
-			foreach ($comment_id as $com)
+			foreach ((array) $comment_id as $com)
 			{
-				$tmp[] = $tp->toDB($com, true);
+				if (is_scalar($com) && (string) $com !== '')
+				{
+					$tmp[] = $tp->toDB($com, true);
+				}
 			}
-			//			echo implode(" OR ", $tmp)."<br />";
+
+			if (empty($tmp))
+			{
+				return false;
+			}
+
 			return $sql->createQueryBuilder()->delete('comments')->whereIn('comment_type', $tmp)->execute();
 		}
 	}
@@ -3142,13 +3156,11 @@ class e107plugin
 
 		$this->manage_icons($this->plugFolder, $function);
 
-		//FIXME
-		//If any commentIDs are configured, we need to remove all comments on uninstall
-		if ($function == 'uninstall' && isset($plug_vars['commentID']))
+		if ($function == 'uninstall' && !empty($options['delete_tables']) && !empty($plug_vars['commentID']))
 		{
-			$txt .= 'Removing all plugin comments: ('.implode(', ', $plug_vars['commentID']).')<br />';
-			$commentArray = array();
-			$this->manage_comments('remove', $commentArray);
+			$commentIds = (array) $plug_vars['commentID'];
+			$txt .= 'Removing all plugin comments: ('.implode(', ', $commentIds).')<br />';
+			$this->manage_comments('remove', $commentIds);
 		}
 
 		$this->manage_search($function, $plug_vars['folder']);
@@ -5061,7 +5073,7 @@ class e107plugin
 		}
 
 		e107::getPlug()->clearCache()->buildAddonPrefLists();
-		e107::getSession()->clear('addons-update-status');
+		(new e107\Admin\AddonUpdateStatus(e107::getCache(), e107::getSession()))->clear();
 
 		//	$this->save_addon_prefs('update');
 

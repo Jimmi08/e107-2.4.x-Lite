@@ -35,6 +35,24 @@ class news {
 	protected static $_rewrite_data = array();
 	protected static $_rewrite_map = null;
 
+	/**
+	 * The author whose news items alone the current administrator may edit, which news_limit_to_self decides.
+	 *
+	 * @return int that author's user id, or 0 when news_limit_to_self does not limit this administrator
+	 */
+	public function limitedToAuthor()
+	{
+		$class = (int) e107::getPref('news_limit_to_self', 0);
+		$user = e107::getUser();
+
+		if($class && $user->checkClass($class, false) && !$user->isMainAdmin())
+		{
+			return (int) $user->getId();
+		}
+
+		return 0;
+	}
+
 	//FIXME - LANs
 	//TODO - synch WIKI docs, add rewrite data to the event data
 	//@Deprecated and no longer used by newspost.php 
@@ -426,7 +444,7 @@ class news {
 			'table' => 'news',
 			'pid'   => 'news_id',
 			'vars'  => 'news_item',
-			'perms' => 'H|H4',
+			'perms' => 'H|H1',
 			'shortcodes'    => array(
 					'news_title'        => array('field'=>'news_title', 'type'=>'text', 'container'=>'span'),
 					'news_description'  => array('field'=>'news_meta_description','type'=>'text', 'container'=>'span'),
@@ -435,6 +453,11 @@ class news {
 			)
 
 		);
+
+		if($author = $this->limitedToAuthor())
+		{
+			$editable['where'] = array('news_author' => $author);
+		}
 
 
 
@@ -704,14 +727,16 @@ class e_news_item extends e_front_model
 		
 		$id = intval($id);
 		$nobody_regexp = "'(^|,)(".str_replace(",", "|", e_UC_NOBODY).")(,|$)'";
+		$rule = \e107\Userclass\Membership::current()->predicate('n.news_class');
 
 	  	$query = "SELECT n.*, u.user_id, u.user_name, u.user_customtitle, u.user_image, nc.category_id, nc.category_name, nc.category_sef, nc.category_icon FROM #news AS n
 		LEFT JOIN #user AS u ON n.news_author = u.user_id
 		LEFT JOIN #news_category AS nc ON n.news_category = nc.category_id
-		WHERE n.news_id={$id} AND n.news_class REGEXP '".e_CLASS_REGEXP."' AND NOT (n.news_class REGEXP ".$nobody_regexp.")
+		WHERE n.news_id={$id} AND ".$rule->getSql()." AND NOT (n.news_class REGEXP ".$nobody_regexp.")
 		AND n.news_start < ".time()." AND (n.news_end=0 || n.news_end>".time().")";
 
 		$this->setParam('db_query', $query);
+		$this->setParam('db_params', $rule->getParameters());
 
 		parent::load($id, $force);
 		return $this;
@@ -840,6 +865,7 @@ class e_news_tree extends e_front_tree_model
 			ORDER BY ".$db_order." LIMIT ".$db_limit;
 
 		$this->setParam('db_query', $query);
+		$this->setParam('db_params', isset($params['db_params']) ? $params['db_params'] : array());
 		
 		return parent::loadBatch($force);
 	}
@@ -858,12 +884,14 @@ class e_news_tree extends e_front_tree_model
 		
 		$nobody_regexp = "'(^|,)(".str_replace(",", "|", e_UC_NOBODY).")(,|$)'";
 		$time = time();
+		$rule = \e107\Userclass\Membership::current()->predicate('n.news_class');
 		
 		$where .= ($where ? ' AND ' : '')."n.news_start < {$time} AND (n.news_end=0 || n.news_end>{$time})
-			AND n.news_class REGEXP '".e_CLASS_REGEXP."' AND NOT (n.news_class REGEXP ".$nobody_regexp.")
+			AND ".$rule->getSql()." AND NOT (n.news_class REGEXP ".$nobody_regexp.")
 		";
 		
 		$params['db_where'] = $where;
+		$params['db_params'] = $rule->getParameters();
 
 		$this->_cache_string = null; // disable sys cache, otherwise we get a new cache file every time the time() changes.
 		
@@ -1132,11 +1160,12 @@ class e_news_category_tree extends e_front_tree_model
 		
 		$nobody_regexp = "'(^|,)(".str_replace(",", "|", e_UC_NOBODY).")(,|$)'";
 		$time = time();
+		$rule = \e107\Userclass\Membership::current()->predicate('n.news_class');
 
 			$qry = "
 			SELECT COUNT(n.news_id) AS category_news_count, nc.* FROM #news_category AS nc
 			LEFT JOIN #news AS n ON n.news_category=nc.category_id
-			WHERE n.news_class REGEXP '".e_CLASS_REGEXP."' AND NOT (n.news_class REGEXP ".$nobody_regexp.")
+			WHERE ".$rule->getSql()." AND NOT (n.news_class REGEXP ".$nobody_regexp.")
 				AND n.news_start < ".$time." AND (n.news_end=0 || n.news_end>".$time.")
 			GROUP BY nc.category_id
 			ORDER BY nc.category_order ASC
@@ -1145,6 +1174,7 @@ class e_news_category_tree extends e_front_tree_model
 			
 		$this->setParam('model_class', 'e_news_category_item')
 			->setParam('db_query', $qry)
+			->setParam('db_params', $rule->getParameters())
 			->setParam('nocount', true)
 			->setParam('db_debug', false)
 			->setCacheString(true)
