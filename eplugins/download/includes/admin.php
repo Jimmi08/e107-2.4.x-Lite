@@ -346,7 +346,7 @@ class download_main_admin_ui extends e_admin_ui
 			'download_class' 			=> array('title'=> DOWLAN_113,			'type' => 'userclass',		'width' => 'auto', 'inline'=>true, 'data' => 'int','batch' => TRUE, 'filter'=>TRUE),		
 			'download_visible' 			=> array('title'=> LAN_VISIBILITY,		'type' => 'userclass',	'inline'=>true,	'width' => 'auto', 'data' => 'int', 'batch' => TRUE, 'filter'=>TRUE),
 			
-			'download_mirror' 			=> array('title'=> DOWLAN_128,			'type' => 'text', 		'data' => 'str',		'width' => '10%',	'thclass' => 'center' ),
+			'download_mirror' 			=> array('title'=> DOWLAN_128,			'type' => 'method', 		'data' => 'str',		'width' => '10%',	'thclass' => 'center' ),
 			'download_mirror_type' 		=> array('title'=> DOWLAN_195,			'type' => 'method', 		'data' => 'str',		'width' => '10%',	'thclass' => 'center' ),
 		
 	
@@ -1373,8 +1373,8 @@ $columnInfo = array(
 	            }
 	
 	            $text .= "</select>
-	                           <input  class='form-control' type='text' name='download_mirror[]' style='width: 60%;' value=\"".$mirrorArray[($count-1)]['url']."\" maxlength='200'/>
-	                           <input  class='form-control' type='text' name='download_mirror_size[]' style='width: 15%;' value=\"".$mirrorArray[($count-1)]['filesize']."\" maxlength='10'/>";
+	                           <input  class='form-control' type='text' name='download_mirror[]' style='width: 60%;' value=\"".$tp->toAttribute($mirrorArray[($count-1)]['url'], true)."\" maxlength='200'/>
+	                           <input  class='form-control' type='text' name='download_mirror_size[]' style='width: 15%;' value=\"".$tp->toAttribute($mirrorArray[($count-1)]['filesize'], true)."\" maxlength='10'/>";
 	            if (DOWNLOAD_DEBUG)
 	            {
 	               if ($id)
@@ -1383,7 +1383,7 @@ $columnInfo = array(
 	               }
 	               else
 	               {
-	               $text .= "<input  class='form-control' type='text' name='download_mirror_requests[]' style='width: 10%;' value=\"".$mirrorArray[($count-1)]['requests']."\" maxlength='10'/>";
+	               $text .= "<input  class='form-control' type='text' name='download_mirror_requests[]' style='width: 10%;' value=\"".$tp->toAttribute($mirrorArray[($count-1)]['requests'], true)."\" maxlength='10'/>";
 	               }
 	            }
 	            $text .= "  </div>";
@@ -1422,7 +1422,7 @@ $columnInfo = array(
 	                  <tr>
 	                     <td >".DOWLAN_12."</td>
 	                     <td style='width:80%'>
-	                        <input class='form-control input-xxlarge' type='text' id='download-name' name='download_name' size='60' value=\"".$tp->toForm($download_name)."\" maxlength='200'/>
+	                        <input class='form-control input-xxlarge' type='text' id='download-name' name='download_name' size='60' value=\"".str_replace('"', '&quot;', (string) $tp->toForm($download_name))."\" maxlength='200'/>
 	                     </td>
 	                  </tr>
 	                  <tr>
@@ -2159,7 +2159,7 @@ $columnInfo = array(
 			
 	 		define("SUBMITTED", TRUE);
 	 		
-		      if (isset($_POST['mirror_name']) && isset($_POST['mirror_url']))
+		      if (isset($_POST['mirror_name']) && isset($_POST['mirror_url']) && $this->maySaveLinkAddresses(array('mirror_url'), $_POST, array()))
 		      {
 		         $name = $tp -> toDB($_POST['mirror_name']);
 		         $url = $tp -> toDB($_POST['mirror_url']);
@@ -2597,6 +2597,16 @@ class download_main_admin_form_ui extends e_admin_form_ui
 	}
 	
 	
+	/**
+	 * @param string $curVal the stored mirror list, kept as it was posted
+	 * @param string $mode
+	 * @return string
+	 */
+	function download_mirror($curVal, $mode)
+	{
+		return ($mode === 'read') ? e107::getParser()->toAttribute($curVal, true) : '';
+	}
+
 	function download_mirror_type($curVal,$mode)
 	{
 		switch ($curVal)
@@ -2632,7 +2642,7 @@ class download_mirror_ui extends e_admin_ui
 		protected $fields 		= array (  'checkboxes' =>   array ( 'title' => '', 'type' => null, 'data' => null, 'width' => '5%', 'thclass' => 'center', 'forced' => '1', 'class' => 'center', 'toggle' => 'e-multiselect',  ),
 		  'mirror_id' 			=>   array ( 'title' => LAN_ID, 'data' => 'int', 'width' => '5%', 'help' => '', 'readParms' => '', 'writeParms' => '', 'class' => 'left', 'thclass' => 'left',  ),
 		  'mirror_name' 		=>   array ( 'title' => LAN_TITLE, 'type' => 'text', 'data' => 'str', 'width' => 'auto', 'inline' => true, 'help' => '', 'readParms' => '', 'writeParms' => '', 'class' => 'left', 'thclass' => 'left',  ),
-		  'mirror_url' 			=>   array ( 'title' => LAN_URL, 'type' => 'url', 'data' => 'str', 'width' => 'auto', 'inline' => true, 'help' => '', 'readParms' => '', 'writeParms' => '', 'class' => 'left', 'thclass' => 'left',  ),
+		  'mirror_url' 			=>   array ( 'title' => LAN_URL, 'type' => 'url', 'data' => 'str', 'width' => 'auto', 'inline' => true, 'linkAddress' => true, 'help' => '', 'readParms' => '', 'writeParms' => '', 'class' => 'left', 'thclass' => 'left',  ),
 		  'mirror_image' 		=>   array ( 'title' => LAN_IMAGE, 'type' => 'image', 'data' => 'str', 'width' => 'auto', 'help' => '', 'readParms' => '', 'writeParms' => '', 'class' => 'left', 'thclass' => 'left',  ),
 		  'mirror_location' 	=>   array ( 'title' => DOWLAN_141, 'type' => 'text', 'data' => 'str', 'width' => 'auto', 'inline' => true, 'help' => '', 'readParms' => '', 'writeParms' => '', 'class' => 'center', 'thclass' => 'center',  ),
 		  'mirror_description' 	=>   array ( 'title' => LAN_DESCRIPTION, 'type' => 'bbarea', 'data' => 'str', 'width' => '40%', 'help' => '', 'readParms' => '', 'writeParms' => '', 'class' => 'left', 'thclass' => 'left',  ),
@@ -2677,7 +2687,8 @@ class download_broken_ui extends e_admin_ui
 	protected $table			= 'generic';
 	protected $pid				= 'gen_id';
 	protected $perPage 			= 10;
-	protected $listQry			= "SELECT g.*,u.user_name FROM `#generic` AS g LEFT JOIN `#user` AS u ON g.gen_user_id = u.user_id WHERE g.gen_type='Broken Download'";
+	protected $listQry			= "SELECT g.*,u.user_name FROM `#generic` AS g LEFT JOIN `#user` AS u ON g.gen_user_id = u.user_id";
+	protected $listScope		= array('gen_type' => 'Broken Download');
 	protected $listOrder		= 'gen_datestamp ASC';
 
 	protected $fields 		= array (  

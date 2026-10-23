@@ -1004,7 +1004,7 @@ class download_shortcodes extends e_shortcode
 
 	function sc_download_mirror_requests()
 	{
-		return (ADMIN && !empty($this->mirror['dlmirrorfile'][2])) ? LAN_dl_73 . $this->mirror['dlmirrorfile'][2] : "";
+		return (ADMIN && !empty($this->mirror['dlmirrorfile'][2])) ? LAN_dl_73 . (int) $this->mirror['dlmirrorfile'][2] : "";
 	}
 
 	function sc_download_total_mirror_requests()
@@ -1093,7 +1093,7 @@ class download_shortcodes extends e_shortcode
 			->where('download_category', (int) $this->var['download_category_id'])
 			->where('download_id', $operator, (int) $dlrow_id)
 			->where('download_active', '>', 0)
-			->whereIn('download_visible', explode(',', USERCLASS_LIST))
+			->where(\e107\Userclass\Membership::current()->predicate('download_visible'))
 			->orderBy('download_datestamp', $direction)
 			->setMaxResults(1)
 			->fetchRow();
