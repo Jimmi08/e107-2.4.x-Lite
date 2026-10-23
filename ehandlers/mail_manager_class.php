@@ -610,8 +610,7 @@ class e107MailManager
 
 	/**
 	 * Validate a developer-supplied SELECT field list fail-closed so it can be
-	 * embedded in a SQL_CALC_FOUND_ROWS query (which must stay unbound for
-	 * FOUND_ROWS()). Accepts '*' or a comma-separated list of column
+	 * embedded in a query. Accepts '*' or a comma-separated list of column
 	 * identifiers; falls back to '*' if any token is not a valid identifier.
 	 *
 	 * @param e_db   $db     Connection instance providing quoteIdentifier().
@@ -960,7 +959,7 @@ class e107MailManager
 		if (($this->currentBatchInfo['mail_togo_count'] == 0) && ($email['mail_notify_complete'] > 0)) // Need to notify completion
 		{
 			$email = array_merge($email, $this->currentBatchInfo);        // This should ensure the counters are up to date
-			$mailInfo = LAN_MAILOUT_247 . '<br />' . LAN_TITLE . ': ' . $email['mail_title'] . '<br />' . LAN_MAILOUT_248 . $this->statusToText($email['mail_content_status']) . '<br />';
+			$mailInfo = LAN_MAILOUT_247 . '<br />' . LAN_TITLE . ': ' . $email['mail_title'] . '<br />' . LAN_MAILOUT_248 . ' ' . $this->statusToText($email['mail_content_status']) . '<br />';
 			$mailInfo .= '<br />' . LAN_MAILOUT_249 . '<br />';
 			foreach ($this->mailCountFields as $f => $t)
 			{
@@ -968,7 +967,7 @@ class e107MailManager
 			}
 			$mailInfo .= LAN_MAILOUT_250;
 			$message = array(                // Use same structure for email and notify
-				'mail_subject' => LAN_MAILOUT_244 . $email['mail_subject'],
+				'mail_subject' => LAN_MAILOUT_244 . ' ' . $email['mail_subject'],
 				'mail_body'    => $mailInfo . '<br />'
 			);
 
@@ -1902,14 +1901,9 @@ class e107MailManager
 		}
 		if ($count)
 		{
-			// LIMIT offset/row-count cannot be bound here: SQL_CALC_FOUND_ROWS
-			// needs an unbound statement so FOUND_ROWS()/total_results works.
-			// Casting to int closes the only injectable surface in the clause.
 			$query .= " LIMIT " . (int) $start . ", " . (int) $count;
 		}
 		//echo "{$start}, {$count} Mail query: {$query}<br />";
-		// Intentionally raw: SQL_CALC_FOUND_ROWS must run UNBOUND so total_results populates;
-		// the builder cannot express it. Identifiers validated, LIMIT int-cast above.
 		$result = $this->db->execute($query);
 		if ($result !== false)
 		{
@@ -1994,14 +1988,9 @@ class e107MailManager
 		}
 		if ($count)
 		{
-			// LIMIT offset/row-count cannot be bound here: SQL_CALC_FOUND_ROWS
-			// needs an unbound statement so FOUND_ROWS()/total_results works.
-			// Casting to int closes the only injectable surface in the clause.
 			$query .= " LIMIT " . (int) $start . ", " . (int) $count;
 		}
 //		echo "{$start}, {$count} Target query: {$query}<br />";
-		// Intentionally raw: SQL_CALC_FOUND_ROWS must run UNBOUND so total_results populates;
-		// the builder cannot express it. Identifiers validated, LIMIT int-cast above.
 		$result = $this->db2->execute($query);
 		if ($result !== false)
 		{

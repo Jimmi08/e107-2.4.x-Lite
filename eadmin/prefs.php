@@ -164,11 +164,6 @@ if(isset($_POST['updateprefs']))
     }
 
 
-	if(!empty($_POST['passwordEncoding']) || !empty($_POST['ssl_enabled']))
-	{
-		$_POST['password_CHAP'] = 0; // disable chap unless using md5 without SSL.
-	}
-
 	// Table of range checking values - min and max for numerics. Only do the important ones
 	$pref_limits = array('loginname_maxlength' => array('min' => 10, 'max' => 100, 'default' => 30),
 					'displayname_maxlength' => array('min' => 5, 'max' => 100, 'default' => 15),
@@ -434,7 +429,7 @@ $text = "
 						<td><label for='siteurl'>".PRFLAN_3."</label>
 						".($pref['siteurl'] == SITEURL ? "" : $frm->help(PRFLAN_159.": <strong>".SITEURL."</strong>"))."</td>
 						<td>
-							".$frm->text('siteurl', $pref['siteurl'], 150, ['size'=>'xxlarge', 'required'=>1, 'pattern' => '^http.*', 'placeholder'=>'eg. '.SITEURL])."
+							".$frm->text('siteurl', $pref['siteurl'], 150, ['size'=>'xxlarge', 'required'=>1, 'pattern' => '(https?://.+|/(?!/).*)', 'placeholder'=>'eg. '.SITEURL])."
 						</td>
 					</tr>
 					<tr>
@@ -525,7 +520,7 @@ $text .= "
 // Email and Contact Information --------------
 
 $text .= "<fieldset class='e-hideme' id='core-prefs-email'>
-			<h4 class='caption'>".PRFLAN_53.defset('SEP').PRFLAN_13."</h4>
+			<h4 class='caption'>".PRFLAN_53.defset('SEP').PRFLAN_254."</h4>
 			<table class='table adminform'>
 				<colgroup>
 					<col class='col-label' />
@@ -1674,23 +1669,6 @@ $text .= "
 							<div class='field-help'></div>
 						</td>
 					</tr>
-					<tr>";
-
-					$CHAP_list = array(PRFLAN_180, PRFLAN_181, PRFLAN_182);
-
-					$text .= "
-						<td><label for='password-chap'>".PRFLAN_178."</label>".
-						$frm->help(PRFLAN_183."<br />".PRFLAN_179)."</td>
-						<td>";
-
-						$CHAPopt = !empty($pref['ssl_enabled']) || !empty($pref['passwordEncoding']) ? array('disabled'=>1) : null;
-						$text .=  $frm->select('password_CHAP',$CHAP_list,$pref['password_CHAP'], $CHAPopt );
-						//."	".$frm->select_open('password_CHAP');
-
-						//TODO - user tracking session name - visible only if Cookie is enabled (JS)
-
-						$text .= "</td>
-					</tr>
 
 					<tr>
 						<td><label for='antiflood1'>".PRFLAN_35."</label></td>
@@ -1750,7 +1728,7 @@ $text .= "
 
 $text .= "
 		<fieldset class='e-hideme' id='core-prefs-comments'>
-			<h4 class='caption'>".PRFLAN_53.defset('SEP').PRFLAN_87."</h4>
+			<h4 class='caption'>".PRFLAN_53.defset('SEP').PRFLAN_210."</h4>
 			<table class='table adminform'>
 				<colgroup>
 					<col class='col-label' />
@@ -1854,7 +1832,7 @@ $text .= "
 
 	$text .= "
 	<fieldset class='e-hideme' id='core-prefs-uploads'>
-			<h4 class='caption'>".PRFLAN_53.defset('SEP').PRFLAN_238."</h4>";
+			<h4 class='caption'>".PRFLAN_53.defset('SEP').PRFLAN_255."</h4>";
 
 
 	$upload_max_filesize = ini_get('upload_max_filesize');

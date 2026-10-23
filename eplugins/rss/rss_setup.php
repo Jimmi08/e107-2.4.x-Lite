@@ -49,7 +49,7 @@ class rss_setup
 			$mes->add(LAN_DEFAULT_TABLE_DATA.": rss", $status);
 		}
 	}
-/*	
+/*
 	function uninstall_options()
 	{
 
@@ -60,10 +60,26 @@ class rss_setup
 	{
 		// print_a($var);
 	}
+*/
 
+	/**
+	 * Points the comments feed's row at the plugin that now declares it.
+	 *
+	 * @param e107plugin $var
+	 * @return void
+	 */
 	function upgrade_post($var)
 	{
-		// $sql = e107::getDb();
+		$moved = e107::getDb()->createQueryBuilder()
+			->update('rss')
+			->set('rss_path', 'rss')
+			->whereIn('rss_url', array('comments', '5'))
+			->whereIn('rss_path', array('comments', '0', ''))
+			->execute();
+
+		if($moved === false)
+		{
+			e107::getMessage()->addError(LAN_UPDATED_FAILED.': rss');
+		}
 	}
-*/	
 }
