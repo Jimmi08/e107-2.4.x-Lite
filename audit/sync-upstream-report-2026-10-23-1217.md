@@ -676,7 +676,7 @@ line with `//LITE-SKIP` (signature, body, closing brace), first line carrying th
 
 **Resolution — `38c16203e`** (`php -l` clean). `eadmin/includes/infopanel.php` now has:
 - the upstream `$feeds` property (`:32–33`, stays `array()`; nothing reads it);
-- the `AddonUpdateStatus` check as upstream (`:94`);
+- the `AddonUpdateStatus` check as upstream (`:93`);
 - `:103–122` — 16 new `//LITE-SKIP` lines: reason line (`:103`), `$cache` / `$xml` / `$tp` (`:104–106`, used only by the
   feeds), the five-line `$this->feeds = array(…)` (`:108–112`), the seven-line `foreach` that builds `$feedRenewals`
   (`:116–122`); `$feedRenewals = '';` (`:114`) active, because the `$code` string interpolates `".$feedRenewals."`
