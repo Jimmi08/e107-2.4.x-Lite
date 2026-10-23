@@ -29,6 +29,9 @@ class adminstyle_infopanel
 
 	private $iconlist = array();
 
+	/** @var array the e107.org feeds by panel id, each with the request that renews it */
+	private $feeds = array();
+
 	function __construct()
 	{
 
@@ -97,12 +100,30 @@ class adminstyle_infopanel
 
 
 
+		//LITE-SKIP Lite removes the e107.org admin feeds entirely (no phone-home). See Lite #88.
+		//LITE-SKIP $cache = e107::getCache();
+		//LITE-SKIP $xml = e107::getXml();
+		//LITE-SKIP $tp = e107::getParser();
+
+		//LITE-SKIP $this->feeds = array(
+			//LITE-SKIP 'e-adminfeed'        => array('query' => 'mode=core&type=feed', 'feed' => new e107\Admin\DashboardFeed('core', $cache, $xml, $tp)),
+			//LITE-SKIP 'e-adminfeed-plugin' => array('query' => 'mode=addons&type=plugin', 'feed' => new e107\Admin\DashboardFeed('plugin', $cache, $xml, $tp)),
+			//LITE-SKIP 'e-adminfeed-theme'  => array('query' => 'mode=addons&type=theme', 'feed' => new e107\Admin\DashboardFeed('theme', $cache, $xml, $tp)),
+		//LITE-SKIP );
+
+		$feedRenewals = '';
+
+		//LITE-SKIP foreach($this->feeds as $id => $panel)
+		//LITE-SKIP {
+			//LITE-SKIP if($panel['feed']->isDue())
+			//LITE-SKIP {
+				//LITE-SKIP $feedRenewals .= "$('#".$id."').load('".e_ADMIN."admin.php?".$panel['query']."&e-token=".defset('e_TOKEN')."');\n";
+			//LITE-SKIP }
+		//LITE-SKIP }
+
 		$code = "
 		jQuery(function($){
-  			$('#e-adminfeed').load('".e_ADMIN."admin.php?mode=core&type=feed&e-token=".defset('e_TOKEN')."');
-  		    $('#e-adminfeed-plugin').load('".e_ADMIN."admin.php?mode=addons&type=plugin&e-token=".defset('e_TOKEN')."');
-  		    $('#e-adminfeed-theme').load('".e_ADMIN."admin.php?mode=addons&type=theme&e-token=".defset('e_TOKEN')."');
-
+  			".$feedRenewals."
   		    ".$coreUpdateCheck."
   		    ".$addonUpdateCheck."
 
@@ -180,6 +201,21 @@ class adminstyle_infopanel
 
 		return $user_pref;
 	}
+
+	//LITE-SKIP renderFeedTabs() disabled with the e107.org admin feeds (no phone-home). See Lite #88.
+	//LITE-SKIP /**
+	//LITE-SKIP  * @return string the e107.org news tabs, each holding its feed's kept copy
+	//LITE-SKIP  */
+	//LITE-SKIP protected function renderFeedTabs()
+	//LITE-SKIP {
+		//LITE-SKIP $tabs = array(
+			//LITE-SKIP 'coreFeed'   => array('caption' => LAN_GENERAL, 'text' => "<div id='e-adminfeed' style='min-height:300px'>".$this->feeds['e-adminfeed']['feed']->copy()."</div><div class='right'><a rel='external' href='".ADMINFEEDMORE."'>".LAN_MORE."</a></div>"),
+			//LITE-SKIP 'pluginFeed' => array('caption' => LAN_PLUGIN, 'text' => "<div id='e-adminfeed-plugin'>".$this->feeds['e-adminfeed-plugin']['feed']->copy()."</div>"),
+			//LITE-SKIP 'themeFeed'  => array('caption' => LAN_THEMES, 'text' => "<div id='e-adminfeed-theme'>".$this->feeds['e-adminfeed-theme']['feed']->copy()."</div>"),
+		//LITE-SKIP );
+
+		//LITE-SKIP return e107::getForm()->tabs($tabs, array('active' => 'coreFeed'));
+	//LITE-SKIP }
 
 	/**
 	 * Allow to get Icon List.
