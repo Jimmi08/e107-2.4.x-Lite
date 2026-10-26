@@ -45,7 +45,9 @@ Directories without a change get no commit (no empty commits).
 | `3e08ca20c` | sync(root): align with upstream master 5f9c8f8d4 |
 | `90c4411ac` | audit: full report |
 | `936fad741` | install.php: take upstream PHP/MySQL minimums, remove marker (instruction after the run) |
-| (this commit) | audit: install.php minimums, PHP minimum search |
+| `5afaadfd8` | audit: install.php minimums, PHP minimum search |
+| `5b5b9e225` | ecore: clean up comments in Lite news URL override (instruction after the run) |
+| (this commit) | audit: Lite news URL override comments |
 
 ### STOPs
 
@@ -124,8 +126,8 @@ files for a PHP minimum. Each hit below was read in context. "Upstream" = the sa
 |---|---|---|
 | `eplugins/githubSyncLite/admin/admin_sync.php:248–252` | `runCoreSync()`: `if (version_compare(PHP_VERSION, '7.4', '<'))` → error "GitHub Sync Lite requires PHP 7.4 or newer" and return. A plugin-level guard, not a site minimum. The plugin code uses `??` (PHP 7.0+) in `admin_config.php`, `admin_debug.php`, `includes/github_sync_engine.php`, `includes/plugin_list.php`; no typed properties, arrow functions, `??=`, scalar type hints or return types found, so nothing found needs 7.4 specifically (not verified by running on PHP 7.0–7.3). | plugin is Lite-only |
 | `eplugins/githubSyncLite/admin/admin_sync.php:504` | Help text: "Main admin only. Requires PHP 7.4 or newer." | plugin is Lite-only |
-| `ecore/override/controllers/news/sef_url.php:16` | Doc-comment "PHP 7.4 safe." No version check. | file is Lite-only |
-| `ecore/override/url/news/sef_url.php:18` | Doc-comment "PHP 7.4 safe." No version check. Note: the same doc-comment starts with `DRAFT - NOT TO BE COMMITTED` (`:3`). | file is Lite-only |
+| `ecore/override/controllers/news/sef_url.php:16` | Doc-comment "PHP 7.4 safe." No version check. Removed later by instruction (§6). | file is Lite-only |
+| `ecore/override/url/news/sef_url.php:18` | Doc-comment "PHP 7.4 safe." No version check. Note: the same doc-comment started with `DRAFT - NOT TO BE COMMITTED` (`:3`). Both comments removed later by instruction (§6). | file is Lite-only |
 
 **Same code in upstream (not Lite-specific):**
 
@@ -166,6 +168,20 @@ No other Lite-specific PHP minimum check was found.
   `templates/submitnews_template.php`, `shortcodes/single/{news_categories,news_category,newsfile,newsimage}.sc`,
   `templates/legacy/*` (5 files) pending, not added. No other one-sided file.
 - No upstream change in this range (`dispatch.php`, `routes.php`, `templates/logout_template.php` included) — no commit.
+- **Lite-only files — comment clean-up (instruction after the run, `5b5b9e225`).** `override/url/news/sef_url.php` and
+  `override/controllers/news/sef_url.php` are a deliberate Lite feature (custom news URL system via override, upstream
+  code untouched). Only doc-comment lines removed; no code changed (`php -w` output before and after identical for both
+  files); `php -l` clean on both. Removed (line numbers before the change):
+
+  | file:line | removed text |
+  |---|---|
+  | `ecore/override/url/news/sef_url.php:3–4` | ` * DRAFT - NOT TO BE COMMITTED` and the empty ` *` line after it |
+  | `ecore/override/url/news/sef_url.php:17–18` | the empty ` *` line and ` * PHP 7.4 safe.` |
+  | `ecore/override/controllers/news/sef_url.php:15–16` | the empty ` *` line and ` * PHP 7.4 safe.` |
+
+  The rest of each header (target path, description, stored pref value, class name) is kept; neither file had a
+  license or author line. The empty ` *` separators went with the removed text so the comments end without a blank line.
+  After the change the two files are byte-identical (same blob `d1ffbbde0`).
 
 ## 7. ethemes/ (← e107_themes/)
 
@@ -242,8 +258,10 @@ Counted with `git grep` over the tracked `*.php`, `*.js`, `*.css` files (combine
 ## Checks
 
 - `php -l` (PHP 8.3.6) on all changed PHP files (`class2.php`, `eadmin/ver.php`, `ehandlers/e107_class.php`,
-  `ehandlers/session_handler.php`, `userposts.php`, `install.php`): no errors.
+  `ehandlers/session_handler.php`, `userposts.php`, `install.php`, `ecore/override/url/news/sef_url.php`,
+  `ecore/override/controllers/news/sef_url.php`): no errors.
 - `git diff --name-only main..HEAD`: `class2.php`, `eadmin/ver.php`, `ehandlers/e107_class.php`,
-  `ehandlers/session_handler.php`, `install.php`, `userposts.php` — plus `audit/` (this report).
+  `ehandlers/session_handler.php`, `install.php`, `userposts.php`, `ecore/override/url/news/sef_url.php`,
+  `ecore/override/controllers/news/sef_url.php` — plus `audit/` (this report).
 - `git status` clean, no `.rej` / `.orig`.
 - Branch `sync-upstream-2026-10-26` pushed; no merge, no PR, nothing pushed to `main`.
