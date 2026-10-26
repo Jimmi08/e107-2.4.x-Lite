@@ -28,9 +28,8 @@ $ret =  array(
 
 
 // minimal software version
-// LITE MODIFICATION: Lite minimum PHP 7.4 / MySQL 5.1.2
-define('MIN_PHP_VERSION',   '7.4');
-define('MIN_MYSQL_VERSION', '5.1.2');
+define('MIN_PHP_VERSION',   '5.6');
+define('MIN_MYSQL_VERSION', '4.1.2');
 define('MAKE_INSTALL_LOG', true);
 
 // ensure CHARSET is UTF-8 if used
