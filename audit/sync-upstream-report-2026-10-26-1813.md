@@ -43,7 +43,9 @@ Directories without a change get no commit (no empty commits).
 | `431867616` | sync(ehandlers): align with upstream master 5f9c8f8d4 |
 | `3dd1657c7` | sync(eadmin): align with upstream master 5f9c8f8d4 |
 | `3e08ca20c` | sync(root): align with upstream master 5f9c8f8d4 |
-| (this commit) | audit: full report |
+| `90c4411ac` | audit: full report |
+| `936fad741` | install.php: take upstream PHP/MySQL minimums, remove marker (instruction after the run) |
+| (this commit) | audit: install.php minimums, PHP minimum search |
 
 ### STOPs
 
@@ -102,6 +104,59 @@ None.
 - **§7.2 — `install.php`:** Lite version kept, nothing taken. Upstream changes in `install.php` since the previous
   baseline: **none** (the file is unchanged in `4367279f1..5f9c8f8d4`).
 - Commit `3e08ca20c`.
+- **Instruction after the run — `install.php` minimums (`936fad741`):** the marker
+  `// LITE MODIFICATION: Lite minimum PHP 7.4 / MySQL 5.1.2` (was `:31`) removed; `MIN_PHP_VERSION` `'7.4'` → `'5.6'`,
+  `MIN_MYSQL_VERSION` `'5.1.2'` → `'4.1.2'` (`:31–32`), the upstream values. The other five markers in `install.php`
+  (`:67`, `:1677`, `:2019`, `:2054`, `:3108`) kept. Nothing else in the file changed. `php -l` clean.
+
+### Search: other Lite-specific PHP minimum checks / PHP 7.4 workarounds
+
+Instruction after the run: report only, nothing changed. Searched all tracked files outside `audit/` and `*.md`, without
+the third-party `ehandlers/vendor/` (Composer packages, not Lite or e107 code) and minified assets, for `PHP_VERSION`,
+`PHP_VERSION_ID`, `PHP_MAJOR_VERSION` / `PHP_MINOR_VERSION`, `phpversion()`, `version_compare` against a PHP version,
+`70400`, `7.4`, `'7.x'` / `"7.x"`, `min_php`, `minimum PHP`, `requires PHP`, `PHP 7` / `PHP7` in comments, and the XML
+files for a PHP minimum. Each hit below was read in context. "Upstream" = the same line in the mapped upstream file at
+`5f9c8f8d4`.
+
+**Lite-only (not in upstream) — for decision:**
+
+| file:line | what it does | upstream |
+|---|---|---|
+| `eplugins/githubSyncLite/admin/admin_sync.php:248–252` | `runCoreSync()`: `if (version_compare(PHP_VERSION, '7.4', '<'))` → error "GitHub Sync Lite requires PHP 7.4 or newer" and return. A plugin-level guard, not a site minimum. The plugin code uses `??` (PHP 7.0+) in `admin_config.php`, `admin_debug.php`, `includes/github_sync_engine.php`, `includes/plugin_list.php`; no typed properties, arrow functions, `??=`, scalar type hints or return types found, so nothing found needs 7.4 specifically (not verified by running on PHP 7.0–7.3). | plugin is Lite-only |
+| `eplugins/githubSyncLite/admin/admin_sync.php:504` | Help text: "Main admin only. Requires PHP 7.4 or newer." | plugin is Lite-only |
+| `ecore/override/controllers/news/sef_url.php:16` | Doc-comment "PHP 7.4 safe." No version check. | file is Lite-only |
+| `ecore/override/url/news/sef_url.php:18` | Doc-comment "PHP 7.4 safe." No version check. Note: the same doc-comment starts with `DRAFT - NOT TO BE COMMITTED` (`:3`). | file is Lite-only |
+
+**Same code in upstream (not Lite-specific):**
+
+| file:line | what it does |
+|---|---|
+| `class2.php:62–67` | Exits with "PHP 5.6 or higher is required" below PHP 5.6. |
+| `class2.php:2056` | `version_compare(PHP_VERSION, '8.4', '<')` — adds the `E_STRICT` label only below PHP 8.4. |
+| `class2.php:2164`, `:2191` | Comments on PHP 7 / 8 error levels and the deprecated `$context`. |
+| `eadmin/admin.php:758` | `PHP_MAJOR_VERSION < 8` → "outdated version of PHP" notice on the dashboard. |
+| `eadmin/db.php:421–426` | Hard-coded `$min_php_version = '5.6'` → warning before the GitHub sync. |
+| `eadmin/theme.php:595–601` | `PHP_MAJOR_VERSION < 6` → skip the PHP 7 compatibility check of a theme's `theme.php`. |
+| `ehandlers/core_functions.php:590` | `PHP_MAJOR_VERSION > 5` → `unserialize()` with `allowed_classes => false`. |
+| `ehandlers/magpie_rss.php:491` | `substr(phpversion(), 0, 1) == 5` → PHP 5 XML parser path. |
+| `ehandlers/plugin_class.php:3855` | Plugin dependency check: `min_version` of a `php` dependency compared with `phpversion()`. |
+| `ehandlers/Reflection/ReflectionMethod.php:36`, `ReflectionProperty.php:28` | `PHP_VERSION_ID < 80100` → `setAccessible(true)` only below 8.1. |
+| `ehandlers/Shims/Internal/SetcookieTrait.php:53`, `ehandlers/session_handler.php:1114` | `PHP_VERSION_ID >= 70300` → options-array form of `setcookie()` / `session_set_cookie_params()`. |
+| `ehandlers/Shims/Internal/StrtolowerTrait.php:28`, `StrtoupperTrait.php:28` | `PHP_VERSION_ID >= 80200` → native ASCII-only case folding. |
+| `ehandlers/Shims/Internal/UsortTrait.php:35` | `PHP_VERSION_ID >= 80000` → native stable sort. |
+| `ehandlers/Security/SealedToken.php:51–56`, `Security/Random.php:28`, `:42`, `Security/Hkdf.php:39` | Comments on PHP 7.x behaviour (the `SealedToken` comment says "Current e107 requires PHP 8.0"). |
+| `ehandlers/e_db_pdo_class.php:1261` | Comment on PHP 7.3.22 / 7.4.10 PDO error codes (bug #64705); not a minimum. |
+| `ehandlers/php_compatibility_handler.php:9` | Comment "e107 requires PHP >= 5". |
+| `ehandlers/e_parse_class.php:1197`, `model_class.php:1145`, `shortcode_handler.php:1064`, `:1374`, `:1383`, `user_model.php:3444`, `xml_class.php:810`, `event_class.php:260`, `e_search_fulltext_indexer_class.php:158` | "PHP7 fix" / "PHP 7+" comments. |
+| `elanguages/English/lan_installer.php:35` | `LANINS_019` text uses `MIN_PHP_VERSION`. |
+| `install.php:228–230`, `:1442` | The installer's checks against `MIN_PHP_VERSION` (now `5.6`). |
+
+Not version checks (matched the text only): `ehandlers/bounce_handler.php:1093–1115` (SMTP status codes `7.0`–`7.7`),
+`ehandlers/file_class.php:2721–2722`, `:3955` (`.php7` extension), `ehandlers/cron_class.php`, `eadmin/cron.php:535`,
+`ecore/shortcodes/batch/admin_shortcodes.php:1425`, `eplugins/githubSyncLite/admin/admin_debug.php:140`, `eadmin/update_routines.php:2439`,
+`install.php:2088` (print or send the running PHP version).
+
+No other Lite-specific PHP minimum check was found.
 
 ## 6. ecore/ (← e107_core/)
 
@@ -176,18 +231,19 @@ Counted with `git grep` over the tracked `*.php`, `*.js`, `*.css` files (combine
 
 | Marker | before (php/js/css) | before (xml) | after (php/js/css) | after (xml) |
 |---|---|---|---|---|
-| `LITE MODIFICATION` | 55 | 1 | 55 | 1 |
+| `LITE MODIFICATION` | 55 | 1 | 54 | 1 |
 | `LITE FEATURE` | 3 | 0 | 3 | 0 |
 | `LITE-SKIP` | 86 | 0 | 86 | 0 |
 
-- Removed: none. Added: none. (The `e107_class.php` marker moved from line 7172 to 7188 because of the 16 lines added
+- **Removed by instruction** — 1 php: `install.php:31` (`// LITE MODIFICATION: Lite minimum PHP 7.4 / MySQL 5.1.2`),
+  commit `936fad741`. 55 − 1 = 54. Added: none. (The `e107_class.php` marker moved from line 7172 to 7188 because of the 16 lines added
   above it.)
 
 ## Checks
 
 - `php -l` (PHP 8.3.6) on all changed PHP files (`class2.php`, `eadmin/ver.php`, `ehandlers/e107_class.php`,
-  `ehandlers/session_handler.php`, `userposts.php`): no errors.
+  `ehandlers/session_handler.php`, `userposts.php`, `install.php`): no errors.
 - `git diff --name-only main..HEAD`: `class2.php`, `eadmin/ver.php`, `ehandlers/e107_class.php`,
-  `ehandlers/session_handler.php`, `userposts.php` — plus `audit/` (this report).
+  `ehandlers/session_handler.php`, `install.php`, `userposts.php` — plus `audit/` (this report).
 - `git status` clean, no `.rej` / `.orig`.
 - Branch `sync-upstream-2026-10-26` pushed; no merge, no PR, nothing pushed to `main`.
