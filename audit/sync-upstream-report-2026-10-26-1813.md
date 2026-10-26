@@ -48,7 +48,7 @@ Directories without a change get no commit (no empty commits).
 | `5afaadfd8` | audit: install.php minimums, PHP minimum search |
 | `5b5b9e225` | ecore: clean up comments in Lite news URL override (instruction after the run) |
 | `5a52d6dc8` | audit: Lite news URL override comments |
-| `61478bece` | ecore: remove unused news override controller copy (instruction after the run) |
+| `d57c2702f` | ecore: remove unused news override controller copy (instruction after the run) |
 | (this commit) | audit: news override controller copy removed |
 
 ### STOPs
@@ -184,7 +184,7 @@ No other Lite-specific PHP minimum check was found.
   The rest of each header (target path, description, stored pref value, class name) is kept; neither file had a
   license or author line. The empty ` *` separators went with the removed text so the comments end without a blank line.
   After the change the two files are byte-identical (same blob `d1ffbbde0`).
-- **Lite-only files — `override/controllers/news/sef_url.php` deleted (instruction after the run, `61478bece`).**
+- **Lite-only files — `override/controllers/news/sef_url.php` deleted (instruction after the run, `d57c2702f`).**
   Reason: the file is a copy of the `eUrlConfig` class `override_news_sef_url`; that class is loaded only from
   `ecore/override/url/news/`, and the controllers path expects a class `override_<module>_<controller>_controller`, so
   the copy is never used. `ecore/override/url/news/sef_url.php` unchanged.
