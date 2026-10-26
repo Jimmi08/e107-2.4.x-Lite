@@ -47,7 +47,9 @@ Directories without a change get no commit (no empty commits).
 | `936fad741` | install.php: take upstream PHP/MySQL minimums, remove marker (instruction after the run) |
 | `5afaadfd8` | audit: install.php minimums, PHP minimum search |
 | `5b5b9e225` | ecore: clean up comments in Lite news URL override (instruction after the run) |
-| (this commit) | audit: Lite news URL override comments |
+| `5a52d6dc8` | audit: Lite news URL override comments |
+| `61478bece` | ecore: remove unused news override controller copy (instruction after the run) |
+| (this commit) | audit: news override controller copy removed |
 
 ### STOPs
 
@@ -162,7 +164,7 @@ No other Lite-specific PHP minimum check was found.
 
 ## 6. ecore/ (← e107_core/)
 
-- **One-sided files decided in §7:** Lite-only `override/controllers/news/sef_url.php`, `override/url/news/sef_url.php`,
+- **One-sided files decided in §7:** Lite-only `override/url/news/sef_url.php`,
   `override/url/usersettings/{index.html,sef_url.php,url.php}`, `templates/bootstrap5/{login,membersonly,signup,user}_template.php`
   kept; upstream-only `templates/bootstrap4/user_template.php` not ported; `shortcodes/batch/submitnews_shortcodes.php`,
   `templates/submitnews_template.php`, `shortcodes/single/{news_categories,news_category,newsfile,newsimage}.sc`,
@@ -182,6 +184,33 @@ No other Lite-specific PHP minimum check was found.
   The rest of each header (target path, description, stored pref value, class name) is kept; neither file had a
   license or author line. The empty ` *` separators went with the removed text so the comments end without a blank line.
   After the change the two files are byte-identical (same blob `d1ffbbde0`).
+- **Lite-only files — `override/controllers/news/sef_url.php` deleted (instruction after the run, `61478bece`).**
+  Reason: the file is a copy of the `eUrlConfig` class `override_news_sef_url`; that class is loaded only from
+  `ecore/override/url/news/`, and the controllers path expects a class `override_<module>_<controller>_controller`, so
+  the copy is never used. `ecore/override/url/news/sef_url.php` unchanged.
+
+  Checked before deleting (code read in `ehandlers/application.php`, not only grep):
+  - URL configs: `eDispatcher::getConfigObject()` (`:937–962`) builds the class name with `getConfigClassName()`
+    (`:913–928`, `override_news_sef_url` for `override/sef`) and includes `getConfigPath()` (`:652–688`), which for
+    `override` is always `e_CORE.'override/url/<module>/<custom>_url.php'`. The admin URL screen (`eadmin/eurl.php` →
+    `eRouter::adminBuildLocations()`, `:1501…`) also tests only `getConfigPath()` (`:1524`, `:1554`, `:1588`).
+  - Controllers: `isDispatchableModule()` (`:834–867`, called from `isDispatchable()` / `getController()`) includes
+    `getControllerPath()` = `e_CORE.'override/controllers/<module>/<controller>.php'` (`:788–793`, `:757–775`) and
+    accepts only the class `getControllerClass()` = `override_<module>_<controller>_controller` (`:803–808`). The copy
+    defines `override_news_sef_url`, so it can never be returned as a controller.
+  - Edge case (read, not run): if a request resolved to module `news`, controller `sef_url` with the override location,
+    `isDispatchableModule()` would `include_once` this copy (it is readable and `override_news_sef_url_controller` does
+    not exist). With the URL config already loaded from `override/url/news/sef_url.php`, that include would declare
+    `override_news_sef_url` a second time — a fatal error. Whether any URL resolves to that controller was not
+    verified. The deletion removes this path.
+  - `eRouter::adminReadModules()` (`:1310…`) lists the folders of `override/controllers/` (`get_dirs()`) as override
+    modules; `news` stays listed through `override/url/news/` (same method, "merge with configs"), so the module list
+    does not change.
+  - No other reference: `git grep` for `override/controllers`, `controllers/news`, `override_news_sef_url` outside
+    `audit/` finds only the methods above and the class in `override/url/news/sef_url.php`.
+
+  `ecore/override/controllers/news/` is now empty and gone from the tree; `ecore/override/controllers/` stays (it still
+  holds `index.html`, as upstream).
 
 ## 7. ethemes/ (← e107_themes/)
 
@@ -258,10 +287,10 @@ Counted with `git grep` over the tracked `*.php`, `*.js`, `*.css` files (combine
 ## Checks
 
 - `php -l` (PHP 8.3.6) on all changed PHP files (`class2.php`, `eadmin/ver.php`, `ehandlers/e107_class.php`,
-  `ehandlers/session_handler.php`, `userposts.php`, `install.php`, `ecore/override/url/news/sef_url.php`,
-  `ecore/override/controllers/news/sef_url.php`): no errors.
+  `ehandlers/session_handler.php`, `userposts.php`, `install.php`, `ecore/override/url/news/sef_url.php`): no errors
+  (`ecore/override/controllers/news/sef_url.php` was checked before it was deleted).
 - `git diff --name-only main..HEAD`: `class2.php`, `eadmin/ver.php`, `ehandlers/e107_class.php`,
   `ehandlers/session_handler.php`, `install.php`, `userposts.php`, `ecore/override/url/news/sef_url.php`,
-  `ecore/override/controllers/news/sef_url.php` — plus `audit/` (this report).
+  `ecore/override/controllers/news/sef_url.php` (deleted) — plus `audit/` (this report).
 - `git status` clean, no `.rej` / `.orig`.
 - Branch `sync-upstream-2026-10-26` pushed; no merge, no PR, nothing pushed to `main`.
