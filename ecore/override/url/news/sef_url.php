@@ -1,7 +1,5 @@
 <?php
 /**
- * DRAFT - NOT TO BE COMMITTED
- *
  * Target path (upstream e107inc/e107 master):
  *   e107_core/override/url/news/sef_url.php
  *
@@ -14,8 +12,6 @@
  * Stored pref value once selected in admin -> URL configuration:
  *   url_config['news'] = 'override/sef'
  * Resolved class name: override_news_sef_url  (location_module_custom_url)
- *
- * PHP 7.4 safe.
  */
 if (!defined('e107_INIT')) { exit; }
 
