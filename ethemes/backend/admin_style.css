@@ -124,7 +124,7 @@ cursor: help;
 
 .core-mainpanel-block small {
   font-size: 14px;
- 
+}
 
 /* TODO - use col-xx-x markup where core-mainpanel-block occurs. ? */
 @media (max-width: 1700px){ 
