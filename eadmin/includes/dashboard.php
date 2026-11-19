@@ -373,22 +373,29 @@
 			$newarray = e107::getNav()->adminLinks($dashboardLinks);
 
 			$adminPanel = "<div>";
+			$tiles = 0;
 
 			foreach ($newarray as $key => $val) {
 				if ($dashboardLinks == "plugins") {
 					if ($tmp = e107::getNav()->renderAdminButton($val['link'], $val['title'], $val['caption'], $val['perms'], $val['icon_32'], "div")) {
 						$adminPanel .= $tmp;
+						$tiles++;
 					}
 				} else {
 					//if (in_array($key, self::$userAdminPanelArray))  // so confusing for not advanced main admin
 					if (true) {
 						if ($tmp = e107::getNav()->renderAdminButton($val['link'], $val['title'], $val['caption'], $val['perms'], $val['icon_32'], "div")) {
 							$adminPanel .= $tmp;
+							$tiles++;
 						}
 					}
 				}
 			}
 			$adminPanel .= "</div>";
+
+			if ($tiles === 0) {
+				return '';
+			}
 
 			$ns->setStyle($dashboardStyle);
 			$ns->setUniqueId($dashboardUniqueId);
