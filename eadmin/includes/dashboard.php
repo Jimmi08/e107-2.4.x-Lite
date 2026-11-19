@@ -313,10 +313,6 @@
 		{
 			return array(
 				'default'           => array(
-					'core-infopanel-mye107'         => array(
-						'area'   => 'menu-area-07',
-						'weight' => 0,
-					),
 					'core-infopanel-news'           => array(
 						'area'   => 'menu-area-08',
 						'weight' => 0,
@@ -758,7 +754,7 @@
 				$perm = varset($params['perm'], false);
 				$multi = varset($params['multi'], false);
 
-				if (!getperms($perm)) continue;
+				if ($perm !== '' && !getperms($perm)) continue;
 
 
 				$params['uniqueId'] 	= $key;
